@@ -1,12 +1,12 @@
 # Fundamental Analysis via Machine Learning
 
-**Kai Cao**
+Kai Cao
 School of Business and Management
 Hong Kong University of Science and Technology
 Clear Water Bay, Kowloon, Hong Kong
 kcaoab@connect.ust.hk
 
-**Haifeng You***
+Haifeng You [^a]
 School of Business and Management
 Hong Kong University of Science and Technology
 Clear Water Bay, Kowloon, Hong Kong
@@ -15,15 +15,15 @@ achy@ust.hk
 *This draft: January 20, 2021*
 
 ### Abstract:
+
 We examine the efficacy of machine learning in one of the most important tasks in fundamental analysis, forecasting corporate earnings. We find that machine learning models, especially those accommodating nonlinearities, generate significantly more accurate and informative forecasts than a host of state-of-the-art earnings prediction models in the extant literature. Further analysis suggests that machine learning models uncover economically sensible relationships between historical financial information and future earnings, and the new information uncovered by machine learning models is of considerable economic significance. The new information component is significantly associated with both future stock returns and analyst forecast errors, with stocks in the quintiles with the most favorable new information outperforming those in the least favorable quintiles by approximately 70 bps per month. The overall results suggest that limiting to linear relationships and aggregated accounting numbers substantially understates the decision usefulness of financial statement information to investors.
 
 **JEL Classification:** G10, G11, G14, G17, M40, M41
 
 **Keywords:** machine learning, earnings forecasts, fundamental analysis, equity valuation, market efficiency
 
----
-\* We thank Utpal Bhattacharya, Sean Cao, Kevin Chen, Peter Chen, Zhihong Chen, Allen Huang, Mingyi Hung, Arthur Morris, Kevin Li, Xinlei Li, Scott Murray, David Reeb, Richard Sloan, Rongfei Wang, Amy Zang, Yue Zheng, and participants at workshop at HKUST and the 4th Shanghai Edinburgh Fintech Conference for their helpful comments and suggestions. Research funding support from Hong Kong RGC project no. T31-604/18-N is highly appreciated.
----
+[^a]: We thank Utpal Bhattacharya, Sean Cao, Kevin Chen, Peter Chen, Zhihong Chen, Allen Huang, Mingyi Hung, Arthur Morris, Kevin Li, Xinlei Li, Scott Murray, David Reeb, Richard Sloan, Rongfei Wang, Amy Zang, Yue Zheng, and participants at workshop at HKUST and the 4th Shanghai Edinburgh Fintech Conference for their helpful comments and suggestions. Research funding support from Hong Kong RGC project no. T31-604/18-N is highly appreciated.
+
 
 ## 1. Introduction
 
