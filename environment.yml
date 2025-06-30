@@ -9,3 +9,5 @@ dependencies:
   - seaborn
   - notebook
   - openpyxl
+  - pip:
+    - yfinance
