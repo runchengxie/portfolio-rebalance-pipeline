@@ -3,8 +3,8 @@
 
 | 序号 | 代码      | 权重     | 角色定位                  | 要点 & 我对它的“关键假设”                                    |
 | ---- | --------- | -------- | ------------------------- | ------------------------------------------------------------ |
-| 1    | **BRK-B** | **15 %** | 综合核心                  | 自带分散、再投资效率高，2025 Q1 经营利润再创新高 ([berkshirehathaway.com](https://www.berkshirehathaway.com/news/may0325.pdf?utm_source=chatgpt.com)) |
-| 2    | **AAPL**  | 10 %     | 消费科技现金机            | 生态+服务毛利；Vision/AI 只是免费期权                        |
+| 1    | **SPY**   | **15 %** | 综合核心                  | -                                                            |
+| 2    | **TSLA**  | 10 %     | 高波动期权            | Robotaxi 首发即被监管盯上 ([theguardian.com](https://www.theguardian.com/technology/2025/jun/29/elon-musk-tesla-robotaxi?utm_source=chatgpt.com))                        |
 | 3    | **GOOG**  | 8 %      | AI + Cloud 双引擎         | 监管阴影常在，但生成式 AI 的 TPU+Gemini 跑在自家硬件上是壁垒 |
 | 4    | **JNJ**   | 7 %      | 医疗防御 & 增长           | AAA 信用 + >60 年加息股息王；专利悬崖靠新管线填补            |
 | 5    | **XOM**   | 6 %      | 资源周期核心              | 圭亚那油田现金流+碳捕捉押注；油价波动用股息兜底              |
@@ -19,7 +19,7 @@
 | 14   | **GE**    | 4 %      | 纯航空发动机              | 拆分后更纯粹，全球机队后市场锁现金流                         |
 | 15   | **ASLE**  | 2 %      | 航空后市场“小型增速股”    | P2F 改装受电商货运拉动                                       |
 | 16   | **IBM**   | 3 %      | 红帽混合云 + 量子占位     | 低估值、稳股息，把“老蓝”当债券看                             |
-| 17   | **TSLA**  | 3 %      | 高波动期权                | Robotaxi 首发即被监管盯上——仓位要小 ([theguardian.com](https://www.theguardian.com/technology/2025/jun/29/elon-musk-tesla-robotaxi?utm_source=chatgpt.com)) |
+| 17   | **AAPL**  | 3 %      | 高波动期权                | 生态+服务毛利；Vision/AI 只是免费期权 |
 | 18   | **PYPL**  | 2 %      | 价值反转票                | 新 CEO 成败未卜，给它一口气                                  |
 | 19   | **T**     | 2 %      | 高息防御                  | 光纤净增 261 k 户/季，债务高但现金流稳 ([rcrwireless.com](https://www.rcrwireless.com/20250424/business/att-q1?utm_source=chatgpt.com)) |
 
@@ -30,17 +30,17 @@
 ### 组合背后的几条原则
 
 1. **先“抗打击”，再谈成长**
-   - 用 BRK-B、JNJ、CVX/XOM、T、IBM 这些高现金流或高信用的票做“地基”。
+   - 用 SPY、JNJ、CVX/XOM、T、IBM 这些高现金流或高信用的票做“地基”。
    - 这样大盘出事时 Portfolio Beta 会被自然压低。
 2. **分散现金流来源：**
    - **必需品/防御**（医药、国防、基础设施）≈ 30 %
    - **资源周期**（油气）≈ 11 %
    - **科技平台**（AAPL/GOOG/META/CRM/INTC/IBM）≈ 35 %
-   - **可选成长/期权**（TSLA、BOMN、ASLE）≈ 9 %
+   - **可选成长/期权**（BOMN、ASLE）≈ 9 %
    - **高息电信**（T、CMCSA）≈ 6 %
-   - **多元稳健**（BRK-B）≈ 15 %
+   - **多元稳健**（SPY）≈ 15 %
 3. **把不确定性“定量化”到仓位**
-   - RTX、INTC、TSLA、BOMN 这类“能翻倍也能打骨折”的票，给 3–6 % 的筹码，赢了影响组合，输了也不会毁灭组合。
+   - RTX、INTC、BOMN 这类“能翻倍也能打骨折”的票，给 3–6 % 的筹码，赢了影响组合，输了也不会毁灭组合。
 4. **每年 1 ～ 2 次再平衡**
    - 把涨幅过大的重仓（>180 % 原始权重或>20 % 单一仓）部分落袋，补到落后但基本面没坏的票上。
    - 同时盯紧黑天鹅：RTX GTF 修理进度、Pfizer ADC 临床数据、INTC Foundry 订单、TSLA FSD 监管。
@@ -61,6 +61,6 @@
 
 ### 一句话总结
 
-> **用 BRK-B 当“骨”，AAPL/GOOG/META/CRM 做“肉”，再撒上一把高赔率的小票和油气防守，“让现金流与成长彼此对冲”，同时把执行风险控制在 6 ％ 仓位以内。**
+> **用 SPY 当“骨”，AAPL/GOOG/META/CRM 做“肉”，再撒上一把高赔率的小票和油气防守，“让现金流与成长彼此对冲”，同时把执行风险控制在 6 ％ 仓位以内。**
 
 这样的配比，既能满足你想要的 **“巴菲特式稳健 + AI/量化相关度”**，又保留了未来 5–10 年出现黑马（INTC Foundry、TSLA Robotaxi、BOMN 跃迁）的上行弹性。
