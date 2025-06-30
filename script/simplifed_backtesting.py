@@ -166,9 +166,13 @@ try:
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
     plt.tight_layout()
     
-    # Save the chart to a file
-    plt.savefig('portfolio_performance.png', dpi=300, bbox_inches='tight')
-    print("\nChart successfully saved to portfolio_performance.png")
+    # Save the chart to a file in the outputs folder
+    import os
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'outputs')
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, 'portfolio_performance.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"\nChart successfully saved to {output_path}")
     plt.close(fig) # Close the figure to prevent it from displaying in some environments
 
 except Exception as e:
