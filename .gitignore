@@ -41,3 +41,6 @@ docs/*.docx
 # Ignore macOS and Windows system files that can clutter the repo.
 .DS_Store
 Thumbs.db
+
+# --- Debugging purpose ---
+full_project_source.txt
