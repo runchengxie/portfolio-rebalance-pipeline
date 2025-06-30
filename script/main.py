@@ -77,10 +77,10 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     # Use the exact column name from the debug output
     df_is_subset = df_is[['Ticker', 'year', 'Report Date', 'Income Tax (Expense) Benefit, Net']]
     
-    df_bs_subset = df_bs[['Ticker', 'year', 'Report Date', 'Total Equity', 'Total Assets', 'Accounts Receivable, Net']]
+    df_bs_subset = df_bs[['Ticker', 'year', 'Report Date', 'Total Equity', 'Total Assets', 'Accounts & Notes Receivable']]
     
     # 核心字段重命名
-    df_bs_subset = df_bs_subset.rename(columns={'Total Equity': 'ceq', 'Total Assets': 'at', 'Accounts Receivable, Net': 'rect'})
+    df_bs_subset = df_bs_subset.rename(columns={'Total Equity': 'ceq', 'Total Assets': 'at', 'Accounts & Notes Receivable': 'rect'})
     df_cf_subset = df_cf_subset.rename(columns={'Net Cash from Operating Activities': 'cfo'})
 
     # +++ AND THE FINAL FIX IS HERE +++
