@@ -28,7 +28,8 @@ EXCLUDE_DIRS_EXACT: Set[str] = {
     "dist",
     "logs",
     "data",
-    "renv"
+    "renv",
+    "buffett_text",
 }
 
 # Directory name patterns to exclude (e.g., any directory ending with .egg-info)
