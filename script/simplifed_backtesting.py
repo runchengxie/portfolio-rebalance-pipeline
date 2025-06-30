@@ -3,6 +3,9 @@ import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
+import time
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # 1. Define your portfolio (tickers and weights)
 portfolio = {
@@ -33,7 +36,11 @@ print(f"Sum of weights: {sum(portfolio.values()):.2%}")
 
 
 # 2. Set backtesting parameters
-start_date = '2019-01-01'
+# Use first trading day after 2019-01-01 to avoid holiday issues
+from pandas.tseries.holiday import USFederalHolidayCalendar
+start_date = pd.Timestamp('2019-01-01')
+nyse = pd.tseries.offsets.CustomBusinessDay(calendar=USFederalHolidayCalendar())
+start_date = (start_date + nyse)  # This will be 2019-01-02
 end_date = pd.to_datetime('today').strftime('%Y-%m-%d')
 initial_capital = 100000
 benchmark_ticker = 'SPY' # S&P 500 ETF as benchmark
@@ -46,15 +53,28 @@ if benchmark_ticker not in tickers:
 else:
     all_tickers = tickers
 
-# Download data. yfinance's auto_adjust=True (default) returns adjusted prices.
-# The returned data will have a multi-level column index, e.g., ('Close', 'AAPL').
-raw_data = yf.download(all_tickers, start=start_date, end=end_date)
+# Download data with retry mechanism to handle timeouts
+def download_with_retry(tickers, start, end, max_retries=3, **kwargs):
+    for attempt in range(max_retries):
+        data = yf.download(tickers, start=start, end=end, threads=False,
+                          progress=False, auto_adjust=True, **kwargs)
+        failed = [t for t in tickers if t not in data['Close'].columns]
+        if not failed:
+            return data
+        if attempt < max_retries-1:
+            print(f"Retrying {failed} ...")
+            time.sleep(2)  # small back-off
+            tickers = failed  # only retry the misses
+    raise ValueError(f"Couldn't download {failed}")
+
+# Download data with retry mechanism
+raw_data = download_with_retry(all_tickers, start=start_date, end=end_date)
 
 # CRITICAL FIX: Use the 'Close' column, which is already adjusted.
 if raw_data.empty:
     raise SystemExit("Error: Failed to download any stock data. Check tickers and network connection.")
     
-data = raw_data['Close']
+data = raw_data['Close'].copy()  # avoid SettingWithCopyWarning
 data.dropna(axis=0, how='all', inplace=True) # Drop rows where all tickers have no data
 
 # 4. Handle stocks with incomplete history (e.g., BOMN, listed later)
@@ -147,8 +167,8 @@ try:
     plt.tight_layout()
     
     # Save the chart to a file
-    plt.savefig('portfolio_performance_en.png', dpi=300, bbox_inches='tight')
-    print("\nChart successfully saved to portfolio_performance_en.png")
+    plt.savefig('portfolio_performance.png', dpi=300, bbox_inches='tight')
+    print("\nChart successfully saved to portfolio_performance.png")
     plt.close(fig) # Close the figure to prevent it from displaying in some environments
 
 except Exception as e:
