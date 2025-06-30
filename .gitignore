@@ -25,18 +25,19 @@ __pycache__/
 .venv/
 venv/
 env/
-stock-analysis-env/ # Name of your conda env
+stock-analysis-env/
 
 # --- Data Files ---
 # Ignore the data directory to keep the repository small.
 # Provide instructions in the README.md on how to obtain the data.
 data/
 
-# --- Generated Documents ---
+# --- Generated Documents and files ---
 # Ignore binary/compiled document formats. Track the source files (e.g., .md) instead.
 docs/*.pdf
 docs/*.docx
 dynamic_multi_year_ranked_stocks.xlsx
+portfolio_performance.png
 
 # --- OS-specific files ---
 # Ignore macOS and Windows system files that can clutter the repo.
