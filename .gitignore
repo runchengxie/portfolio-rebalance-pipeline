@@ -1,4 +1,43 @@
-.Rproj.user
+# .gitignore
+
+# --- R & RStudio Specific ---
+# Workspace history and data files, not needed for reproducibility.
 .Rhistory
 .RData
-.Ruserdata
+.Rprofile
+
+# RStudio project-specific temporary files and settings.
+.Rproj.user/
+
+# --- renv (R Package Management) ---
+# The local library of packages. This is recreated using the renv.lock file.
+renv/
+
+# --- Python & Jupyter Specific ---
+# Byte-code and cache
+__pycache__/
+*.pyc
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments (common patterns)
+.venv/
+venv/
+env/
+stock-analysis-env/ # Name of your conda env
+
+# --- Data Files ---
+# Ignore the data directory to keep the repository small.
+# Provide instructions in the README.md on how to obtain the data.
+data/
+
+# --- Generated Documents ---
+# Ignore binary/compiled document formats. Track the source files (e.g., .md) instead.
+docs/*.pdf
+docs/*.docx
+
+# --- OS-specific files ---
+# Ignore macOS and Windows system files that can clutter the repo.
+.DS_Store
+Thumbs.db
