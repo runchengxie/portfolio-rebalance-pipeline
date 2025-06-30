@@ -8,33 +8,17 @@ from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parent.parent / 'data'
 
 # --- 修改点 ---
-# 我们不再需要回测区间，而是设定一个选股的目标年份
-# 使用2021年的财报数据来为2022年选股
-TARGET_YEAR = 2021
+# 不再需要硬编码的 START_YEAR 和 END_YEAR。
+# 代码将自动检测数据中的所有年份。
 
-# 定义因子构建所需的特征及其在CSV文件中的原始列名
-COLUMN_MAP = {
-    'Net Cash from Operating Activities': 'cfo',
-    'Income Tax Expense': 'txt',
-    'Total Equity': 'ceq',
-    'Total Assets': 'at',
-    'Accounts Receivable': 'rect'
-}
-
-# 脚本内部使用的简洁特征名
-FEATURES = list(COLUMN_MAP.values())
-
-# 定义因子权重：Z(cfo) + Z(ceq) + Z(txt) + Z(Δtxt) - Z(Δat) - Z(Δrect)
+# 定义因子构建所需的特征 (保持不变)
 FACTOR_WEIGHTS = {'cfo': 1, 'ceq': 1, 'txt': 1, 'd_txt': 1, 'd_at': -1, 'd_rect': -1}
 
-# --- 修改点 ---
 # 定义输出的Excel文件名和要选择的股票数量
-OUTPUT_FILE = 'selected_stocks_for_2022.xlsx'
-NUM_STOCKS_TO_SELECT = 50 # 您可以根据需要调整这个数字
-
+OUTPUT_FILE = 'dynamic_multi_year_ranked_stocks.xlsx'
+NUM_STOCKS_TO_SELECT = 50
 
 # --- Helper Functions ---
-
 def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     """
     从本地CSV文件加载、清洗和合并财务数据。
@@ -60,7 +44,8 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
         numeric_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['Ticker', 'Currency', 'Fiscal Period']]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df.dropna(subset=['Report Date', 'year'])
+        # --- 关键修改：将年份转换为整数，避免浮点数问题 ---
+        return df.dropna(subset=['Report Date', 'year']).astype({'year': 'int'})
 
     df_bs = clean_dataframe(df_bs)
     df_cf = clean_dataframe(df_cf)
@@ -90,67 +75,82 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
 # --- Main Logic ---
 
 def main():
-    # 1. 一次性加载所有财务数据
+    # 1. 加载数据
     df_financials = load_and_merge_financial_data(DATA_DIR)
     if df_financials.empty:
         print("Could not load financial data. Exiting.")
         return
     
-    # 2. 计算所需的变化量 (Deltas)
+    # 2. 计算变化量 (Deltas)
     df_financials = df_financials.sort_values(by=['Ticker', 'year'])
-    for feat in ['txt', 'at', 'rect']:
+    factor_components = list(FACTOR_WEIGHTS.keys())
+    delta_features = [feat for feat in factor_components if feat.startswith('d_')]
+    original_features = [feat.replace('d_', '') for feat in delta_features]
+    
+    for feat in original_features:
         df_financials[f'd_{feat}'] = df_financials.groupby('Ticker')[feat].diff()
 
-    # --- 修改点：不再进行循环回测，而是直接进行选股 ---
-    print(f"\n--- Selecting stocks based on {TARGET_YEAR} financial data ---")
+    # --- 核心修改点：动态获取年份 ---
+    # 3. 从数据中动态获取所有可用的年份，并进行排序
+    available_years = sorted(df_financials['year'].unique())
+    print(f"\nDynamically detected years in the data: {available_years}")
+    print("Note: The first year of data for any stock will be used for delta calculation and not scored.")
 
-    # 3. 筛选目标年份的财务数据
-    df_year_data = df_financials[df_financials['year'] == TARGET_YEAR].copy()
+    # 4. 按年份循环，计算每年的因子分
+    all_year_scores = []
+    print("\n--- Calculating factor scores for each available year ---")
 
-    # 4. 数据清洗：删除因子计算中任何一个指标有缺失值的行
-    factor_components = list(FACTOR_WEIGHTS.keys())
-    initial_count = len(df_year_data)
-    df_year_data.dropna(subset=factor_components, inplace=True)
-    print(f"Found {len(df_year_data)} stocks with complete financial data for {TARGET_YEAR}.")
-    print(f"(Dropped {initial_count - len(df_year_data)} stocks due to missing factor components).")
+    for year in available_years:
+        print(f"Processing Year {year}...")
+        df_year_data = df_financials[df_financials['year'] == year].copy()
+        
+        # 删除因子计算中任何一个指标有缺失值的行
+        # 注意：这一步会自动处理掉每个股票的第一个数据年份，因为它们的delta值是NaN
+        df_year_data.dropna(subset=factor_components, inplace=True)
 
-    if len(df_year_data) < 10:
-        print(f"Not enough valid data points to proceed. Exiting.")
+        if len(df_year_data) < 10: # 至少需要一些公司才能进行有意义的Z-score标准化
+            print(f"  Skipping year {year}: Not enough valid data points after cleaning.")
+            continue
+
+        # Z-score标准化并计算当年的因子分
+        df_zscores = pd.DataFrame(index=df_year_data.index)
+        for component in factor_components:
+            df_zscores[f'z_{component}'] = zscore(df_year_data[component])
+
+        df_year_data['factor_score'] = 0.0
+        for component, weight in FACTOR_WEIGHTS.items():
+            df_year_data['factor_score'] += df_zscores[f'z_{component}'] * weight
+        
+        all_year_scores.append(df_year_data[['Ticker', 'year', 'factor_score']])
+
+    if not all_year_scores:
+        print("\nCould not generate scores for any year. Please check your data. Exiting.")
         return
 
-    # 5. 计算因子分
-    # 对每个因子组成部分进行Z-score标准化
-    df_zscores = pd.DataFrame(index=df_year_data.index)
-    for component in factor_components:
-        df_zscores[f'z_{component}'] = zscore(df_year_data[component])
+    # 5. 合并所有年份的得分，并计算平均分
+    df_all_scores = pd.concat(all_year_scores, ignore_index=True)
+    
+    print("\n--- Aggregating scores across all available years ---")
+    df_agg_scores = df_all_scores.groupby('Ticker')['factor_score'].agg(['mean', 'count'])
+    df_agg_scores.rename(columns={'mean': 'average_factor_score', 'count': 'num_valid_years'}, inplace=True)
 
-    # 根据权重计算最终的因子分
-    df_year_data['factor_score'] = 0.0
-    for component, weight in FACTOR_WEIGHTS.items():
-        df_year_data['factor_score'] += df_zscores[f'z_{component}'] * weight
-
-    # 6. 按因子分对股票进行排序
-    df_ranked_stocks = df_year_data.sort_values(by='factor_score', ascending=False)
-
+    # 6. 按最终的平均分进行排序
+    df_final_ranking = df_agg_scores.sort_values(by='average_factor_score', ascending=False)
+    
     # 7. 选出得分最高的N只股票
-    df_selected_stocks = df_ranked_stocks.head(NUM_STOCKS_TO_SELECT)
-
+    df_top_stocks = df_final_ranking.head(NUM_STOCKS_TO_SELECT)
+    
     # 8. 打印结果到控制台
-    print(f"\n--- Top {NUM_STOCKS_TO_SELECT} Selected Stocks for year {TARGET_YEAR+1} ---")
-    print(" (Based on factor score from TTM data of year", TARGET_YEAR,")")
-    print(df_selected_stocks[['Ticker', 'factor_score']].to_string(index=False))
-
-    # 9. 将完整的排名列表保存到Excel文件，以便进一步分析
-    # 我们保存完整列表，而不仅仅是前N个，这样您可以自己查看更多信息
-    columns_to_save = ['Ticker', 'year', 'factor_score'] + factor_components
+    print(f"\n--- Top {NUM_STOCKS_TO_SELECT} Selected Stocks (based on average score from all available data) ---")
+    print(df_top_stocks)
+    
+    # 9. 将完整的排名列表保存到Excel文件
     try:
-        df_ranked_stocks[columns_to_save].to_excel(OUTPUT_FILE, index=False)
-        print(f"\nSuccessfully saved the full ranked list of stocks to '{OUTPUT_FILE}'")
-        print("You can open this file in Excel to see all stocks sorted by their factor score.")
+        df_final_ranking.to_excel(OUTPUT_FILE, index=True)
+        print(f"\nSuccessfully saved the full dynamically-ranked list of stocks to '{OUTPUT_FILE}'")
     except Exception as e:
         print(f"\nError saving to Excel file: {e}")
         print("Please ensure you have 'openpyxl' installed (`pip install openpyxl`).")
-
 
 if __name__ == "__main__":
     main()

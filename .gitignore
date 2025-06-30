@@ -36,6 +36,7 @@ data/
 # Ignore binary/compiled document formats. Track the source files (e.g., .md) instead.
 docs/*.pdf
 docs/*.docx
+dynamic_multi_year_ranked_stocks.xlsx
 
 # --- OS-specific files ---
 # Ignore macOS and Windows system files that can clutter the repo.
