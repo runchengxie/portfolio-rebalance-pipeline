@@ -66,25 +66,26 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     df_cf = clean_dataframe(df_cf)
     df_is = clean_dataframe(df_is)
 
-    # 如果需要，可以取消注释此行来查看所有列名
-    print("DEBUG: Columns in Income Statement file are:", df_is.columns.tolist())
+    # You can now remove or comment out the debug line
+    # print("DEBUG: Columns in Income Statement file are:", df_is.columns.tolist())
 
     # 合并数据
     merge_keys = ['Ticker', 'year', 'Report Date']
     df_cf_subset = df_cf[['Ticker', 'year', 'Report Date', 'Net Cash from Operating Activities']]
     
-    # +++ THE FIX IS HERE +++
-    # Let's try 'Income Tax', which matches the pattern of other columns like 'Net Income'
-    df_is_subset = df_is[['Ticker', 'year', 'Report Date', 'Income Tax']]
+    # +++ FINAL FIX IS HERE +++
+    # Use the exact column name from the debug output
+    df_is_subset = df_is[['Ticker', 'year', 'Report Date', 'Income Tax (Expense) Benefit, Net']]
     
-    df_bs_subset = df_bs[['Ticker', 'year', 'Report Date', 'Total Equity', 'Total Assets', 'Accounts Receivable']]
+    df_bs_subset = df_bs[['Ticker', 'year', 'Report Date', 'Total Equity', 'Total Assets', 'Accounts Receivable, Net']]
     
     # 核心字段重命名
-    df_bs_subset = df_bs_subset.rename(columns={'Total Equity': 'ceq', 'Total Assets': 'at', 'Accounts Receivable': 'rect'})
+    df_bs_subset = df_bs_subset.rename(columns={'Total Equity': 'ceq', 'Total Assets': 'at', 'Accounts Receivable, Net': 'rect'})
     df_cf_subset = df_cf_subset.rename(columns={'Net Cash from Operating Activities': 'cfo'})
 
-    # +++ AND THE FIX IS HERE +++
-    df_is_subset = df_is_subset.rename(columns={'Income Tax': 'txt'})
+    # +++ AND THE FINAL FIX IS HERE +++
+    # Use the exact column name for renaming
+    df_is_subset = df_is_subset.rename(columns={'Income Tax (Expense) Benefit, Net': 'txt'})
 
     df_merged = pd.merge(df_bs_subset, df_is_subset, on=merge_keys, how='inner')
     df_final = pd.merge(df_merged, df_cf_subset, on=merge_keys, how='inner')
