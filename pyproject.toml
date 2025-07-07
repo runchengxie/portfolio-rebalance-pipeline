@@ -10,6 +10,7 @@ dependencies = [
     "notebook",
     "openpyxl",
     "yfinance",
+    "scipy",
 ]
 
 [project.optional-dependencies]
