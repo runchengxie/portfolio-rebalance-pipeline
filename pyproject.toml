@@ -1,0 +1,41 @@
+[project]
+name = "stock-analysis"
+version = "0.1.0"
+requires-python = ">=3.10, <3.11" 
+
+dependencies = [
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "notebook",
+    "openpyxl",
+    "yfinance",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+# 选择要启用的规则集。
+# "E", "F" 对应 Flake8 的原生规则。
+# "I" 对应 isort。
+# "UP" 对应 pyupgrade。
+select = ["E", "F", "I", "UP", "B"] # B 是 flake8-bugbear
+
+# 或者，启用所有规则，然后忽略掉你不需要的
+# select = ["ALL"]
+# ignore = ["D100", "D101"] # 忽略特定规则
+
+[tool.ruff.format]
+# 这里的配置项和 Black 很相似
+quote-style = "double"
+line-length = 88
