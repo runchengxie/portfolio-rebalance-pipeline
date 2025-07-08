@@ -20,6 +20,10 @@ OUTPUT_FILE = f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
 FACTOR_WEIGHTS = {'cfo': 1, 'ceq': 1, 'txt': 1, 'd_txt': 1, 'd_at': -1, 'd_rect': -1}
 
 # --- Helper Functions ---
+def strip_delisted(s: str) -> str:
+    """移除股票代码中常见的'_delisted'后缀。"""
+    return s.replace('_delisted', '')
+
 def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     """
     从本地CSV文件加载、清洗和合并财务数据。
@@ -56,6 +60,10 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     df_bs = clean_dataframe(df_bs)
     df_cf = clean_dataframe(df_cf)
     df_is = clean_dataframe(df_is)
+
+    # 清理 Ticker 名称，统一处理 '_delisted' 后缀
+    for df in [df_bs, df_cf, df_is]:
+        df['Ticker'] = df['Ticker'].apply(strip_delisted)
     
     # 为了保证合并的是完全相同的报告（对应相同的发布日期），将 'date_known' 加入合并键
     merge_keys = ['Ticker', 'year', 'date_known'] 
@@ -87,6 +95,38 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
 
 
 # --- Main Logic ---
+def calc_factor_scores(df_financials: pd.DataFrame, 
+                           as_of_date: pd.Timestamp, 
+                           window_years: int) -> pd.DataFrame:
+    """
+    为单个时间点计算所有已知股票的因子得分，并使用滚动窗口进行平滑。
+    这是一个核心的重构函数，用于动态寻找回测起点。
+    """
+    # 1. 筛选在当前回测日期 "已知" 的所有数据
+    known_data = df_financials[df_financials['date_known'] <= as_of_date].copy()
+    if known_data.empty:
+        return pd.DataFrame()
+
+    # 2. 计算所有已知数据的因子，包括差分
+    known_data_with_factors = calculate_factors_point_in_time(known_data)
+    if known_data_with_factors.empty:
+        return pd.DataFrame()
+
+    # 3. 使用滑动窗口聚合历史得分
+    window_start_date = as_of_date - relativedelta(years=window_years)
+    historical_window_scores = known_data_with_factors[
+        known_data_with_factors['date_known'] >= window_start_date
+    ]
+    if historical_window_scores.empty:
+        return pd.DataFrame()
+
+    # 4. 按股票聚合，计算滑动窗口内的平均分
+    df_agg_scores = historical_window_scores.groupby('Ticker')['factor_score'].agg(['mean', 'count'])
+    df_agg_scores.rename(columns={'mean': 'avg_factor_score', 'count': 'num_reports'}, inplace=True)
+    
+    return df_agg_scores
+
+
 def calculate_factors_point_in_time(df: pd.DataFrame) -> pd.DataFrame:
     """
     为给定时间点的数据计算因子。
@@ -162,22 +202,14 @@ def run_backtest(df_financials: pd.DataFrame,
             print("  -> No stocks with valid scores after selecting latest. Skipping.")
             continue
 
-        # 6. 使用滑动窗口聚合历史得分，以获得更稳健的排名
-        window_start_date = current_date - relativedelta(years=ROLLING_WINDOW_YEARS)
-        historical_window_scores = known_data_with_factors[
-            known_data_with_factors['date_known'] >= window_start_date
-        ]
-
-        if historical_window_scores.empty:
-            print("  -> Not enough historical data in the window. Skipping.")
+        # 6. 使用重构的函数计算当前日期的聚合得分
+        df_agg_scores = calc_factor_scores(known_data_with_factors, current_date, ROLLING_WINDOW_YEARS)
+        if df_agg_scores.empty:
+            print("  -> Not enough historical data in the window to aggregate scores. Skipping.")
             continue
 
-        # 按股票聚合，计算滑动窗口内的平均分
-        df_agg_scores = historical_window_scores.groupby('Ticker')['factor_score'].agg(['mean', 'count'])
-        df_agg_scores.rename(columns={'mean': 'avg_factor_score_5y', 'count': 'num_reports_5y'}, inplace=True)
-
         # 7. 排序和选股
-        df_ranked = df_agg_scores.sort_values(by='avg_factor_score_5y', ascending=False)
+        df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
         
         # 8. 选出排名前N的股票
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
@@ -205,7 +237,19 @@ def run_price_backtest(portfolios: dict, price_df: pd.DataFrame, lag_days: int =
         
         # 1. 获取当期持仓
         current_portfolio = portfolios[start_date]
-        tickers = current_portfolio['Ticker'].tolist()
+        candidate_tickers = current_portfolio['Ticker'].tolist()
+        
+        # 关键修复：只交易在价格数据中存在的股票
+        available_tickers = [t for t in candidate_tickers if t in price_df.columns]
+        missing_tickers = set(candidate_tickers) - set(available_tickers)
+        if missing_tickers:
+            print(f"  -> For period {start_date}, cannot find price data for: {missing_tickers}")
+        
+        if not available_tickers:
+            print(f"  -> No stocks with available price data for period {start_date}. Skipping.")
+            continue
+        
+        tickers = available_tickers
         
         # 2. 确定实际的建仓日和平仓日
         # 建仓日：调仓日之后 lag_days 个交易日
@@ -221,9 +265,16 @@ def run_price_backtest(portfolios: dict, price_df: pd.DataFrame, lag_days: int =
             print(f"  -> Could not find valid trading dates between {trade_start_date.date()} and {trade_end_date.date()}. Skipping period.")
             continue
 
-        # 3. 获取建仓价和平仓价
-        entry_prices = price_df.loc[entry_price_date, tickers].dropna()
-        exit_prices = price_df.loc[exit_price_date, tickers].dropna()
+        # 3. 获取建仓价和平仓价 (现在 tickers 列表是安全的)
+        entry_prices = price_df.loc[entry_price_date, tickers]
+        exit_prices = price_df.loc[exit_price_date, tickers]
+        
+        # 在计算回报率之前，处理期间可能出现的NaN（例如，某只股票在期间停牌）
+        combined_prices = pd.DataFrame({'entry': entry_prices, 'exit': exit_prices}).dropna()
+        
+        if combined_prices.empty:
+            print(f"  -> No stocks with valid entry and exit prices for period {start_date}. Skipping.")
+            continue
         
         # 对齐股票池，以防有股票在期间退市或数据缺失
         common_tickers = entry_prices.index.intersection(exit_prices.index)
@@ -231,11 +282,8 @@ def run_price_backtest(portfolios: dict, price_df: pd.DataFrame, lag_days: int =
             print(f"  -> No common stocks with valid prices for period {start_date}. Skipping.")
             continue
             
-        entry_prices = entry_prices[common_tickers]
-        exit_prices = exit_prices[common_tickers]
-
         # 4. 计算等权回报率
-        period_returns = (exit_prices / entry_prices) - 1
+        period_returns = (combined_prices['exit'] / combined_prices['entry']) - 1
         portfolio_return = period_returns.mean()
         
         all_returns.append({'date': end_date, 'return': portfolio_return})
@@ -258,11 +306,27 @@ def main():
         print("Could not load financial data. Exiting.")
         return
 
-    # 2. 动态确定回测区间
+    # 2. 动态确定回测开始日期
+    print("\n--- Finding a viable backtest start date ---")
+    MIN_STOCKS_FOR_VALID_UNIVERSE = 20  # 至少需要20只股票才开始回测
     earliest_known = df_financials['date_known'].min().normalize()
     latest_known = df_financials['date_known'].max().normalize()
     
-    backtest_start_date = earliest_known + pd.DateOffset(years=ROLLING_WINDOW_YEARS)
+    potential_start_dates = pd.date_range(start=earliest_known, end=latest_known, freq='QE')
+    backtest_start_date = None
+
+    for date in potential_start_dates:
+        # 检查从这个日期回看，是否有足够的数据形成有意义的选股池
+        scores = calc_factor_scores(df_financials, date, ROLLING_WINDOW_YEARS)
+        if len(scores) >= MIN_STOCKS_FOR_VALID_UNIVERSE:
+            backtest_start_date = date
+            print(f"Found a viable start date: {backtest_start_date.date()}. Universe size: {len(scores)}")
+            break
+
+    if backtest_start_date is None:
+        print("Could not find any period with enough stocks to start a meaningful backtest. Exiting.")
+        return
+
     backtest_end_date = latest_known
 
     # 3. 运行基于基本面的滚动选股
@@ -288,6 +352,8 @@ def main():
              price_path = DATA_DIR / 'us-shareprices-daily.txt' # 兼容示例文件
         px = pd.read_csv(price_path, sep=';')
         px['Date'] = pd.to_datetime(px['Date'])
+        # 在 pivot 之前清理 Ticker
+        px['Ticker'] = px['Ticker'].apply(strip_delisted)
         price_wide = px.pivot(index='Date', columns='Ticker', values='Adj. Close')
         print(f"Successfully loaded and pivoted price data. Shape: {price_wide.shape}")
     except FileNotFoundError:
