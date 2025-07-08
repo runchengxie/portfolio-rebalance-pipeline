@@ -35,6 +35,9 @@ dist/
 # Data folder
 /data/
 
+# Outputs folder
+/outputs/
+
 # --- Generated Documents and files ---
 # Ignore binary/compiled document formats. Track the source files (e.g., .md) instead.
 docs/*.pdf
