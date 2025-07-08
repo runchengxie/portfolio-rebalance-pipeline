@@ -13,7 +13,7 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 # --- 回测配置 ---
 BACKTEST_START_DATE = '2018-01-01'
 BACKTEST_END_DATE = '2023-12-31'
-BACKTEST_FREQUENCY = 'Q'  # 'Q' for quarterly, 'M' for monthly
+BACKTEST_FREQUENCY = 'QE'  # 'QE' for quarterly, 'M' for monthly
 ROLLING_WINDOW_YEARS = 5  # 使用过去5年的数据进行滚动平均
 NUM_STOCKS_TO_SELECT = 50
 OUTPUT_FILE = f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
@@ -135,43 +135,54 @@ def run_backtest(df_financials: pd.DataFrame):
     for i, current_date in enumerate(backtest_dates):
         print(f"\nProcessing backtest for date: {current_date.date()} ({i+1}/{len(backtest_dates)})")
         
-        # 3. 定义此时间点的滑动窗口
-        window_start_date = current_date - relativedelta(years=ROLLING_WINDOW_YEARS)
-        
-        # 4. 筛选在当前回测日期 "已知" 的所有数据
-        #    'date_known' <= current_date
+        # 3. 筛选在当前回测日期 "已知" 的所有数据
         known_data = df_financials[df_financials['date_known'] <= current_date].copy()
-        
-        # 5. 对于每只股票，只保留其最新的 "已知" 报告 (Point-in-Time关键步骤)
-        latest_known_data = known_data.sort_values('date_known').groupby('Ticker').tail(1)
-        
-        # 6. 计算这些最新报告的因子得分
-        #    注意：这里的因子计算本身不涉及滑动窗口，而是基于单期财报
-        df_scores_latest = calculate_factors_point_in_time(latest_known_data)
-        if df_scores_latest.empty:
-            print("  -> No valid data to calculate scores for this period. Skipping.")
+        if known_data.empty:
+            print("  -> No data available for this period. Skipping.")
             continue
-            
-        # 7. 使用滑动窗口聚合历史得分，以获得更稳健的排名
-        #    - 获取窗口内的所有历史数据点
-        historical_window_data = known_data[known_data['date_known'] >= window_start_date]
-        #    - 计算这些历史数据点的因子分
-        df_scores_historical = calculate_factors_point_in_time(historical_window_data)
-        if df_scores_historical.empty:
+
+        # 4. 先计算所有已知数据的因子，包括差分
+        #    这样可以确保即使一只股票只有两期数据，也能算出有效的差分值
+        known_data_with_factors = calculate_factors_point_in_time(known_data)
+        if known_data_with_factors.empty:
+            print("  -> No valid data to calculate scores for this period after initial calculation. Skipping.")
+            continue
+
+        # 5. 对于每只股票，只保留其最新的 "已知" 报告 (Point-in-Time关键步骤)
+        #    此时差分特征已经计算完毕，不会因为 tail(1) 而丢失
+        latest_scores = (
+            known_data_with_factors
+            .sort_values('date_known')
+            .groupby('Ticker', as_index=False)
+            .tail(1)
+        )
+
+        if latest_scores.empty:
+            print("  -> No stocks with valid scores after selecting latest. Skipping.")
+            continue
+
+        # 6. 使用滑动窗口聚合历史得分，以获得更稳健的排名
+        window_start_date = current_date - relativedelta(years=ROLLING_WINDOW_YEARS)
+        historical_window_scores = known_data_with_factors[
+            known_data_with_factors['date_known'] >= window_start_date
+        ]
+
+        if historical_window_scores.empty:
             print("  -> Not enough historical data in the window. Skipping.")
             continue
-        #    - 按股票聚合，计算滑动窗口内的平均分
-        df_agg_scores = df_scores_historical.groupby('Ticker')['factor_score'].agg(['mean', 'count'])
+
+        # 按股票聚合，计算滑动窗口内的平均分
+        df_agg_scores = historical_window_scores.groupby('Ticker')['factor_score'].agg(['mean', 'count'])
         df_agg_scores.rename(columns={'mean': 'avg_factor_score_5y', 'count': 'num_reports_5y'}, inplace=True)
-        
-        # 8. 排序和选股
+
+        # 7. 排序和选股
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score_5y', ascending=False)
         
-        # 9. 选出排名前N的股票
+        # 8. 选出排名前N的股票
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
         
         print(f"  -> Selected {len(top_stocks)} stocks for the period starting {current_date.date()}.")
-        # 10. 存储当期选股结果
+        # 9. 存储当期选股结果
         all_period_portfolios[current_date.date()] = top_stocks.reset_index()
 
     return all_period_portfolios

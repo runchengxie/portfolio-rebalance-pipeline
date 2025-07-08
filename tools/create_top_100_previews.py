@@ -44,7 +44,7 @@ def create_previews():
 
                 # 5. 定义输出文件名和路径
                 # csv_path.stem 会获取不带扩展名的文件名 (e.g., 'us-balance-quarterly')
-                output_filename = f"top_100_{csv_path.stem}.txt"
+                output_filename = f"top_100_sample_{csv_path.stem}.txt"
                 output_path = data_dir / output_filename
 
                 # 6. 将数据帧（DataFrame）以美观的文本格式写入新文件
