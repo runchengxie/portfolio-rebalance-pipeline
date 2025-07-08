@@ -1,113 +1,129 @@
-# 工作流
+# 多因子量化选股策略回测脚本
 
-## 1. 通过多层感知机（MLP）机器学习挖掘解释力强的因子
+这是一个 Python 脚本，用于实现一个基于多因子模型的量化选股策略，并进行严格的**“时点”（Point-in-Time）**回测。脚本旨在模拟真实投资情景，确保在每个决策点只使用当时已经发布和已知的信息。
 
-* 当期盈利 (Earning)：这是最重要的预测因子，符合所有盈利预测模型的直觉。即今年的盈利水平是预测明年盈利的最佳起点。
-* 所得税费用 (Income Tax)：所得税费用及其变化量的重要性排在第二和第四位。这背后有深刻的经济学含义：
-  * 所得税基于应税收入计算，而应税收入通常比会计利润受到更少的盈余管理操纵。
-  * 因此，所得税费用可以被看作是盈利质量（Earnings Quality）和持续性（Persistence）的一个强有力的代理变量。
-  * 这个发现与近年来会计领域关于“税收信息含量”的研究趋势不谋而合。
-* 经营活动现金流 (Operating Cash Flow)：重要性排在第三位。这也是一个经典的因子，因为现金流是盈利的有力验证，高现金流通常意味着盈利质量更高、持续性更强。
-* 普通股权益 (Common Equity)：即公司的账面价值，在早期（如1975年）非常重要，但在后期其重要性有所下降。
-* 资产和应收账款的变化量 (Changes in Total Assets / Receivables)：这些变量的变化也提供了关于公司未来增长和盈利质量的重要线索。
+## 核心策略
 
-## 2. 转化为具体的选股逻辑
+本策略基于以下核心思想：
 
-| 因子     | 财务指标                                                     | 权重   | 选股逻辑                                                     |
-| -------- | ------------------------------------------------------------ | ------ | ------------------------------------------------------------ |
-| `cfo`    | 经营活动现金流量净额 (Net Cash from Operating Activities) | +1 | 越高越好。 这是公司主营业务“造血”能力的直接体现，是利润质量的重要保障。充裕的经营现金流代表公司健康。 |
-| `ceq`    | 总股东权益 (Total Equity)                                | +1 | 越高越好。 代表公司的净资产，是财务稳定性的基石。较高的股东权益意味着较低的财务杠杆和更强的抗风险能力。 |
-| `txt`    | 所得税费用 (Income Tax Expense)                          | +1 | 越高越好。 能够持续缴纳所得税，是公司持续盈利的有力旁证。一个获得大量“税收优惠（负值）”的公司，往往是因为当年亏损。 |
-| `d_txt`  | 所得税费用的年度变化 (Change in Income Tax Expense)      | +1 | 越高越好。 所得税费用的增加，通常意味着公司的应税利润在增长，这是一个积极的盈利增长信号。 |
-| `d_at`   | 总资产的年度变化 (Change in Total Assets)                | -1 | 越低越好。 这是典型的“应计”类指标。如果公司资产增长过快，但没有相应的利润或现金流支撑，可能意味着低效投资或激进的会计处理。策略偏好稳健增长而非盲目扩张的公司。 |
-| `d_rect` | 应收账款的年度变化 (Change in Accounts Receivable)       | -1 | 越低越好。 如果应收账款增长过快（快于销售增长），可能说明公司放宽了信用政策来刺激销售，或者下游客户回款困难。这会增加坏账风险，降低利润质量。 |
+1. **多因子选股模型**: 结合多个财务指标来综合评估一家公司的质量。本脚本使用的因子及其权重在 `FACTOR_WEIGHTS` 中定义：
+    * `cfo` (经营活动现金流): 正向因子，越高越好。
+    * `ceq` (总股东权益): 正向因子，越高越好。
+    * `txt` (所得税): 正向因子，正的所得税意味着公司在盈利。
+    * `d_txt` (所得税变化量): 正向因子，所得税的增加可能意味着盈利能力的提升。
+    * `d_at` (总资产变化量): 负向因子，总资产的过度扩张可能带来风险。
+    * `d_rect` (应收账款变化量): 负向因子，应收账款的快速增加可能是销售质量下降的信号。
 
-## 3. 通过选股逻辑筛选股票
+2. **数据标准化**: 为了综合不同量纲的因子，脚本使用 **Z-score** 方法对每个因子进行标准化处理。
 
-1. Boston Omaha Corporation (BOMN) - 波士顿奥马哈
-2. AT&T Inc. (T) - 美国电话电报公司
-3. AerSale Corporation (ASLE) - 航空销售公司
-4. Exxon Mobil Corporation (XOM) - 埃克森美孚
-5. Intel Corporation (INTC) - 英特尔
-6. Chevron Corporation (CVX) - 雪佛龙
-7. Pfizer Inc. (PFE) - 辉瑞
-8. Salesforce, Inc. (CRM) - 赛富时
-9. Johnson & Johnson (JNJ) - 强生
-10. Comcast Corporation (CMCSA) - 康卡斯特
-11. RTX Corporation (RTX) - RTX公司（前身为雷神技术）
-12. Berkshire Hathaway Inc. (BRK-A / BRK-B) - 伯克希尔·哈撒韦
-13. General Motors Company (GM) - 通用汽车
-14. Alphabet Inc. (GOOG / GOOGL) - 谷歌母公司Alphabet
-15. GE Aerospace (GE) - GE航空航天（前身为通用电气）
-16. Meta Platforms, Inc. (META) - Meta平台（前身为Facebook）
-17. Apple Inc. (AAPL) - 苹果公司
-18. International Business Machines Corporation (IBM) - IBM
-19. Tesla, Inc. (TSLA) - 特斯拉
-20. PayPal Holdings, Inc. (PYPL) - 贝宝
+3. **时点（Point-in-Time）回测**:
+    * 严格使用财报的 **`Publish Date` (发布日期)** 作为判断信息是否可用的唯一标准，避免了使用财报期末日期（如`2023-12-31`）而产生的“未来函数”问题。
+    * 在每个回测时点，脚本只会筛选出在该时点之前已发布的所有财报数据。
 
-## 4. 调用open o3 的投资判定（预先用巴菲特的所有年报股东信内容和文章内容作为提示词，让gemini整理成一个巴菲特的提示词）
+4. **滚动窗口平滑**:
+    * 为了使选股结果更加稳健，并减少因单期财报波动带来的影响，策略采用 **5年滚动窗口**。
+    * 在每个调仓日，脚本会计算过去5年内所有有效财报的因子得分的**平均值**，并基于这个更平滑的平均分对股票进行排名。
 
-*（巴菲特语料库在根目录/buffett_text/）*
+5. **投资组合构建**:
+    * 在每个调仓周期（默认为**季度**），根据滚动平均因子分对所有股票进行排名。
+    * 选取排名前 `N` 的股票（默认为 **50** 支）构建等权重投资组合。
 
-## 5. 最后的选股
+## 项目结构
 
-*（15%的SPY是我的默认设置）*
+为了让脚本正确运行，你需要按照以下结构组织你的项目文件：
 
-| 序号 | 代码      | 权重     | 角色定位                  | 要点 & 我对它的“关键假设”                                    |
-| ---- | --------- | -------- | ------------------------- | ------------------------------------------------------------ |
-| 1    | SPY   | 15 % | 综合核心                  | -                                                            |
-| 2    | TSLA  | 10 %     | 高波动期权            | Robotaxi 首发即被监管盯上 ([theguardian.com](https://www.theguardian.com/technology/2025/jun/29/elon-musk-tesla-robotaxi?utm_source=chatgpt.com))                        |
-| 3    | GOOG  | 8 %      | AI + Cloud 双引擎         | 监管阴影常在，但生成式 AI 的 TPU+Gemini 跑在自家硬件上是壁垒 |
-| 4    | JNJ   | 7 %      | 医疗防御 & 增长           | AAA 信用 + >60 年加息股息王；专利悬崖靠新管线填补            |
-| 5    | XOM   | 6 %      | 资源周期核心              | 圭亚那油田现金流+碳捕捉押注；油价波动用股息兜底              |
-| 6    | RTX   | 6 %      | 国防+航太                 | 地缘政治顺风，但普惠 GTF 召回仍是黑天鹅 ([reuters.com](https://www.reuters.com/business/aerospace-defense/rtx-expects-3-bln-hit-q3-pratt-whitney-gtf-engine-issues-2023-09-11/?utm_source=chatgpt.com)) |
-| 7    | CVX   | 5 %      | 资源周期对冲              | 收购 Hess 锁定圭亚那储量，仲裁仍在拉锯 ([reuters.com](https://www.reuters.com/business/energy/exxon-says-it-is-confident-it-will-win-dispute-over-chevron-hess-deal-2025-05-29/?utm_source=chatgpt.com)) |
-| 8    | CRM   | 5 %      | SaaS 现金牛               | Einstein 1 AI 平台驱动提价和黏性 ([salesforce.com](https://www.salesforce.com/news/stories/what-is-einstein-1-platform/?utm_source=chatgpt.com)) |
-| 9    | PFE   | 5 %      | 价值 + 高息               | Seagen 并表、ADC 管线能否补上“疫苗悬崖” ([pfizer.com](https://www.pfizer.com/news/press-release/press-release-detail/pfizer-provides-full-year-2025-guidance-and-reaffirms-full?utm_source=chatgpt.com)) |
-| 10   | META  | 5 %      | 社交广告+VR 可选成长      | 现金回购+Threads/TikTok 争霸；Reality Labs 仍烧钱            |
-| 11   | BOMN  | 4 %      | “小伯克希尔”成长票        | AireBeam 光纤 & 保险 float 早期扩张阶段 ([bostonomaha.com](https://www.bostonomaha.com/businesses/broadband/?utm_source=chatgpt.com)) |
-| 12   | INTC  | 4 %      | 翻身仗 / 代工期权         | 18A 工艺按计划推进，Foundry 是 0 or 1 的杠杆 ([newsroom.intel.com](https://newsroom.intel.com/intel-foundry/intel-foundry-achieves-major-milestones?utm_source=chatgpt.com)) |
-| 13   | CMCSA | 4 %      | 宽带现金牛 + 主题公园成长 | Peacock 烧钱但宽带壁垒深                                     |
-| 14   | GE    | 4 %      | 纯航空发动机              | 拆分后更纯粹，全球机队后市场锁现金流                         |
-| 15   | ASLE  | 2 %      | 航空后市场“小型增速股”    | P2F 改装受电商货运拉动                                       |
-| 16   | IBM   | 3 %      | 红帽混合云 + 量子占位     | 低估值、稳股息，把“老蓝”当债券看                             |
-| 17   | AAPL  | 3 %      | 高波动期权                | 生态+服务毛利；Vision/AI 只是免费期权 |
-| 18   | PYPL  | 2 %      | 价值反转票                | 新 CEO 成败未卜，给它一口气                                  |
-| 19   | T     | 2 %      | 高息防御                  | 光纤净增 261 k 户/季，债务高但现金流稳 ([rcrwireless.com](https://www.rcrwireless.com/20250424/business/att-q1?utm_source=chatgpt.com)) |
-
-## 6. 回测效果
-
-![回测图表](./outputs/portfolio_performance.png)
-
-```text
---- Backtest Results (2019-01-02 00:00:00 to 2025-06-30) ---
-Initial Capital: $100,000.00
-Investment Period: 6.48 years
-
---- Your Portfolio ---
-Final Value: $403,172.71
-Total Return: 303.17%
-Annualized Return (CAGR): 23.99%
-
---- SPY Benchmark ---
-Final Value: $271,740.42
-Total Return: 171.74%
-Annualized Return (CAGR): 16.67%
-
---- Performance Comparison ---
-Portfolio Alpha (vs Benchmark CAGR): 7.32%
+```
+your_project_root/
+├── data/
+│   ├── us-balance-ttm.csv         # 美国上市公司资产负债表（TTM）
+│   ├── us-cashflow-ttm.csv        # 美国上市公司现金流量表（TTM）
+│   ├── us-income-ttm.csv          # 美国上市公司利润表（TTM）
+│   └── us-shareprices-daily.csv   # 美国上市公司日频股价
+│
+├── outputs/
+│   └── (此目录由脚本自动创建，用于存放结果)
+│
+└── src/
+    └── your_script_folder/
+        └── a_point_in_time_backtest.py  <-- 你的脚本应该放在这里
 ```
 
-## 7. 可供改进
+**重要**: 脚本通过 `Path(__file__).resolve().parent.parent.parent` 来定位 `PROJECT_ROOT`。请确保你的脚本位于 `src` 目录下的某个子文件夹中，如上述结构所示。
 
-1. 探索变量之间存在很强的交互效应，例如：
+## 数据源
 
-    * 销售收入变化 & 销货成本变化：两者共同反映了公司毛利率的变化趋势。
+脚本需要以下四个 CSV 文件，并存放于 `data/` 目录下：
 
-    * 销货成本 & 存货：反映了公司的存货管理效率和成本控制能力。
+1. `us-balance-ttm.csv`: 资产负债表数据，包含 `Publish Date`, `Fiscal Year`, `Ticker`, `Total Equity`, `Total Assets` 等字段。
+2. `us-cashflow-ttm.csv`: 现金流量表数据，包含 `Publish Date`, `Fiscal Year`, `Ticker`, `Net Cash from Operating Activities` 等字段。
+3. `us-income-ttm.csv`: 利润表数据，包含 `Publish Date`, `Fiscal Year`, `Ticker`, `Income Tax (Expense) Benefit, Net` 等字段。
+4. `us-shareprices-daily.csv`: 日频股价数据，用于计算最终的投资组合收益。包含 `Date`, `Ticker`, `Adj. Close` 等字段。
 
-    * 销售收入 & 应付账款：反映了公司与其供应商的关系和议价能力。
+## 如何运行
 
-    * 固定资产 & 折旧摊销：反映了公司的资本投资策略和资产回报率。
+1. **安装依赖库**:
 
-2. 采用其他深度学习网络模型来挖掘具有解释性的因子
+    ```bash
+    pip install pandas numpy scipy
+    ```
+
+2. **准备数据**:
+    确保上述四个 CSV 数据文件已放置在项目的 `data/` 目录下。
+
+3. **配置脚本 (可选)**:
+    打开脚本文件，你可以根据需要调整顶部的配置项：
+    * `BACKTEST_FREQUENCY`: 回测频率 (`'QE'` 代表每季度末，`'M'` 代表每月末)。
+    * `ROLLING_WINDOW_YEARS`: 计算滚动平均得分所用的年数。
+    * `NUM_STOCKS_TO_SELECT`: 每个调仓期选择的股票数量。
+    * `FACTOR_WEIGHTS`: 因子及其权重，可以修改、添加或删除因子。
+
+4. **执行脚本**:
+    在终端中运行脚本：
+
+    ```bash
+    python a_point_in_time_backtest.py
+    ```
+
+## 脚本执行流程
+
+1. **加载和合并数据**:
+    * 从 `data/` 目录加载三个财务报表 CSV 文件。
+    * 进行数据清洗，将 `Publish Date` 转换为日期格式，并将数值列转换为数字。
+    * **关键**: 基于 `Ticker`, `year` 和 `date_known` (发布日期) 对三张表进行内连接（inner merge），确保数据的一致性。
+    * 处理重复数据，对于同一公司同一财年，只保留最新发布的一份财报。
+
+2. **运行基本面选股回测**:
+    * 根据数据中的最早和最晚发布日期，动态确定回测区间。
+    * 按设定的频率（如季度）遍历回测区间中的每个调仓日期。
+    * 在每个调仓日：
+        * 筛选出所有在该日期前**已知**的财报数据。
+        * 计算所有已知数据的因子值（包括变化量）。
+        * 对每个股票，只保留其**最新一份**财报的因子得分。
+        * 使用 **5 年滚动窗口**，计算每个股票在窗口期内的平均因子分。
+        * 对股票按平均分进行降序排名，选出前 `N` 名股票。
+        * 存储当期的选股结果。
+
+3. **保存选股结果**:
+    * 将每个调仓期的选股结果（股票列表及其得分）保存到一个 Excel 文件中 (`point_in_time_backtest_top_50_stocks.xlsx`)，每个调仓期对应一个 Sheet。
+
+4. **运行价格回测**:
+    * 加载日频股价数据。
+    * 遍历每个调仓周期，根据选股结果计算投资组合的收益率（采用等权重）。
+    * 考虑到实际交易的延迟，默认在调仓日后 **2 个交易日** 建仓。
+    * 计算每个周期的回报率，并最终生成一条累计收益曲线。
+
+5. **保存收益率结果**:
+    * 将每个周期的回报率和累计回报率保存到 `portfolio_returns.csv` 文件中。
+    * 如果本地环境中存在 `simplifed_backtesting.py` 脚本，还会生成并保存一张累计收益曲线图 (`cumulative_returns.png`)。
+
+## 输出文件
+
+脚本执行成功后，会在 `outputs/` 目录下生成以下文件：
+
+* `point_in_time_backtest_top_{N}_stocks.xlsx`:
+  * 详细记录了每个调仓周期的选股结果。
+  * 每个工作表（Sheet）以调仓日期命名，内容是当期选入的股票池及其滚动平均因子分。
+* `portfolio_returns.csv`:
+  * 记录了策略在每个调仓周期的收益率 (`return`) 和累计收益率 (`cumulative_return`)。
+* `cumulative_returns.png` (可选):
+  * 策略累计收益的可视化曲线图。
