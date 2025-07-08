@@ -11,8 +11,6 @@ OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- 回测配置 ---
-BACKTEST_START_DATE = '2018-01-01'
-BACKTEST_END_DATE = '2023-12-31'
 BACKTEST_FREQUENCY = 'QE'  # 'QE' for quarterly, 'M' for monthly
 ROLLING_WINDOW_YEARS = 5  # 使用过去5年的数据进行滚动平均
 NUM_STOCKS_TO_SELECT = 50
@@ -119,17 +117,20 @@ def calculate_factors_point_in_time(df: pd.DataFrame) -> pd.DataFrame:
         
     return df_cleaned[['Ticker', 'date_known', 'year', 'factor_score']]
 
-def run_backtest(df_financials: pd.DataFrame):
+def run_backtest(df_financials: pd.DataFrame, 
+                 backtest_start: pd.Timestamp, 
+                 backtest_end: pd.Timestamp, 
+                 freq: str = BACKTEST_FREQUENCY):
     """
     执行基于滑动窗口和Point-in-Time数据的回测。
     """
     # 1. 生成回测日期序列
-    backtest_dates = pd.date_range(start=BACKTEST_START_DATE, end=BACKTEST_END_DATE, freq=BACKTEST_FREQUENCY)
+    backtest_dates = pd.date_range(start=backtest_start, end=backtest_end, freq=freq)
     
     all_period_portfolios = {}
     
     print("\n--- Starting Point-in-Time Backtest ---")
-    print(f"Configuration: {BACKTEST_START_DATE} to {BACKTEST_END_DATE}, Freq: {BACKTEST_FREQUENCY}, Window: {ROLLING_WINDOW_YEARS} years")
+    print(f"Configuration: {backtest_start.date()} to {backtest_end.date()}, Freq: {freq}, Window: {ROLLING_WINDOW_YEARS} years")
 
     # 2. 遍历每个回测日期
     for i, current_date in enumerate(backtest_dates):
@@ -188,32 +189,127 @@ def run_backtest(df_financials: pd.DataFrame):
     return all_period_portfolios
 
 
+def run_price_backtest(portfolios: dict, price_df: pd.DataFrame, lag_days: int = 2):
+    """
+    根据选股结果和日频价格数据，计算投资组合的收益率。
+    """
+    print("\n--- Running Price-Based Backtest ---")
+    all_returns = []
+    
+    # 获取所有调仓日期
+    portfolio_dates = sorted(portfolios.keys())
+
+    for i in range(len(portfolio_dates) - 1):
+        start_date = portfolio_dates[i]
+        end_date = portfolio_dates[i+1]
+        
+        # 1. 获取当期持仓
+        current_portfolio = portfolios[start_date]
+        tickers = current_portfolio['Ticker'].tolist()
+        
+        # 2. 确定实际的建仓日和平仓日
+        # 建仓日：调仓日之后 lag_days 个交易日
+        # 平仓日：下一个调仓日的前一个交易日
+        trade_start_date = pd.to_datetime(start_date) + pd.Timedelta(days=lag_days)
+        trade_end_date = pd.to_datetime(end_date) - pd.Timedelta(days=1)
+
+        # 找到价格数据中实际对应的日期
+        try:
+            entry_price_date = price_df.index[price_df.index >= trade_start_date][0]
+            exit_price_date = price_df.index[price_df.index <= trade_end_date][-1]
+        except IndexError:
+            print(f"  -> Could not find valid trading dates between {trade_start_date.date()} and {trade_end_date.date()}. Skipping period.")
+            continue
+
+        # 3. 获取建仓价和平仓价
+        entry_prices = price_df.loc[entry_price_date, tickers].dropna()
+        exit_prices = price_df.loc[exit_price_date, tickers].dropna()
+        
+        # 对齐股票池，以防有股票在期间退市或数据缺失
+        common_tickers = entry_prices.index.intersection(exit_prices.index)
+        if len(common_tickers) == 0:
+            print(f"  -> No common stocks with valid prices for period {start_date}. Skipping.")
+            continue
+            
+        entry_prices = entry_prices[common_tickers]
+        exit_prices = exit_prices[common_tickers]
+
+        # 4. 计算等权回报率
+        period_returns = (exit_prices / entry_prices) - 1
+        portfolio_return = period_returns.mean()
+        
+        all_returns.append({'date': end_date, 'return': portfolio_return})
+        print(f"  -> Period {start_date} to {end_date}: Portfolio Return = {portfolio_return:.4f}")
+
+    if not all_returns:
+        print("Could not calculate any returns.")
+        return pd.DataFrame()
+
+    # 5. 计算累计收益曲线
+    df_returns = pd.DataFrame(all_returns).set_index('date')
+    df_returns['cumulative_return'] = (1 + df_returns['return']).cumprod()
+    return df_returns
+
+
 def main():
-    # 1. 加载和预处理数据
+    # 1. 加载并合并财报
     df_financials = load_and_merge_financial_data(DATA_DIR)
     if df_financials.empty:
         print("Could not load financial data. Exiting.")
         return
-        
-    # 2. 运行严谨的回测
-    portfolios = run_backtest(df_financials)
-    
-    if not portfolios:
-        print("\nBacktest finished but no portfolios were generated. Please check data and date ranges.")
-        return
 
-    # 3. 将回测结果保存到Excel，每个时期的选股结果放在一个单独的Sheet中
-    output_path = OUTPUTS_DIR / OUTPUT_FILE
-    try:
-        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+    # 2. 动态确定回测区间
+    earliest_known = df_financials['date_known'].min().normalize()
+    latest_known = df_financials['date_known'].max().normalize()
+    
+    backtest_start_date = earliest_known + pd.DateOffset(years=ROLLING_WINDOW_YEARS)
+    backtest_end_date = latest_known
+
+    # 3. 运行基于基本面的滚动选股
+    portfolios = run_backtest(df_financials, 
+                              backtest_start=backtest_start_date, 
+                              backtest_end=backtest_end_date)
+
+    # 4. 保存详细选股结果到Excel
+    if portfolios:
+        with pd.ExcelWriter(OUTPUTS_DIR / OUTPUT_FILE) as writer:
             for date, df_portfolio in portfolios.items():
                 sheet_name = str(date)
                 df_portfolio.to_excel(writer, sheet_name=sheet_name, index=False)
-        print(f"\nSuccessfully saved backtest results to '{output_path}'")
-        print("Each sheet in the Excel file represents the selected portfolio for that quarter-end.")
-    except Exception as e:
-        print(f"\nError saving to Excel file: {e}")
-        print("Please ensure you have 'openpyxl' installed (`pip install openpyxl`).")
+        print(f"\nPoint-in-time backtest results saved to {OUTPUTS_DIR / OUTPUT_FILE}")
+    else:
+        print("\nNo portfolios were generated during the fundamental backtest.")
+        return
+
+    # 5. 加载日频股价数据
+    try:
+        price_path = DATA_DIR / 'us-shareprices-daily.csv'
+        if not price_path.exists():
+             price_path = DATA_DIR / 'us-shareprices-daily.txt' # 兼容示例文件
+        px = pd.read_csv(price_path, sep=';')
+        px['Date'] = pd.to_datetime(px['Date'])
+        price_wide = px.pivot(index='Date', columns='Ticker', values='Adj. Close')
+        print(f"Successfully loaded and pivoted price data. Shape: {price_wide.shape}")
+    except FileNotFoundError:
+        print(f"Price data not found in {DATA_DIR}. Skipping price backtest.")
+        return
+
+    # 6. 运行价格回测
+    df_returns = run_price_backtest(portfolios, price_wide)
+
+    # 7. 保存收益率结果
+    if not df_returns.empty:
+        returns_csv_path = OUTPUTS_DIR / 'portfolio_returns.csv'
+        df_returns.to_csv(returns_csv_path)
+        print(f"Portfolio returns saved to {returns_csv_path}")
+
+        # 可选：绘制收益曲线图 (依赖 simplifed_backtesting.py)
+        try:
+            from simplifed_backtesting import plot_backtest_results
+            plot_backtest_results(df_returns, None, f'Factor Strategy Cumulative Returns', OUTPUTS_DIR / 'cumulative_returns.png')
+            print(f"Cumulative return plot saved to {OUTPUTS_DIR / 'cumulative_returns.png'}")
+        except ImportError:
+            print("Skipping plot generation: `simplifed_backtesting.py` not found or has issues.")
 
 
 if __name__ == "__main__":
