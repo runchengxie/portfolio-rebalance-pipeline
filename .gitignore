@@ -32,6 +32,9 @@ build/
 dist/
 *.egg-info/
 
+# Data folder
+/data/
+
 # --- Generated Documents and files ---
 # Ignore binary/compiled document formats. Track the source files (e.g., .md) instead.
 docs/*.pdf
