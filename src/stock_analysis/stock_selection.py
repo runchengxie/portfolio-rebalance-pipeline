@@ -196,46 +196,22 @@ def run_backtest(df_financials: pd.DataFrame,
     for i, current_date in enumerate(backtest_dates):
         print(f"\nProcessing backtest for date: {current_date.date()} ({i+1}/{len(backtest_dates)})")
         
-        # 3. 筛选在当前回测日期 "已知" 的所有数据
-        known_data = df_financials[df_financials['date_known'] <= current_date].copy()
-        if known_data.empty:
-            print("  -> No data available for this period. Skipping.")
-            continue
-
-        # 4. 先计算所有已知数据的因子，包括差分
-        #    这样可以确保即使一只股票只有两期数据，也能算出有效的差分值
-        known_data_with_factors = calculate_factors_point_in_time(known_data)
-        if known_data_with_factors.empty:
-            print("  -> No valid data to calculate scores for this period after initial calculation. Skipping.")
-            continue
-
-        # 5. 对于每只股票，只保留其最新的 "已知" 报告 (Point-in-Time关键步骤)
-        #    此时差分特征已经计算完毕，不会因为 tail(1) 而丢失
-        latest_scores = (
-            known_data_with_factors
-            .sort_values('date_known')
-            .groupby('Ticker', as_index=False)
-            .tail(1)
-        )
-
-        if latest_scores.empty:
-            print("  -> No stocks with valid scores after selecting latest. Skipping.")
-            continue
-
-        # 6. 使用重构的函数计算当前日期的聚合得分
-        df_agg_scores = calc_factor_scores(known_data_with_factors, current_date, ROLLING_WINDOW_YEARS)
+        # 3. 为当前日期计算滚动聚合得分 (FIXED: This is the single correct call)
+        df_agg_scores = calc_factor_scores(df_financials, current_date, ROLLING_WINDOW_YEARS)
+        
         if df_agg_scores.empty:
             print("  -> Not enough historical data in the window to aggregate scores. Skipping.")
             continue
 
-        # 7. 排序和选股
+        # 4. 排序和选股
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
         
-        # 8. 选出排名前N的股票
+        # 5. 选出排名前N的股票
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
         
         print(f"  -> Selected {len(top_stocks)} stocks for the period starting {current_date.date()}.")
-        # 9. 存储当期选股结果
+        
+        # 6. 存储当期选股结果
         all_period_portfolios[current_date.date()] = top_stocks.reset_index()
 
     return all_period_portfolios
