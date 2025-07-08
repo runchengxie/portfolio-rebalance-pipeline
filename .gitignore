@@ -1,17 +1,7 @@
-# .gitignore
-
-# --- R & RStudio Specific ---
-# Workspace history and data files, not needed for reproducibility.
-.Rhistory
-.RData
-.Rprofile
-
-# RStudio project-specific temporary files and settings.
-.Rproj.user/
-
-# --- renv (R Package Management) ---
-# The local library of packages. This is recreated using the renv.lock file.
-renv/
+# --- OS-specific files ---
+# Ignore macOS and Windows system files that can clutter the repo.
+.DS_Store
+Thumbs.db
 
 # --- Python & Jupyter Specific ---
 # Byte-code and cache
@@ -27,28 +17,30 @@ venv/
 env/
 stock-analysis-env/
 
-# Build artifacts
+# Build artifacts and packaging
 build/
 dist/
 *.egg-info/
 
-# Data folder
-/data/
+# --- Project-specific ---
+# Data files
+data/
 
-# Outputs folder
-/outputs/
+# Generated output files
+outputs/
 
-# --- Generated Documents and files ---
-# Ignore binary/compiled document formats. Track the source files (e.g., .md) instead.
-docs/*.pdf
-docs/*.docx
-dynamic_multi_year_ranked_stocks.xlsx
-portfolio_performance.png
-
-# --- OS-specific files ---
-# Ignore macOS and Windows system files that can clutter the repo.
-.DS_Store
-Thumbs.db
-
-# --- Debugging purpose ---
+# Debugging or temporary files
 full_project_source.txt
+
+# --- Generated Documents ---
+# Ignore binary/compiled document formats. Track the source (.md, .tex) instead.
+*.pdf
+*.docx
+*.xlsx
+
+# --- R & RStudio Specific ---
+.Rhistory
+.RData
+.Rprofile
+.Rproj.user/
+renv/
