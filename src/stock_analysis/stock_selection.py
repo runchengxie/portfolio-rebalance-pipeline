@@ -20,9 +20,39 @@ OUTPUT_FILE = f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
 FACTOR_WEIGHTS = {'cfo': 1, 'ceq': 1, 'txt': 1, 'd_txt': 1, 'd_at': -1, 'd_rect': -1}
 
 # --- Helper Functions ---
-def strip_delisted(s: str) -> str:
-    """移除股票代码中常见的'_delisted'后缀。"""
-    return s.replace('_delisted', '')
+def tidy_ticker(col: pd.Series) -> pd.Series:
+    """统一清洗和格式化股票代码列。"""
+    return (
+        col.astype('string')
+           .str.upper()
+           .str.strip()
+           .str.replace(r'_DELISTED$', '', regex=True)
+           .replace({'': pd.NA})
+    )
+
+def clean_dataframe(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """对原始DataFrame进行全面的清洗、类型转换和缺失值处理。"""
+    df = df_raw.copy()
+    before_rows = len(df)
+
+    # 清洗和重命名核心列
+    df['Ticker'] = tidy_ticker(df['Ticker'])
+    df.rename(columns={'Publish Date': 'date_known', 'Fiscal Year': 'year'}, inplace=True)
+    df['date_known'] = pd.to_datetime(df['date_known'], errors='coerce')
+
+    # 将所有可能是数值的列转换为数值类型，无法转换的设为NaN
+    numeric_cols = [c for c in df.columns if c not in ['Ticker', 'Currency', 'Fiscal Period', 'date_known']]
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+
+    # 丢掉关键信息缺失的行
+    df = df.dropna(subset=['Ticker', 'date_known', 'year'])
+    df = df.astype({'year': 'int'})
+    
+    after_rows = len(df)
+    if before_rows > after_rows:
+        print(f"  - Cleaned {before_rows - after_rows} rows with missing Ticker/date/year.")
+        
+    return df
 
 def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     """
@@ -35,44 +65,34 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     is_path = data_dir / 'us-income-ttm.csv'
 
     try:
-        df_bs = pd.read_csv(bs_path, sep=';')
-        df_cf = pd.read_csv(cf_path, sep=';')
-        df_is = pd.read_csv(is_path, sep=';')
+        df_bs_raw = pd.read_csv(bs_path, sep=';')
+        df_cf_raw = pd.read_csv(cf_path, sep=';')
+        df_is_raw = pd.read_csv(is_path, sep=';')
         print("Successfully loaded balance sheet, cash flow, and income statement files.")
     except FileNotFoundError as e:
         print(f"Error: Could not find financial data files in '{data_dir}'. {e}")
         print("Please check if the PROJECT_ROOT definition at the top of the script correctly points to your project's root directory.")
         return pd.DataFrame()
 
-    def clean_dataframe(df):
-        # 明确使用 'Publish Date' 作为我们判断信息是否"已知"的唯一时间戳
-        df.rename(columns={'Publish Date': 'date_known'}, inplace=True)
-        df['date_known'] = pd.to_datetime(df['date_known'], errors='coerce')
-        
-        df.rename(columns={'Fiscal Year': 'year'}, inplace=True)
-        numeric_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['Ticker', 'Currency', 'Fiscal Period']]
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # 删除没有有效 'date_known' 的行
-        return df.dropna(subset=['date_known', 'year']).astype({'year': 'int'})
+    # 在合并前对每个表进行独立清洗
+    print("Cleaning balance sheet data...")
+    df_bs = clean_dataframe(df_bs_raw)
+    print("Cleaning cash flow data...")
+    df_cf = clean_dataframe(df_cf_raw)
+    print("Cleaning income statement data...")
+    df_is = clean_dataframe(df_is_raw)
 
-    df_bs = clean_dataframe(df_bs)
-    df_cf = clean_dataframe(df_cf)
-    df_is = clean_dataframe(df_is)
+    # 打印各表覆盖度
+    print(f"Unique tickers after cleaning: BS={df_bs['Ticker'].nunique()}, CF={df_cf['Ticker'].nunique()}, IS={df_is['Ticker'].nunique()}")
 
-    # 清理 Ticker 名称，统一处理 '_delisted' 后缀
-    for df in [df_bs, df_cf, df_is]:
-        df['Ticker'] = df['Ticker'].apply(strip_delisted)
-    
     # 为了保证合并的是完全相同的报告（对应相同的发布日期），将 'date_known' 加入合并键
-    merge_keys = ['Ticker', 'year', 'date_known'] 
-    
+    merge_keys = ['Ticker', 'year', 'date_known']
+
     # 选择需要的列，确保 'date_known' 包含在内
     df_cf_subset = df_cf[['Ticker', 'year', 'date_known', 'Net Cash from Operating Activities']]
     df_is_subset = df_is[['Ticker', 'year', 'date_known', 'Income Tax (Expense) Benefit, Net']]
     df_bs_subset = df_bs[['Ticker', 'year', 'date_known', 'Total Equity', 'Total Assets', 'Accounts & Notes Receivable']]
-    
+
     # 重命名其他列
     df_bs_subset = df_bs_subset.rename(columns={'Total Equity': 'ceq', 'Total Assets': 'at', 'Accounts & Notes Receivable': 'rect'})
     df_cf_subset = df_cf_subset.rename(columns={'Net Cash from Operating Activities': 'cfo'})
@@ -81,7 +101,7 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     # 使用新的 merge_keys 进行合并
     df_merged = pd.merge(df_bs_subset, df_is_subset, on=merge_keys, how='inner')
     df_final = pd.merge(df_merged, df_cf_subset, on=merge_keys, how='inner')
-    
+
     # 按发布日期排序，如果同一财年有多次发布（如重述），保留最新的那次发布
     df_final = df_final.sort_values(['Ticker', 'year', 'date_known'], ascending=True)
     df_final = df_final.drop_duplicates(subset=['Ticker', 'year'], keep='last')
@@ -352,8 +372,9 @@ def main():
              price_path = DATA_DIR / 'us-shareprices-daily.txt' # 兼容示例文件
         px = pd.read_csv(price_path, sep=';')
         px['Date'] = pd.to_datetime(px['Date'])
-        # 在 pivot 之前清理 Ticker
-        px['Ticker'] = px['Ticker'].apply(strip_delisted)
+        # 在 pivot 之前使用新的函数清理 Ticker
+        px['Ticker'] = tidy_ticker(px['Ticker'])
+        px.dropna(subset=['Ticker'], inplace=True)
         price_wide = px.pivot(index='Date', columns='Ticker', values='Adj. Close')
         print(f"Successfully loaded and pivoted price data. Shape: {price_wide.shape}")
     except FileNotFoundError:
