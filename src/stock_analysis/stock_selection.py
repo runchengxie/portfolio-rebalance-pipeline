@@ -25,7 +25,7 @@ FACTOR_WEIGHTS = {'cfo': 1, 'ceq': 1, 'txt': 1, 'd_txt': 1, 'd_at': -1, 'd_rect'
 def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     """
     从本地CSV文件加载、清洗和合并财务数据。
-    (此函数保持不变)
+    明确使用 'Publish Date' 作为Point-in-Time的依据。
     """
     print(f"Loading financial data from local CSV files in: {data_dir}")
     bs_path = data_dir / 'us-balance-ttm.csv'
@@ -43,43 +43,48 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
     def clean_dataframe(df):
-        # 使用 'Publish Date' 如果存在, 否则用 'Report Date'
-        # 这里我们统一使用 'Report Date' 作为已知时间的依据
-        date_col = 'Publish Date' if 'Publish Date' in df.columns else 'Report Date'
-        df.rename(columns={date_col: 'date_known'}, inplace=True)
+        # 明确使用 'Publish Date' 作为我们判断信息是否"已知"的唯一时间戳
+        df.rename(columns={'Publish Date': 'date_known'}, inplace=True)
         df['date_known'] = pd.to_datetime(df['date_known'], errors='coerce')
         
         df.rename(columns={'Fiscal Year': 'year'}, inplace=True)
         numeric_cols = [col for col in df.columns if df[col].dtype == 'object' and col not in ['Ticker', 'Currency', 'Fiscal Period']]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # 删除没有有效 'date_known' 的行
         return df.dropna(subset=['date_known', 'year']).astype({'year': 'int'})
 
     df_bs = clean_dataframe(df_bs)
     df_cf = clean_dataframe(df_cf)
     df_is = clean_dataframe(df_is)
     
-    # 注意: 为了保证数据一致性, 合并键应包含 'year' 和 'date_known'
-    merge_keys = ['Ticker', 'year', 'date_known']
+    # 为了保证合并的是完全相同的报告（对应相同的发布日期），将 'date_known' 加入合并键
+    merge_keys = ['Ticker', 'year', 'date_known'] 
+    
+    # 选择需要的列，确保 'date_known' 包含在内
     df_cf_subset = df_cf[['Ticker', 'year', 'date_known', 'Net Cash from Operating Activities']]
     df_is_subset = df_is[['Ticker', 'year', 'date_known', 'Income Tax (Expense) Benefit, Net']]
     df_bs_subset = df_bs[['Ticker', 'year', 'date_known', 'Total Equity', 'Total Assets', 'Accounts & Notes Receivable']]
     
+    # 重命名其他列
     df_bs_subset = df_bs_subset.rename(columns={'Total Equity': 'ceq', 'Total Assets': 'at', 'Accounts & Notes Receivable': 'rect'})
     df_cf_subset = df_cf_subset.rename(columns={'Net Cash from Operating Activities': 'cfo'})
     df_is_subset = df_is_subset.rename(columns={'Income Tax (Expense) Benefit, Net': 'txt'})
 
+    # 使用新的 merge_keys 进行合并
     df_merged = pd.merge(df_bs_subset, df_is_subset, on=merge_keys, how='inner')
     df_final = pd.merge(df_merged, df_cf_subset, on=merge_keys, how='inner')
     
-    # 按报告日期排序, 确保 diff() 计算是时序正确的
-    df_final = df_final.sort_values(['Ticker', 'date_known'], ascending=True)
-    df_final = df_final.drop_duplicates(subset=['Ticker', 'year'], keep='last') # 保留同一年份最新的报告
+    # 按发布日期排序，如果同一财年有多次发布（如重述），保留最新的那次发布
+    df_final = df_final.sort_values(['Ticker', 'year', 'date_known'], ascending=True)
+    df_final = df_final.drop_duplicates(subset=['Ticker', 'year'], keep='last')
 
+    # 数据清洗
     df_final.loc[df_final['at'] <= 0, 'at'] = np.nan
     df_final.loc[df_final['ceq'] <= 0, 'ceq'] = np.nan
 
-    print(f"Merged data has {len(df_final)} rows.")
+    print(f"Merged data has {len(df_final)} rows, using 'Publish Date' as the point-in-time reference.")
     return df_final
 
 
