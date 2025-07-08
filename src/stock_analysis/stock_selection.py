@@ -196,7 +196,7 @@ def run_backtest(df_financials: pd.DataFrame,
     for i, current_date in enumerate(backtest_dates):
         print(f"\nProcessing backtest for date: {current_date.date()} ({i+1}/{len(backtest_dates)})")
         
-        # 3. 为当前日期计算滚动聚合得分 (FIXED: This is the single correct call)
+        # 3. 为当前日期计算滚动聚合得分
         df_agg_scores = calc_factor_scores(df_financials, current_date, ROLLING_WINDOW_YEARS)
         
         if df_agg_scores.empty:
@@ -351,6 +351,12 @@ def main():
         # 在 pivot 之前使用新的函数清理 Ticker
         px['Ticker'] = tidy_ticker(px['Ticker'])
         px.dropna(subset=['Ticker'], inplace=True)
+        
+        # --- FIX STARTS HERE ---
+        # 处理 (Date, Ticker) 组合的重复项，保留最后一个
+        px.drop_duplicates(subset=['Date', 'Ticker'], keep='last', inplace=True)
+        # --- FIX ENDS HERE ---
+
         price_wide = px.pivot(index='Date', columns='Ticker', values='Adj. Close')
         print(f"Successfully loaded and pivoted price data. Shape: {price_wide.shape}")
     except FileNotFoundError:
