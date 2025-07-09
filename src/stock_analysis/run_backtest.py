@@ -1,5 +1,3 @@
-# src/stock_analysis/run_backtest.py
-
 import pandas as pd
 from pathlib import Path
 
