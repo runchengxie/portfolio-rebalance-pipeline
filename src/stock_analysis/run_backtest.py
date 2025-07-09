@@ -169,7 +169,7 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
             group = group.set_index('Date')
             # 对齐到主时间线
             aligned_df = group.reindex(master_index).fillna(method='ffill')
-            aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']] = aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']].fillna(method='ffill')
+            aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']] = aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']].ffill()
             aligned_df.loc[:, 'Volume'] = aligned_df['Volume'].fillna(0)
             aligned_df.loc[:, 'Dividend'] = aligned_df['Dividend'].fillna(0)
 
@@ -214,7 +214,7 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float):
         cerebro.adddata(data, name=name)
 
     cerebro.addstrategy(PointInTimeStrategy, portfolios=portfolios)
-    cerebro.addanalyzer(bt.analyzers.Sharpe, _name='sharpe')
+    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
     cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
 
