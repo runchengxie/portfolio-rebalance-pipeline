@@ -153,14 +153,29 @@ def print_analysis(analyzers, initial_cash):
     pyfolio_analyzer = analyzers.pyfolio.get_analysis()
     returns_analyzer = analyzers.timeret.get_analysis()
 
+    # 在某些 backtrader 版本中, 'returns' 可能是一个 OrderedDict。
+    # 我们将其显式转换为 pandas.Series 以确保兼容性。
+    # 使用 .get('returns', {}) 保证在'returns'键不存在时也不会出错。
+    returns_series = pd.Series(pyfolio_analyzer.get('returns', {}))
+
     # 从pyfolio分析器中获取投资组合的期初和期末价值
     total_open = initial_cash
-    total_close = initial_cash * (1 + pyfolio_analyzer['returns'].cumsum().iloc[-1])
-    total_return = (total_close - total_open) / total_open if total_open != 0 else 0
 
-    # 计算年化回报率
-    num_years = len(pyfolio_analyzer['returns']) / 252  # 假设一年有252个交易日
-    annual_return = (1 + total_return) ** (1/num_years) - 1 if num_years > 0 else 0
+    # 处理回测期间没有产生任何收益的特殊情况
+    if not returns_series.empty:
+        total_close = initial_cash * (1 + returns_series.cumsum().iloc[-1])
+        total_return = (total_close - total_open) / total_open if total_open != 0 else 0.0
+        
+        # 计算年化回报率
+        num_years = len(returns_series) / 252  # 假设一年有252个交易日
+        annual_return = (1 + total_return) ** (1/num_years) - 1 if num_years > 0 else 0.0
+    else:
+        # 如果没有收益，最终价值等于期初价值
+        total_close = total_open
+        total_return = 0.0
+        num_years = 0.0
+        annual_return = 0.0
+
 
     print(f'期初价值: {total_open:,.2f}')
     print(f'期末价值: {total_close:,.2f}')
