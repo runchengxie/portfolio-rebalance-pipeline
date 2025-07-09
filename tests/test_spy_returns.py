@@ -24,7 +24,7 @@ if not PRICE_DATA_FILE.exists():
     PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.txt'
 
 INITIAL_CASH = 100_000.0
-START_DATE = datetime.datetime(2016, 1, 1)
+START_DATE = datetime.datetime(2015, 8, 31)
 END_DATE = datetime.datetime(2023, 12, 31)
 
 # --- 辅助函数 ---
@@ -39,6 +39,11 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
         raise FileNotFoundError(f"Price data file not found: {price_path}")
 
     px_full = pd.read_csv(price_path, sep=';', parse_dates=['Date'])
+    
+    # --- 关键修复：清理列名中的所有潜在空格 ---
+    px_full.columns = px_full.columns.str.strip()
+    # -------------------------------------------
+
     px_full['Ticker'] = tidy_ticker(px_full['Ticker'])
     px_full.dropna(subset=['Ticker', 'Date', 'Adj. Close'], inplace=True)
     
@@ -49,7 +54,14 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
     ].copy()
 
     if spy_df.empty:
-        raise ValueError(f"No data found for SPY ticker '{SPY_TICKER}' in the specified date range.")
+        # 提供了更详细的错误信息
+        full_date_range = px_full[px_full['Ticker'] == SPY_TICKER]['Date']
+        if not full_date_range.empty:
+             raise ValueError(f"No data found for SPY ticker '{SPY_TICKER}' in the specified date range "
+                           f"({start_date.date()} to {end_date.date()}). "
+                           f"However, data exists in the file from {full_date_range.min().date()} to {full_date_range.max().date()}.")
+        else:
+            raise ValueError(f"No data found for SPY ticker '{SPY_TICKER}' in the entire file.")
 
     spy_df.set_index('Date', inplace=True)
     
@@ -60,9 +72,17 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
     }, inplace=True)
     
     # 确保所有必需的列都存在
-    for col in ['open', 'high', 'low', 'close', 'volume', 'dividend']:
+    # 检查 'close' 列是否存在，这是最重要的
+    if 'close' not in spy_df.columns:
+        raise KeyError("Failed to create 'close' column. Check if 'Adj. Close' exists in the CSV and is spelled correctly.")
+
+    for col in ['open', 'high', 'low', 'volume', 'dividend']:
         if col not in spy_df.columns:
-            spy_df[col] = spy_df['close'] if col in ['open', 'high', 'low'] else 0
+            # 如果 'open', 'high', 'low' 不存在, 用 'close' 填充
+            if col in ['open', 'high', 'low']:
+                spy_df[col] = spy_df['close']
+            else: # 其他缺失列（如volume, dividend）用0填充
+                spy_df[col] = 0
 
     spy_df['openinterest'] = 0
     
