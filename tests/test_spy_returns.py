@@ -41,34 +41,28 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
     px_full = pd.read_csv(price_path, sep=';', parse_dates=['Date'])
     px_full.columns = px_full.columns.str.strip()
     
-    # --- 保留这行调试代码 ---
     print(">>> Actual CSV Columns:", px_full.columns.tolist())
 
-    # --- 关键修复：强制转换数据类型并处理NaN ---
     numeric_cols = ['Open', 'High', 'Low', 'Close', 'Adj. Close', 'Volume', 'Dividend']
     for col in numeric_cols:
         if col in px_full.columns:
-            # 强制转为数值，无法转换的变NaN
             px_full[col] = pd.to_numeric(px_full[col], errors='coerce')
         else:
-            print(f"Warning: Column '{col}' not found in CSV. It will be created with 0s.")
             px_full[col] = 0
 
-    # 对分红的NaN填充为0
-    if 'Dividend' in px_full.columns:
-        px_full['Dividend'].fillna(0.0, inplace=True)
-    
-    # ----------------------------------------------
-    
-    px_full['Ticker'] = tidy_ticker(px_full['Ticker'])
-    
-    # 在选择数据前，先填充价格和交易量的NaN，以防数据不连续
+    # --- ROBUST NaN FILLING ---
+    # Fix the FutureWarning and ensure Dividend is filled first
+    px_full['Dividend'] = px_full['Dividend'].fillna(0.0)
+
+    # Use a two-pass fill for price/volume to handle NaNs at the start or end
     price_volume_cols = ['Open', 'High', 'Low', 'Close', 'Adj. Close', 'Volume']
     for col in price_volume_cols:
-         if col in px_full.columns:
-            # 用前一个有效值填充
-            px_full[col] = px_full.groupby('Ticker')[col].ffill()
-            
+        if col in px_full.columns:
+            # First, forward-fill, then backward-fill any remaining NaNs (like at the start)
+            px_full[col] = px_full.groupby('Ticker')[col].ffill().bfill()
+    # --- END OF ROBUST FILLING ---
+
+    px_full['Ticker'] = tidy_ticker(px_full['Ticker'])
     px_full.dropna(subset=['Ticker', 'Date', 'Adj. Close'], inplace=True)
     
     spy_df = px_full[
@@ -87,21 +81,17 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
         'Adj. Close': 'close', 'Volume': 'volume', 'Dividend': 'dividend'
     }, inplace=True)
     
-    # backtrader需要所有OHLCV列，这里确保它们存在
     for col in ['open', 'high', 'low', 'close', 'volume', 'dividend']:
         if col not in spy_df.columns:
-             # 这段代码现在理论上不应该被执行，但作为最后的保险
             spy_df[col] = 0.0
 
     spy_df['openinterest'] = 0
     
-    print(f"Loaded {len(spy_df)} rows for SPY from {spy_df.index.min().date()} to {spy_df.index.max().date()}.")
-    
-    # 再次检查是否有NaN混入
+    # Final check for any NaNs
     if spy_df[['open', 'high', 'low', 'close', 'volume']].isnull().values.any():
-        print("Warning: NaN values detected in the final data feed. Backtest might fail.")
-        print(spy_df[spy_df.isnull().any(axis=1)])
+        raise ValueError("NaN values still present in the final data feed. Halting.")
 
+    print(f"Loaded {len(spy_df)} rows for SPY from {spy_df.index.min().date()} to {spy_df.index.max().date()}.")
     return spy_df[['open', 'high', 'low', 'close', 'volume', 'dividend', 'openinterest']]
 
 # --- Backtrader 策略 ---
