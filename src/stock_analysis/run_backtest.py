@@ -4,6 +4,10 @@ import backtrader as bt
 import pandas as pd
 from pathlib import Path
 import datetime
+# --- 新增的导入 ---
+import logging
+import sys
+# --- 新增结束 ---
 
 # --- 路径配置 ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -34,6 +38,7 @@ class PointInTimeStrategy(bt.Strategy):
 
     def log(self, txt, dt=None):
         dt = dt or self.spy_data.datetime.date(0)
+        # 现在 log 方法会通过 print 被日志系统捕获
         print(f'{dt.isoformat()} - {txt}')
 
     def get_next_rebalance_date(self):
@@ -108,11 +113,9 @@ def load_all_price_data(price_path: Path, all_needed_tickers: set, start_date: d
     px_full['Ticker'] = tidy_ticker(px_full['Ticker'])
     px_full.dropna(subset=['Ticker', 'Date', 'Adj. Close'], inplace=True)
     
-    # Filter the full dataframe to a broad date range to reduce memory usage before setting index
     px = px_full[(px_full['Date'] >= pd.to_datetime(start_date)) & (px_full['Date'] <= pd.to_datetime(end_date))].copy()
     px.set_index('Date', inplace=True)
 
-    # Ensure required columns exist
     for col in ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']:
         if col not in px.columns:
             px[col] = px['Adj. Close'] if col in ['Open', 'High', 'Low', 'Close'] else 0
@@ -124,7 +127,6 @@ def load_all_price_data(price_path: Path, all_needed_tickers: set, start_date: d
     
     px['openinterest'] = 0
 
-    # Create the master timeline from the SPY benchmark ticker
     if SPY_TICKER not in px['Ticker'].unique():
         raise ValueError(f"SPY ticker '{SPY_TICKER}' not found in price data.")
     
@@ -140,14 +142,9 @@ def load_all_price_data(price_path: Path, all_needed_tickers: set, start_date: d
             print(f"  [WARNING] No price data for ticker '{ticker}' in the specified date range.")
             continue
         
-        # Align to master timeline
         df_aligned = df_ticker_raw.reindex(master_index)
-        
-        # Handle NaNs created by reindexing: forward-fill prices, fill volume with 0
         df_aligned[['open', 'high', 'low', 'close']] = df_aligned[['open', 'high', 'low', 'close']].ffill()
         df_aligned[['volume', 'dividend', 'openinterest']] = df_aligned[['volume', 'dividend', 'openinterest']].fillna(0)
-        
-        # Drop any remaining NaNs at the beginning of the series (for stocks that start trading later)
         df_aligned.dropna(inplace=True)
 
         if not df_aligned.empty:
@@ -193,7 +190,53 @@ def print_analysis(analyzers, initial_cash):
             print(f'最大回撤: {dd_analysis.max.drawdown:.2%}')
             print(f'最大回撤周期 (天): {dd_analysis.max.len}')
 
-# --- 主逻辑 ---
+# ==============================================================================
+# --- 新增：日志配置 ---
+# ==============================================================================
+
+class StreamToLogger:
+    """
+    一个辅助类，用于将流（如 sys.stdout, sys.stderr）的输出重定向到 logging 模块。
+    """
+    def __init__(self, logger, level):
+        self.logger = logger
+        self.level = level
+
+    def write(self, message):
+        # 移除消息末尾的空白符，避免打印空行
+        if message.rstrip():
+            self.logger.log(self.level, message.rstrip())
+
+    def flush(self):
+        # 这个方法是必须的，以满足文件对象的接口
+        pass
+
+def setup_logging(log_dir: Path):
+    """配置日志，使其同时输出到控制台和文件"""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file_path = log_dir / f"backtest_run_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+    # 1. 配置根 logger
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s',
+                        handlers=[
+                            logging.FileHandler(log_file_path, mode='w', encoding='utf-8'),
+                            logging.StreamHandler(sys.__stdout__) # 使用原始 stdout
+                        ])
+
+    # 2. 重定向 stdout 和 stderr
+    logger = logging.getLogger()
+    sys.stdout = StreamToLogger(logger, logging.INFO)
+    sys.stderr = StreamToLogger(logger, logging.ERROR)
+    
+    print(f"日志系统已启动。所有输出将被记录到: {log_file_path}")
+    print("-" * 60)
+
+
+# ==============================================================================
+# --- 新增结束 ---
+# ==============================================================================
+
 def main():
     print("--- Running Backtest with Backtrader ---")
 
@@ -205,7 +248,7 @@ def main():
             return
 
         start_date = rebalance_dates[0]
-        end_date = rebalance_dates[-1] + datetime.timedelta(days=90) # Assume a quarter after last signal
+        end_date = rebalance_dates[-1] + datetime.timedelta(days=90)
         print(f"\n[INFO] Setting unified backtest period from {start_date} to {end_date}")
 
         all_portfolio_tickers = set().union(*(set(df['Ticker']) for df in portfolios.values()))
@@ -213,7 +256,11 @@ def main():
         price_data_dict = load_all_price_data(PRICE_DATA_FILE, all_needed_tickers, start_date, end_date)
 
     except (FileNotFoundError, ValueError) as e:
-        print(f"[ERROR] {e}. Please run the selection script first or check your data files.")
+        # 使用 logging 记录错误
+        logging.error(f"[ERROR] {e}. Please run the selection script first or check your data files.", exc_info=False)
+        return
+    except Exception as e:
+        logging.error(f"[FATAL] An unhandled exception occurred during data loading: {e}", exc_info=True)
         return
 
     if SPY_TICKER not in price_data_dict:
@@ -225,10 +272,8 @@ def main():
     cerebro_main = bt.Cerebro(stdstats=False)
     cerebro_main.addstrategy(PointInTimeStrategy, portfolios=portfolios)
 
-    # 添加所有需要的股票数据，数据已预先对齐
     for ticker, df in price_data_dict.items():
         if ticker in all_needed_tickers:
-            # Data is pre-aligned, so fromdate/todate is not strictly necessary but harmless
             data_feed = bt.feeds.PandasData(dataname=df, name=ticker)
             cerebro_main.adddata(data_feed)
             
@@ -248,7 +293,6 @@ def main():
     cerebro_spy = bt.Cerebro(stdstats=False)
     cerebro_spy.addstrategy(BuyAndHoldSpy)
     
-    # 只添加SPY的数据
     spy_data_feed = bt.feeds.PandasData(dataname=price_data_dict[SPY_TICKER], name=SPY_TICKER)
     cerebro_spy.adddata(spy_data_feed)
     
@@ -274,7 +318,7 @@ def main():
     if spy_results: print_analysis(spy_results[0].analyzers, INITIAL_CASH)
     print("="*50 + "\n")
 
-    # --- 绘图 (只画主策略的图) ---
+    # --- 绘图 ---
     try:
         plot_path = OUTPUTS_DIR / 'backtrader_plot.png'
         print(f"Generating plot for the main strategy... saving to {plot_path}")
@@ -282,8 +326,11 @@ def main():
         fig.savefig(plot_path, dpi=300)
         print("Plot saved successfully.")
     except Exception as e:
-        print(f"[WARNING] Could not generate plot. Error: {e}")
+        logging.warning(f"Could not generate plot. Error: {e}")
         print("This might happen if you are running in an environment without a display backend.")
 
 if __name__ == '__main__':
+    # 在所有操作开始前，先设置好日志
+    # 注意，日志文件的路径将基于 OUTPUTS_DIR
+    setup_logging(log_dir=OUTPUTS_DIR / 'logs') 
     main()
