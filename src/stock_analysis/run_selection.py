@@ -140,7 +140,7 @@ def main():
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
         all_period_portfolios[current_date.date()] = top_stocks.reset_index()
 
-    if portfolios:
+    if all_period_portfolios:
         with pd.ExcelWriter(OUTPUT_FILE) as writer:
             for date, df_portfolio in all_period_portfolios.items():
                 df_portfolio.to_excel(writer, sheet_name=str(date), index=False)
