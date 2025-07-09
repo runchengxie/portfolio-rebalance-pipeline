@@ -28,8 +28,8 @@ if not PRICE_DATA_FILE.exists():
     PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.txt'
 
 INITIAL_CASH = 100_000.0
-START_DATE = datetime.datetime(2015, 12, 31)
-END_DATE = datetime.datetime(2024, 12, 31)
+START_DATE = datetime.datetime(2020, 12, 31)
+END_DATE = datetime.datetime(2025, 3, 31)
 
 # --- 辅助函数 ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
