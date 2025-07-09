@@ -44,6 +44,8 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
     px_full.columns = px_full.columns.str.strip()
     # -------------------------------------------
 
+    print(">>> Actual CSV Columns:", px_full.columns.tolist())
+    
     px_full['Ticker'] = tidy_ticker(px_full['Ticker'])
     px_full.dropna(subset=['Ticker', 'Date', 'Adj. Close'], inplace=True)
     
