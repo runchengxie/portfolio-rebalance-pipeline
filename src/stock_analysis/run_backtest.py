@@ -177,7 +177,8 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
                 data_feeds[ticker] = bt.feeds.PandasData(dataname=aligned_df, name=ticker)
 
         print(f"Loaded data for {len(data_feeds)} tickers.")
-        return data_feeds
+        # 返回数据馈送字典和原始的 SPY DataFrame
+        return data_feeds, spy_df
 
     finally:
         con.close()
@@ -234,14 +235,18 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float):
     print(f'Total Return: {total_return*100:.2f}%')
     print('--- End of Backtest ---')
 
-def run_spy_benchmark_strategy(spy_data_feed, start_date, end_date):
+def run_spy_benchmark_strategy(spy_df, start_date, end_date):
     """
     运行买入并持有SPY的基准策略。
     """
     print("\n--- Running Buy and Hold SPY Benchmark ---")
     cerebro = bt.Cerebro()
     cerebro.broker.set_cash(INITIAL_CASH)
+
+    # 从传入的 DataFrame 创建一个新的数据馈送
+    spy_data_feed = bt.feeds.PandasData(dataname=spy_df, name=SPY_TICKER)
     cerebro.adddata(spy_data_feed, name=SPY_TICKER)
+    
     cerebro.addstrategy(BuyAndHoldSpy)
     cerebro.run()
     final_value = cerebro.broker.getvalue()
@@ -278,7 +283,8 @@ def main(run_spy_benchmark=True):
 
     import time
     start_time = time.time()
-    price_data_dict = load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
+    # 接收两个返回值：数据馈送字典和原始的SPY DataFrame
+    price_data_dict, spy_df_raw = load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
     load_time = time.time() - start_time
     print(f"\n[PERFORMANCE] 数据加载耗时: {load_time:.2f}秒")
 
@@ -289,9 +295,10 @@ def main(run_spy_benchmark=True):
     run_backtest(price_data_dict, portfolios, initial_cash=INITIAL_CASH)
 
     if run_spy_benchmark:
-        spy_data_feed = price_data_dict.get(SPY_TICKER)
-        if spy_data_feed:
-            run_spy_benchmark_strategy(spy_data_feed, start_date, end_date)
+        # 检查原始的SPY DataFrame是否为空
+        if spy_df_raw is not None and not spy_df_raw.empty:
+            # 将原始 DataFrame 传递给基准测试函数
+            run_spy_benchmark_strategy(spy_df_raw, start_date, end_date)
         else:
             print("[WARNING] SPY data not found, cannot run benchmark.")
 
