@@ -5,6 +5,7 @@ import datetime
 import sqlite3
 import logging
 import sys
+import time
 
 # --- 路径配置 ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -20,7 +21,6 @@ PORTFOLIO_FILE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELEC
 DB_PATH = DATA_DIR / 'financial_data.db'
 
 INITIAL_CASH = 1_000_000.0
-SPY_TICKER = 'SPY'
 
 # --- Backtrader 策略 ---
 class PointInTimeStrategy(bt.Strategy):
@@ -30,11 +30,11 @@ class PointInTimeStrategy(bt.Strategy):
         self.rebalance_dates = sorted(self.p.portfolios.keys())
         self.next_rebalance_idx = 0
         self.get_next_rebalance_date()
-        # 将SPY数据单独保存，用于获取当前日期
-        self.spy_data = self.getdatabyname(SPY_TICKER)
+        # 使用第一个数据源作为统一的时间线基准
+        self.timeline = self.datas[0]
 
     def log(self, txt, dt=None):
-        dt = dt or self.spy_data.datetime.date(0)
+        dt = dt or self.timeline.datetime.date(0)
         # 现在 log 方法会通过 print 被日志系统捕获
         print(f'{dt.isoformat()} - {txt}')
 
@@ -45,13 +45,13 @@ class PointInTimeStrategy(bt.Strategy):
             self.next_rebalance_date = None
 
     def next(self):
-        current_date = self.spy_data.datetime.date(0)
+        current_date = self.timeline.datetime.date(0)
 
         if self.next_rebalance_date and current_date >= self.next_rebalance_date:
             self.log(f'--- Rebalancing on {current_date} for signal date {self.next_rebalance_date} ---')
             target_tickers_df = self.p.portfolios[self.next_rebalance_date]
             target_tickers = set(target_tickers_df['Ticker'])
-            available_data_tickers = {d._name for d in self.datas if d._name != SPY_TICKER}
+            available_data_tickers = {d._name for d in self.datas}
             final_target_tickers = target_tickers.intersection(available_data_tickers)
 
             if not final_target_tickers:
@@ -64,7 +64,7 @@ class PointInTimeStrategy(bt.Strategy):
             
             # Sell stocks no longer in the target portfolio
             for ticker in current_positions:
-                if ticker not in final_target_tickers and ticker != SPY_TICKER:
+                if ticker not in final_target_tickers:
                     data = self.getdatabyname(ticker)
                     self.log(f'Closing position in {ticker}')
                     self.order_target_percent(data=data, target=0.0)
@@ -80,16 +80,6 @@ class PointInTimeStrategy(bt.Strategy):
             self.get_next_rebalance_date()
             self.log('--- Rebalancing Complete ---')
 
-class BuyAndHoldSpy(bt.Strategy):
-    def start(self):
-        self.spy = self.datas[0]
-        self.log(f"Strategy started. Initial portfolio value: {self.broker.getvalue():.2f}")
-        self.order_target_percent(data=self.spy, target=0.99)
-
-    def log(self, txt, dt=None):
-        dt = dt or self.datas[0].datetime.date(0)
-        print(f'{dt.isoformat()} - SPY Strategy - {txt}')
-
 # --- 辅助函数 ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
     return col.astype('string').str.upper().str.strip().str.replace(r'_DELISTED$', '', regex=True).replace({'': pd.NA})
@@ -103,7 +93,7 @@ def load_portfolios(portfolio_path: Path) -> dict:
 
 def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_date: datetime.date, end_date: datetime.date) -> dict:
     """
-    从SQLite数据库加载并准备所有价格数据，将所有股票对齐到主时间线。
+    从SQLite数据库加载并准备所有价格数据，将所有股票对齐到统一的主时间线。
     """
     print("Loading and preparing all price data from database...")
     
@@ -115,27 +105,24 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
     con = sqlite3.connect(db_path)
     
     try:
-        # 首先获取SPY数据以建立主时间线
-        spy_query = """
-        SELECT Date, Open, High, Low, Close, Volume, Dividend
+        # 首先，通过查询范围内的所有唯一日期来建立主时间线
+        date_query = """
+        SELECT DISTINCT Date 
         FROM share_prices 
-        WHERE Ticker = ? AND Date >= ? AND Date <= ?
+        WHERE Date >= ? AND Date <= ?
         ORDER BY Date
         """
-        
-        spy_df = pd.read_sql_query(
-            spy_query,
+        master_dates_df = pd.read_sql_query(
+            date_query,
             con,
-            params=[SPY_TICKER, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')],
+            params=[start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')],
             parse_dates=['Date']
         )
+        if master_dates_df.empty:
+            raise ValueError("No trading days found in the database for the specified date range.")
         
-        if spy_df.empty:
-            raise ValueError(f"SPY ticker '{SPY_TICKER}' not found in database for the specified date range.")
-        
-        spy_df.set_index('Date', inplace=True)
-        master_index = spy_df.index.unique().sort_values()
-        print(f"Master timeline created from SPY data with {len(master_index)} trading days.")
+        master_index = pd.to_datetime(master_dates_df['Date'])
+        print(f"Master timeline created with {len(master_index)} trading days.")
         
         # 批量查询所有需要的股票数据
         tickers_list = list(all_needed_tickers)
@@ -158,14 +145,7 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
         )
         
         data_feeds = {}
-        # 将SPY数据添加到feeds中
-        data_feeds[SPY_TICKER] = bt.feeds.PandasData(dataname=spy_df, name=SPY_TICKER)
-
-        # 处理其他股票
         for ticker, group in all_data.groupby('Ticker'):
-            if ticker == SPY_TICKER:
-                continue
-            
             group = group.set_index('Date')
             # 对齐到主时间线
             aligned_df = group.reindex(master_index).fillna(method='ffill')
@@ -177,22 +157,15 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
                 data_feeds[ticker] = bt.feeds.PandasData(dataname=aligned_df, name=ticker)
 
         print(f"Loaded data for {len(data_feeds)} tickers.")
-        # 返回数据馈送字典和原始的 SPY DataFrame
-        return data_feeds, spy_df
+        return data_feeds
 
     finally:
         con.close()
 
 def setup_logging():
-    """
-    配置日志记录，将标准输出重定向到文件和控制台。
-    """
     log_file = OUTPUTS_DIR / 'backtest_log.txt'
-    
-    # 清空旧的日志文件
     if log_file.exists():
         log_file.unlink()
-        
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(message)s',
@@ -203,16 +176,16 @@ def setup_logging():
     )
     print(f"日志将记录到: {log_file}")
 
-def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float):
+def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_date: datetime.date, end_date: datetime.date):
     """
-    运行主要的回测策略。
+    运行主要的回测策略，并在最后打印包含时间段的总结报告。
     """
     print("\n--- Running Point-in-Time Strategy ---")
     cerebro = bt.Cerebro()
     cerebro.broker.set_cash(initial_cash)
 
-    for name, data in data_feeds.items():
-        cerebro.adddata(data, name=name)
+    for name in sorted(data_feeds.keys()):
+        cerebro.adddata(data_feeds[name], name=name)
 
     cerebro.addstrategy(PointInTimeStrategy, portfolios=portfolios)
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
@@ -220,44 +193,31 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float):
     cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
 
     results = cerebro.run()
-    final_value = cerebro.broker.getvalue()
-    print(f'\n--- Backtest Results ---')
-    print(f'Final Portfolio Value: {final_value:,.2f}')
     
-    # 提取分析结果
+    # --- 最终结果报告 ---
+    final_value = cerebro.broker.getvalue()
     strat = results[0]
     sharpe_ratio = strat.analyzers.sharpe.get_analysis().get('sharperatio', float('nan'))
     max_drawdown = strat.analyzers.drawdown.get_analysis().max.drawdown
     total_return = strat.analyzers.returns.get_analysis().get('rtot', float('nan'))
-    
-    print(f'Sharpe Ratio: {sharpe_ratio:.2f}')
-    print(f'Max Drawdown: {max_drawdown:.2f}%')
-    print(f'Total Return: {total_return*100:.2f}%')
-    print('--- End of Backtest ---')
 
-def run_spy_benchmark_strategy(spy_df, start_date, end_date):
-    """
-    运行买入并持有SPY的基准策略。
-    """
-    print("\n--- Running Buy and Hold SPY Benchmark ---")
-    cerebro = bt.Cerebro()
-    cerebro.broker.set_cash(INITIAL_CASH)
+    print(f'\n' + '='*50)
+    print(f'{"Backtest Results":^50}')
+    print(f'='*50)
+    print(f"Time Period Covered:     {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    print(f"Initial Portfolio Value: ${initial_cash:,.2f}")
+    print(f"Final Portfolio Value:   ${final_value:,.2f}")
+    print("-" * 50)
+    print(f"Total Return:            {total_return*100:.2f}%")
+    print(f"Max Drawdown:            {max_drawdown:.2f}%")
+    print(f"Sharpe Ratio:            {sharpe_ratio:.2f}")
+    print(f'='*50)
 
-    # 从传入的 DataFrame 创建一个新的数据馈送
-    spy_data_feed = bt.feeds.PandasData(dataname=spy_df, name=SPY_TICKER)
-    cerebro.adddata(spy_data_feed, name=SPY_TICKER)
-    
-    cerebro.addstrategy(BuyAndHoldSpy)
-    cerebro.run()
-    final_value = cerebro.broker.getvalue()
-    print(f'Final SPY Portfolio Value: {final_value:,.2f}')
-    print('--- End of SPY Benchmark ---')
-
-def main(run_spy_benchmark=True):
+def main():
     """
     主函数，用于运行回测。
     """
-    print("--- Running Backtest with Backtrader (Database Mode) ---")
+    print("--- Running Backtest with Backtrader (Database Mode, Portfolio-Only) ---")
     
     try:
         portfolios = load_portfolios(PORTFOLIO_FILE)
@@ -271,38 +231,34 @@ def main(run_spy_benchmark=True):
 
     print(f"✓ Loaded {len(portfolios)} portfolio snapshots.")
 
-    all_needed_tickers = set([SPY_TICKER])
+    all_needed_tickers = set()
     for df in portfolios.values():
         all_needed_tickers.update(tidy_ticker(df['Ticker']).dropna())
 
     start_date = min(portfolios.keys())
     end_date = max(portfolios.keys()) + datetime.timedelta(days=365)
-
-    print(f"Date range for backtest: {start_date} to {end_date}")
-    print(f"Total unique tickers required: {len(all_needed_tickers)}")
-
-    import time
+    
+    # 打印简要信息
+    print(f"Calculating for a total of {len(all_needed_tickers)} unique tickers...")
+    
     start_time = time.time()
-    # 接收两个返回值：数据馈送字典和原始的SPY DataFrame
-    price_data_dict, spy_df_raw = load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
+    price_data_dict = load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
     load_time = time.time() - start_time
     print(f"\n[PERFORMANCE] 数据加载耗时: {load_time:.2f}秒")
 
-    if not price_data_dict or SPY_TICKER not in price_data_dict:
-        print("[ERROR] Price data could not be loaded or SPY data is missing. Exiting.", file=sys.stderr)
+    if not price_data_dict:
+        print("[ERROR] Price data could not be loaded. Exiting.", file=sys.stderr)
         sys.exit(1)
 
-    run_backtest(price_data_dict, portfolios, initial_cash=INITIAL_CASH)
-
-    if run_spy_benchmark:
-        # 检查原始的SPY DataFrame是否为空
-        if spy_df_raw is not None and not spy_df_raw.empty:
-            # 将原始 DataFrame 传递给基准测试函数
-            run_spy_benchmark_strategy(spy_df_raw, start_date, end_date)
-        else:
-            print("[WARNING] SPY data not found, cannot run benchmark.")
+    # 将 start_date 和 end_date 传递给 run_backtest 函数
+    run_backtest(
+        data_feeds=price_data_dict, 
+        portfolios=portfolios, 
+        initial_cash=INITIAL_CASH,
+        start_date=start_date,
+        end_date=end_date
+    )
 
 if __name__ == '__main__':
-    # 配置日志
     setup_logging()
     main()
