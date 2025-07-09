@@ -273,7 +273,7 @@ def main(run_spy_benchmark=True):
     start_date = min(portfolios.keys())
     end_date = max(portfolios.keys()) + datetime.timedelta(days=365)
 
-    print(f"Date range for backtest: {start_date} to {end_date.date()}")
+    print(f"Date range for backtest: {start_date} to {end_date}")
     print(f"Total unique tickers required: {len(all_needed_tickers)}")
 
     import time
