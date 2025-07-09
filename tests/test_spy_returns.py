@@ -4,6 +4,7 @@ from pathlib import Path
 import datetime
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import sqlite3
 
 # --- 路径配置 ---
 try:
@@ -17,6 +18,9 @@ DATA_DIR = PROJECT_ROOT / 'data'
 OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# 数据库路径
+DB_PATH = DATA_DIR / 'financial_data.db'
+
 # --- 回测配置 ---
 SPY_TICKER = 'SPY'
 PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.csv'
@@ -24,7 +28,7 @@ if not PRICE_DATA_FILE.exists():
     PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.txt'
 
 INITIAL_CASH = 100_000.0
-START_DATE = datetime.datetime(2015, 8, 31)
+START_DATE = datetime.datetime(2015, 12, 31)
 END_DATE = datetime.datetime(2024, 12, 31)
 
 # --- 辅助函数 ---
@@ -32,9 +36,95 @@ def tidy_ticker(col: pd.Series) -> pd.Series:
     """统一清洗和格式化股票代码列。"""
     return col.astype('string').str.upper().str.strip().str.replace(r'_DELISTED$', '', regex=True).replace({'': pd.NA})
 
+def load_spy_data_from_db(db_path: Path, start_date: datetime.datetime, end_date: datetime.datetime) -> pd.DataFrame:
+    """从SQLite数据库加载并准备SPY的日频价格数据。"""
+    print(f"Loading SPY data from database: {db_path.name}...")
+    
+    if not db_path.exists():
+        raise FileNotFoundError(f"Database file not found: {db_path}")
+    
+    # 连接数据库
+    con = sqlite3.connect(db_path)
+    
+    try:
+        # 查询SPY数据
+        query = """
+        SELECT Date, Open, High, Low, Close, Volume, Dividend
+        FROM share_prices 
+        WHERE Ticker = ? AND Date >= ? AND Date <= ?
+        ORDER BY Date
+        """
+        
+        spy_data = pd.read_sql_query(
+            query, 
+            con, 
+            params=[SPY_TICKER, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')],
+            parse_dates=['Date']
+        )
+        
+        if spy_data.empty:
+            raise ValueError(f"No SPY data found in database for the specified date range: {start_date} to {end_date}")
+        
+        # 设置日期为索引
+        spy_data.set_index('Date', inplace=True)
+        
+        # 重命名列以符合backtrader的要求
+        column_mapping = {
+            'Open': 'open',
+            'High': 'high', 
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume',
+            'Dividend': 'dividend'
+        }
+        
+        spy_data = spy_data.rename(columns=column_mapping)
+        
+        # 确保所有必需的列都存在
+        required_columns = ['open', 'high', 'low', 'close', 'volume', 'dividend']
+        for col in required_columns:
+            if col not in spy_data.columns:
+                if col == 'dividend':
+                    spy_data[col] = 0.0  # 如果没有分红列，设为0
+                else:
+                    raise ValueError(f"Required column '{col}' not found in data")
+        
+        spy_data['openinterest'] = 0
+        
+        # 填充缺失值
+        spy_data['dividend'] = spy_data['dividend'].fillna(0.0)
+        price_volume_cols = ['open', 'high', 'low', 'close', 'volume']
+        for col in price_volume_cols:
+            spy_data[col] = spy_data[col].ffill().bfill()
+        
+        # Final check for any NaNs
+        if spy_data[['open', 'high', 'low', 'close', 'volume']].isnull().values.any():
+            raise ValueError("NaN values still present in the final data feed. Halting.")
+        
+        print(f"Loaded {len(spy_data)} rows for SPY from {spy_data.index.min().date()} to {spy_data.index.max().date()}.")
+        
+        # 调试：检查分红数据
+        dividend_data = spy_data[spy_data['dividend'] > 0]
+        print(f"Found {len(dividend_data)} dividend payments:")
+        if len(dividend_data) > 0:
+            print(dividend_data[['close', 'dividend']].head())
+        
+        return spy_data[['open', 'high', 'low', 'close', 'volume', 'dividend', 'openinterest']]
+        
+    finally:
+        con.close()
+
 def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: datetime.datetime) -> pd.DataFrame:
-    """加载并准备SPY的日频价格数据。"""
-    print(f"Loading SPY data from {price_path.name}...")
+    """加载并准备SPY的日频价格数据。优先从数据库读取，如果失败则从CSV文件读取。"""
+    
+    # 优先尝试从数据库读取
+    try:
+        return load_spy_data_from_db(DB_PATH, start_date, end_date)
+    except Exception as e:
+        print(f"Failed to load from database: {e}")
+        print(f"Falling back to CSV file: {price_path.name}...")
+    
+    # 备用：从CSV文件读取
     if not price_path.exists():
         raise FileNotFoundError(f"Price data file not found: {price_path}")
 
