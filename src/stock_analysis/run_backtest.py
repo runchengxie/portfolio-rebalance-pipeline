@@ -148,31 +148,26 @@ def load_all_price_data(price_path: Path, all_needed_tickers: set) -> dict:
     print(f"Loaded price data for {len(data_feeds)} tickers.")
     return data_feeds
 
-def print_analysis(analyzers):
-    """打印分析器的结果 (修正版)"""
-    # 首先从分析器集合中获取名为 'returns' 的具体分析器
-    returns_analyzer = analyzers.returns
-    
-    # 现在从这个具体的分析器中获取投资组合价值
-    total_open = returns_analyzer.portfolio.startingvalue
-    total_close = returns_analyzer.portfolio.endingvalue
+def print_analysis(analyzers, initial_cash):
+    """打印分析器的结果"""
+    pyfolio_analyzer = analyzers.pyfolio.get_analysis()
+    returns_analyzer = analyzers.timeret.get_analysis()
+
+    # 从pyfolio分析器中获取投资组合的期初和期末价值
+    total_open = initial_cash
+    total_close = initial_cash * (1 + pyfolio_analyzer['returns'].cumsum().iloc[-1])
     total_return = (total_close - total_open) / total_open if total_open != 0 else 0
-    
-    # 同样，从正确的分析器获取日期
-    try:
-        num_years = (returns_analyzer.portfolio.last_dt - returns_analyzer.portfolio.first_dt).days / 365.25
-        annual_return = (1 + total_return) ** (1/num_years) - 1 if num_years > 0 else 0
-    except Exception:
-        num_years = 0
-        annual_return = 0
+
+    # 计算年化回报率
+    num_years = len(pyfolio_analyzer['returns']) / 252  # 假设一年有252个交易日
+    annual_return = (1 + total_return) ** (1/num_years) - 1 if num_years > 0 else 0
 
     print(f'期初价值: {total_open:,.2f}')
     print(f'期末价值: {total_close:,.2f}')
     print(f'总回报率: {total_return:.2%}')
     if num_years > 0:
         print(f'年化回报率: {annual_return:.2%}')
-    
-    # 其他分析器的访问方式是正确的，因为它们是通过名字从集合中访问的
+
     if analyzers.sharpe and hasattr(analyzers.sharpe, 'sharperatio') and analyzers.sharpe.sharperatio is not None:
         print(f'夏普比率 (年化): {analyzers.sharpe.sharperatio:.2f}')
     if analyzers.drawdown and hasattr(analyzers.drawdown, 'max') and analyzers.drawdown.max.drawdown is not None:
@@ -226,7 +221,7 @@ def main():
     cerebro.addobserver(bt.observers.Broker)
     cerebro.addobserver(bt.observers.Trades)
     cerebro.addobserver(bt.observers.Value)
-    cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
+    cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='timeret', timeframe=bt.TimeFrame.Days)
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', timeframe=bt.TimeFrame.Years)
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
     cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
@@ -240,12 +235,12 @@ def main():
     print("\n" + "="*40)
     print("      多因子选股策略 (Point-in-Time Strategy) 表现")
     print("="*40)
-    print_analysis(results[0].analyzers)
+    print_analysis(results[0].analyzers, INITIAL_CASH)
 
     print("\n" + "="*40)
     print("      买入并持有SPY (Buy & Hold SPY) 表现")
     print("="*40)
-    print_analysis(results[1].analyzers)
+    print_analysis(results[1].analyzers, INITIAL_CASH)
     print("="*40 + "\n")
 
     # 10. 绘图
