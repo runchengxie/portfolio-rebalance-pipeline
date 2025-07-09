@@ -1,5 +1,7 @@
+import backtrader as bt
 import pandas as pd
 from pathlib import Path
+import datetime
 
 # --- 路径配置 ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -8,124 +10,245 @@ OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- 回测配置 ---
-NUM_STOCKS_TO_SELECT = 50 # 确保这与选股脚本的配置一致
+NUM_STOCKS_TO_SELECT = 50
 PORTFOLIO_FILE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
-TRANSACTION_LAG_DAYS = 2 # 交易延迟天数
+PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.csv'
+if not PRICE_DATA_FILE.exists():
+    PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.txt'
+    
+INITIAL_CASH = 1_000_000.0
+SPY_TICKER = 'SPY' # 假设您的价格数据中有SPY作为基准
 
+# --- Backtrader 策略 ---
+class PointInTimeStrategy(bt.Strategy):
+    """
+    根据预先计算好的调仓信号进行等权重调仓的策略。
+    """
+    params = (
+        ('portfolios', None), # 接收选股结果的字典
+    )
+
+    def __init__(self):
+        self.rebalance_dates = sorted(self.p.portfolios.keys())
+        self.next_rebalance_idx = 0
+        self.get_next_rebalance_date()
+
+    def log(self, txt, dt=None):
+        """策略的日志记录功能"""
+        dt = dt or self.datas[0].datetime.date(0)
+        print(f'{dt.isoformat()} - {txt}')
+
+    def get_next_rebalance_date(self):
+        """获取下一个调仓日期"""
+        if self.next_rebalance_idx < len(self.rebalance_dates):
+            self.next_rebalance_date = self.rebalance_dates[self.next_rebalance_idx]
+        else:
+            self.next_rebalance_date = None # 没有更多调仓日了
+
+    def next(self):
+        """每个bar（通常是每天）都会调用此方法"""
+        current_date = self.datas[0].datetime.date(0)
+
+        # 检查是否到达或超过了调仓日
+        if self.next_rebalance_date and current_date >= self.next_rebalance_date:
+            self.log(f'--- Rebalancing on {current_date} for signal date {self.next_rebalance_date} ---')
+            
+            # 1. 获取新的目标股票列表
+            target_tickers_df = self.p.portfolios[self.next_rebalance_date]
+            target_tickers = set(target_tickers_df['Ticker'])
+            
+            # 获取所有可用的数据feed及其对应的ticker
+            available_data_tickers = {d._name for d in self.datas if d._name != SPY_TICKER}
+            
+            # 过滤出在数据源中存在的股票
+            final_target_tickers = target_tickers.intersection(available_data_tickers)
+            if not final_target_tickers:
+                self.log("Warning: No target tickers are available in the price data for this period.")
+                # 更新到下一个调仓日
+                self.next_rebalance_idx += 1
+                self.get_next_rebalance_date()
+                return
+
+            # 2. 卖出不再持有的股票
+            for data in self.datas:
+                ticker = data._name
+                if ticker != SPY_TICKER and self.getposition(data).size > 0:
+                    if ticker not in final_target_tickers:
+                        self.log(f'Closing position in {ticker}')
+                        self.order_target_percent(data=data, target=0.0)
+
+            # 3. 为新的目标股票组合分配资金（等权重）
+            target_percent = 1.0 / len(final_target_tickers)
+            for data in self.datas:
+                ticker = data._name
+                if ticker in final_target_tickers:
+                    self.log(f'Setting target position for {ticker} to {target_percent:.2%}')
+                    self.order_target_percent(data=data, target=target_percent)
+            
+            # 4. 更新到下一个调仓日期
+            self.next_rebalance_idx += 1
+            self.get_next_rebalance_date()
+            self.log('--- Rebalancing Complete ---')
+
+class BuyAndHoldSpy(bt.Strategy):
+    """一个简单的买入并持有SPY的基准策略"""
+    def start(self):
+        self.spy = self.datas[0] # 假设SPY是第一个传入的数据
+        self.order_target_percent(data=self.spy, target=0.99) # 几乎全部买入
+
+    def log(self, txt, dt=None):
+        dt = dt or self.datas[0].datetime.date(0)
+        # print(f'{dt.isoformat()} - SPY - {txt}') # 可以取消注释来查看SPY策略的日志
+
+# --- 辅助函数 ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
-    """统一清洗和格式化股票代码列。"""
     return col.astype('string').str.upper().str.strip().str.replace(r'_DELISTED$', '', regex=True).replace({'': pd.NA})
 
 def load_portfolios(portfolio_path: Path) -> dict:
-    """从Excel文件加载选股结果。"""
-    print(f"Loading portfolios from: {portfolio_path}")
     if not portfolio_path.exists():
-        print(f"[ERROR] Portfolio file not found. Please run the selection script first.")
-        return {}
-    
-    # pd.read_excel(None) 读取所有sheet到一个字典
-    xls = pd.read_excel(portfolio_path, sheet_name=None)
-    
-    # 将sheet name (字符串) 转换回日期对象
+        raise FileNotFoundError(f"Portfolio file not found: {portfolio_path}")
+    xls = pd.read_excel(portfolio_path, sheet_name=None, engine='openpyxl')
     portfolios = {pd.to_datetime(date_str).date(): df for date_str, df in xls.items()}
-    print(f"Successfully loaded {len(portfolios)} portfolios.")
-    return portfolios
+    return {k: v for k, v in portfolios.items() if not v.empty and 'Ticker' in v.columns}
 
-def load_price_data(data_dir: Path) -> pd.DataFrame:
-    """加载并处理日频价格数据。"""
-    print("Loading and processing daily price data...")
-    try:
-        price_path = data_dir / 'us-shareprices-daily.csv'
-        if not price_path.exists():
-            price_path = data_dir / 'us-shareprices-daily.txt'
-        
-        px = pd.read_csv(price_path, sep=';')
-        px['Date'] = pd.to_datetime(px['Date'])
-        px['Ticker'] = tidy_ticker(px['Ticker'])
-        px.dropna(subset=['Ticker'], inplace=True)
-        px.drop_duplicates(subset=['Date', 'Ticker'], keep='last', inplace=True)
-        
-        price_wide = px.pivot(index='Date', columns='Ticker', values='Adj. Close')
-        print(f"Price data loaded. Shape: {price_wide.shape}")
-        return price_wide
-    except Exception as e:
-        print(f"[ERROR] Failed to load or process price data: {e}")
-        return pd.DataFrame()
-
-def run_price_backtest(portfolios: dict, price_df: pd.DataFrame, lag_days: int) -> pd.DataFrame:
-    """根据选股结果和价格计算投资组合收益率。"""
-    print("Calculating portfolio returns...")
-    all_returns = []
-    portfolio_dates = sorted(portfolios.keys())
-
-    for i in range(len(portfolio_dates) - 1):
-        start_date = portfolio_dates[i]
-        end_date = portfolio_dates[i+1]
-        
-        current_portfolio = portfolios[start_date]
-        candidate_tickers = current_portfolio['Ticker'].tolist()
-        
-        available_tickers = [t for t in candidate_tickers if t in price_df.columns]
-        if not available_tickers: continue
-        
-        trade_start_date = pd.to_datetime(start_date) + pd.Timedelta(days=lag_days)
-        trade_end_date = pd.to_datetime(end_date) - pd.Timedelta(days=1)
-
-        try:
-            entry_price_date = price_df.index[price_df.index >= trade_start_date][0]
-            exit_price_date = price_df.index[price_df.index <= trade_end_date][-1]
-        except IndexError:
-            continue
-
-        entry_prices = price_df.loc[entry_price_date, available_tickers]
-        exit_prices = price_df.loc[exit_price_date, available_tickers]
-        
-        combined_prices = pd.DataFrame({'entry': entry_prices, 'exit': exit_prices}).dropna()
-        if combined_prices.empty: continue
-        
-        period_returns = (combined_prices['exit'] / combined_prices['entry']) - 1
-        portfolio_return = period_returns.mean()
-        
-        all_returns.append({'date': end_date, 'return': portfolio_return})
-
-    if not all_returns:
-        print("[WARNING] Could not calculate any returns.")
-        return pd.DataFrame()
-
-    df_returns = pd.DataFrame(all_returns).set_index('date')
-    df_returns['cumulative_return'] = (1 + df_returns['return']).cumprod()
-    return df_returns
-
-# --- Main Logic for Backtest Script ---
-def main():
-    """
-    独立运行价格回测的脚本。
-    """
-    print("--- Running Price Backtest Script ---")
+def load_all_price_data(price_path: Path, all_needed_tickers: set) -> dict:
+    """加载所有需要的股票价格数据，并按ticker分组"""
+    print("Loading and preparing all price data...")
+    px = pd.read_csv(price_path, sep=';', parse_dates=['Date'])
+    px['Ticker'] = tidy_ticker(px['Ticker'])
+    px.dropna(subset=['Ticker', 'Date', 'Adj. Close'], inplace=True)
+    px.set_index('Date', inplace=True)
     
-    # 1. 加载选股结果
-    portfolios = load_portfolios(PORTFOLIO_FILE)
-    if not portfolios:
+    # Backtrader需要'open', 'high', 'low', 'close', 'volume'列
+    # 如果没有，用'Adj. Close'填充
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']:
+        if col not in px.columns:
+            if col in ['Open', 'High', 'Low', 'Close']:
+                px[col] = px['Adj. Close']
+            elif col == 'Volume':
+                px[col] = 0
+            elif col == 'Dividend':
+                px[col] = 0.0
+
+    # 重命名列以符合backtrader标准
+    px.rename(columns={
+        'Open': 'open', 'High': 'high', 'Low': 'low',
+        'Adj. Close': 'close', # 使用调整后收盘价作为'close'
+        'Volume': 'volume', 'Dividend': 'dividend'
+    }, inplace=True)
+    
+    px['openinterest'] = 0 # backtrader需要这一列
+
+    data_feeds = {}
+    for ticker in all_needed_tickers:
+        df_ticker = px[px['Ticker'] == ticker][['open', 'high', 'low', 'close', 'volume', 'dividend', 'openinterest']].sort_index()
+        if not df_ticker.empty:
+            data_feeds[ticker] = df_ticker
+            
+    print(f"Loaded price data for {len(data_feeds)} tickers.")
+    return data_feeds
+
+def print_analysis(analyzer):
+    """打印分析器的结果"""
+    total_open = analyzer.portfolio.startingvalue
+    total_close = analyzer.portfolio.endingvalue
+    total_return = (total_close - total_open) / total_open
+    
+    # 假设回测周期是整数年，这是一个近似值
+    num_years = (analyzer.portfolio.last_dt - analyzer.portfolio.first_dt).days / 365.25
+    annual_return = (1 + total_return) ** (1/num_years) - 1 if num_years > 0 else 0
+
+    print(f'期初价值: {total_open:,.2f}')
+    print(f'期末价值: {total_close:,.2f}')
+    print(f'总回报率: {total_return:.2%}')
+    print(f'年化回报率: {annual_return:.2%}')
+    
+    if analyzer.sharpe and 'sharperatio' in analyzer.sharpe:
+        print(f'夏普比率 (年化): {analyzer.sharpe.sharperatio:.2f}')
+    if analyzer.drawdown and 'max' in analyzer.drawdown:
+        print(f'最大回撤: {analyzer.drawdown.max.drawdown:.2%}')
+        print(f'最大回撤周期 (天): {analyzer.drawdown.max.len}')
+
+# --- 主逻辑 ---
+def main():
+    print("--- Running Backtest with Backtrader ---")
+
+    # 1. 加载选股信号
+    try:
+        portfolios = load_portfolios(PORTFOLIO_FILE)
+    except FileNotFoundError as e:
+        print(f"[ERROR] {e}. Please run the selection script first.")
         return
-
-    # 2. 加载价格数据
-    price_wide = load_price_data(DATA_DIR)
-    if price_wide.empty:
-        return
-
-    # 3. 运行价格回测
-    df_returns = run_price_backtest(portfolios, price_wide, TRANSACTION_LAG_DAYS)
-
-    # 4. 保存收益率结果
-    if not df_returns.empty:
-        returns_csv_path = OUTPUTS_DIR / 'portfolio_returns.csv'
-        df_returns.to_csv(returns_csv_path)
-        print(f"\nBacktest complete. Returns data saved to:\n{returns_csv_path}")
         
-        # 可选的绘图逻辑
-        # try: ... except: ...
-    else:
-        print("\nBacktest finished, but no returns were calculated.")
+    all_portfolio_tickers = set().union(*(set(df['Ticker']) for df in portfolios.values()))
+    all_needed_tickers = all_portfolio_tickers.union({SPY_TICKER})
 
-if __name__ == "__main__":
+    # 2. 加载所有需要的价格数据
+    price_data_dict = load_all_price_data(PRICE_DATA_FILE, all_needed_tickers)
+    
+    if SPY_TICKER not in price_data_dict:
+        print(f"[ERROR] SPY Ticker '{SPY_TICKER}' not found in the price data. Cannot run benchmark.")
+        return
+
+    # 3. 创建Cerebro引擎
+    cerebro = bt.Cerebro(stdstats=False) # 我们将用自己的分析器
+
+    # 4. 添加策略
+    cerebro.addstrategy(PointInTimeStrategy, portfolios=portfolios)
+    cerebro.addstrategy(BuyAndHoldSpy)
+
+    # 5. 添加数据到Cerebro
+    # 确保SPY是第一个，这样BuyAndHoldSpy策略才能正确引用
+    spy_df = price_data_dict.pop(SPY_TICKER)
+    spy_data_feed = bt.feeds.PandasData(dataname=spy_df, name=SPY_TICKER)
+    cerebro.adddata(spy_data_feed)
+
+    for ticker, df in price_data_dict.items():
+        if ticker in all_portfolio_tickers:
+            data_feed = bt.feeds.PandasData(dataname=df, name=ticker)
+            cerebro.adddata(data_feed)
+            
+    # 6. 配置引擎
+    cerebro.broker.setcash(INITIAL_CASH)
+    cerebro.broker.setcommission(commission=0.001) # 设置0.1%的佣金
+
+    # 7. 添加分析器和观察器
+    cerebro.addobserver(bt.observers.Broker)
+    cerebro.addobserver(bt.observers.Trades)
+    cerebro.addobserver(bt.observers.Value)
+    cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
+    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', timeframe=bt.TimeFrame.Years)
+    cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
+    cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
+
+    # 8. 运行回测
+    print("\nRunning backtest...")
+    results = cerebro.run()
+    print("Backtest finished.")
+
+    # 9. 打印结果
+    print("\n" + "="*40)
+    print("      多因子选股策略 (Point-in-Time Strategy) 表现")
+    print("="*40)
+    print_analysis(results[0].analyzers)
+
+    print("\n" + "="*40)
+    print("      买入并持有SPY (Buy & Hold SPY) 表现")
+    print("="*40)
+    print_analysis(results[1].analyzers)
+    print("="*40 + "\n")
+
+    # 10. 绘图
+    try:
+        plot_path = OUTPUTS_DIR / 'backtrader_plot.png'
+        print(f"Generating plot... saving to {plot_path}")
+        # cerebro.plot(style='candlestick', barup='green', bardown='red')
+        fig = cerebro.plot(iplot=False, style='line', volume=False)[0][0]
+        fig.savefig(plot_path, dpi=300)
+        print("Plot saved successfully.")
+    except Exception as e:
+        print(f"[WARNING] Could not generate plot. Error: {e}")
+        print("This might happen if you are running in an environment without a display backend.")
+
+if __name__ == '__main__':
     main()
