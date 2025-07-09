@@ -25,7 +25,7 @@ if not PRICE_DATA_FILE.exists():
 
 INITIAL_CASH = 100_000.0
 START_DATE = datetime.datetime(2015, 8, 31)
-END_DATE = datetime.datetime(2023, 12, 31)
+END_DATE = datetime.datetime(2024, 12, 31)
 
 # --- 辅助函数 ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
@@ -78,7 +78,7 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
     
     spy_df.rename(columns={
         'Open': 'open', 'High': 'high', 'Low': 'low',
-        'Adj. Close': 'close', 'Volume': 'volume', 'Dividend': 'dividend'
+        'Close': 'close', 'Volume': 'volume', 'Dividend': 'dividend'
     }, inplace=True)
     
     for col in ['open', 'high', 'low', 'close', 'volume', 'dividend']:
@@ -92,18 +92,48 @@ def load_spy_data(price_path: Path, start_date: datetime.datetime, end_date: dat
         raise ValueError("NaN values still present in the final data feed. Halting.")
 
     print(f"Loaded {len(spy_df)} rows for SPY from {spy_df.index.min().date()} to {spy_df.index.max().date()}.")
+    
+    # 检查分红数据
+    dividend_data = spy_df[spy_df['dividend'] > 0]
+    print(f"Found {len(dividend_data)} dividend payments:")
+    if len(dividend_data) > 0:
+        print(dividend_data[['close', 'dividend']].head())
     return spy_df[['open', 'high', 'low', 'close', 'volume', 'dividend', 'openinterest']]
 
 # --- Backtrader 策略 ---
 class BuyAndHold(bt.Strategy):
     """一个简单的买入并持有策略。"""
-    def start(self):
-        # 将几乎所有的现金用于买入资产
-        self.order_target_percent(target=0.99)
-
+    params = (
+        ('include_dividends', False),
+    )
+    
+    def __init__(self):
+        self.bought = False
+    
     def next(self):
-        # 策略逻辑在start中已完成，next中无需操作
-        pass
+        # 只在第一次有数据时买入
+        if not self.bought:
+            # 将几乎所有的现金用于买入资产
+            self.order_target_percent(target=0.99)
+            self.bought = True
+        
+        # 处理分红
+        if self.params.include_dividends:
+            # 尝试访问分红数据
+            try:
+                # 检查当前数据行是否有分红
+                current_date = self.data.datetime.date(0)
+                # 从原始数据中查找分红
+                if hasattr(self, 'dividend_data'):
+                    dividend_today = self.dividend_data.get(current_date, 0)
+                    if dividend_today > 0:
+                        position_size = self.getposition().size
+                        if position_size > 0:
+                            dividend_amount = dividend_today * position_size
+                            self.broker.add_cash(dividend_amount)
+                            print(f"Dividend received: ${dividend_amount:.2f} on {current_date}")
+            except Exception as e:
+                pass  # 忽略错误，继续执行
 
 # --- 回测执行函数 ---
 def run_spy_backtest(data: pd.DataFrame, initial_cash: float, include_dividends: bool) -> pd.Series:
@@ -121,17 +151,36 @@ def run_spy_backtest(data: pd.DataFrame, initial_cash: float, include_dividends:
     cerebro = bt.Cerebro()
     cerebro.broker.set_cash(initial_cash)
     
-    # 如果不考虑分红，则从数据中移除分红列
-    data_for_feed = data.copy()
-    if not include_dividends:
+    # 准备用于backtrader的数据
+    data_for_feed = data[['open', 'high', 'low', 'close', 'volume']].copy()
+    
+    # 添加分红列
+    if include_dividends:
+        data_for_feed['dividend'] = data['dividend']
+    else:
         data_for_feed['dividend'] = 0.0
+    
+    # 添加openinterest列（backtrader需要）
+    data_for_feed['openinterest'] = 0
+    
+    # 确保没有缺失值
+    data_for_feed = data_for_feed.fillna(0)
 
     # 创建数据feed
     feed = bt.feeds.PandasData(dataname=data_for_feed)
     cerebro.adddata(feed)
     
-    # 添加策略
-    cerebro.addstrategy(BuyAndHold)
+    # 准备分红数据字典
+    dividend_data = {}
+    if include_dividends:
+        dividend_rows = data[data['dividend'] > 0]
+        for date, row in dividend_rows.iterrows():
+            dividend_data[date.date()] = row['dividend']
+    
+    # 添加策略，传递分红参数和分红数据
+    strategy = cerebro.addstrategy(BuyAndHold, include_dividends=include_dividends)
+    # 将分红数据附加到策略类
+    BuyAndHold.dividend_data = dividend_data
     
     # 添加分析器以跟踪投资组合价值
     cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='time_return')
@@ -173,6 +222,15 @@ def main():
     print("\n--- Backtest Results ---")
     print(f"Final Value (Price Return): ${price_returns_portfolio.iloc[-1]:,.2f}")
     print(f"Final Value (Total Return): ${total_returns_portfolio.iloc[-1]:,.2f}")
+    
+    # 计算收益率
+    price_return_pct = (price_returns_portfolio.iloc[-1] / INITIAL_CASH - 1) * 100
+    total_return_pct = (total_returns_portfolio.iloc[-1] / INITIAL_CASH - 1) * 100
+    dividend_benefit = total_return_pct - price_return_pct
+    
+    print(f"\nPrice Return: {price_return_pct:.2f}%")
+    print(f"Total Return: {total_return_pct:.2f}%")
+    print(f"Dividend Benefit: {dividend_benefit:.2f}%")
 
     # 3. 绘图比较
     print("\nGenerating comparison plot...")
