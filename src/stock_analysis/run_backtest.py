@@ -17,88 +17,74 @@ if not PRICE_DATA_FILE.exists():
     PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.txt'
 
 INITIAL_CASH = 1_000_000.0
-SPY_TICKER = 'SPY' # 假设您的价格数据中有SPY作为基准
+SPY_TICKER = 'SPY' # 确保这个 Ticker 与您的数据文件中的完全一致
 
 # --- Backtrader 策略 ---
 class PointInTimeStrategy(bt.Strategy):
-    """
-    根据预先计算好的调仓信号进行等权重调仓的策略。
-    """
-    params = (
-        ('portfolios', None), # 接收选股结果的字典
-    )
+    params = (('portfolios', None),)
 
     def __init__(self):
         self.rebalance_dates = sorted(self.p.portfolios.keys())
         self.next_rebalance_idx = 0
         self.get_next_rebalance_date()
+        # 将SPY数据单独保存，用于获取当前日期
+        self.spy_data = self.getdatabyname(SPY_TICKER)
 
     def log(self, txt, dt=None):
-        """策略的日志记录功能"""
-        dt = dt or self.datas[0].datetime.date(0)
+        dt = dt or self.spy_data.datetime.date(0)
         print(f'{dt.isoformat()} - {txt}')
 
     def get_next_rebalance_date(self):
-        """获取下一个调仓日期"""
         if self.next_rebalance_idx < len(self.rebalance_dates):
             self.next_rebalance_date = self.rebalance_dates[self.next_rebalance_idx]
         else:
-            self.next_rebalance_date = None # 没有更多调仓日了
+            self.next_rebalance_date = None
 
     def next(self):
-        """每个bar（通常是每天）都会调用此方法"""
-        current_date = self.datas[0].datetime.date(0)
+        current_date = self.spy_data.datetime.date(0)
 
-        # 检查是否到达或超过了调仓日
         if self.next_rebalance_date and current_date >= self.next_rebalance_date:
             self.log(f'--- Rebalancing on {current_date} for signal date {self.next_rebalance_date} ---')
-
-            # 1. 获取新的目标股票列表
             target_tickers_df = self.p.portfolios[self.next_rebalance_date]
             target_tickers = set(target_tickers_df['Ticker'])
-
-            # 获取所有可用的数据feed及其对应的ticker
             available_data_tickers = {d._name for d in self.datas if d._name != SPY_TICKER}
-
-            # 过滤出在数据源中存在的股票
             final_target_tickers = target_tickers.intersection(available_data_tickers)
+
             if not final_target_tickers:
                 self.log("Warning: No target tickers are available in the price data for this period.")
-                # 更新到下一个调仓日
                 self.next_rebalance_idx += 1
                 self.get_next_rebalance_date()
                 return
 
-            # 2. 卖出不再持有的股票
-            for data in self.datas:
-                ticker = data._name
-                if ticker != SPY_TICKER and self.getposition(data).size > 0:
-                    if ticker not in final_target_tickers:
-                        self.log(f'Closing position in {ticker}')
-                        self.order_target_percent(data=data, target=0.0)
+            current_positions = {data._name for data in self.datas if self.getposition(data).size > 0}
+            
+            # 卖出不再持有的股票
+            for ticker in current_positions:
+                if ticker not in final_target_tickers and ticker != SPY_TICKER:
+                    data = self.getdatabyname(ticker)
+                    self.log(f'Closing position in {ticker}')
+                    self.order_target_percent(data=data, target=0.0)
 
-            # 3. 为新的目标股票组合分配资金（等权重）
+            # 为新的目标股票组合分配资金
             target_percent = 1.0 / len(final_target_tickers)
-            for data in self.datas:
-                ticker = data._name
-                if ticker in final_target_tickers:
-                    self.log(f'Setting target position for {ticker} to {target_percent:.2%}')
-                    self.order_target_percent(data=data, target=target_percent)
-
-            # 4. 更新到下一个调仓日期
+            for ticker in final_target_tickers:
+                data = self.getdatabyname(ticker)
+                self.log(f'Setting target position for {ticker} to {target_percent:.2%}')
+                self.order_target_percent(data=data, target=target_percent)
+            
             self.next_rebalance_idx += 1
             self.get_next_rebalance_date()
             self.log('--- Rebalancing Complete ---')
 
 class BuyAndHoldSpy(bt.Strategy):
-    """一个简单的买入并持有SPY的基准策略"""
     def start(self):
-        self.spy = self.datas[0] # 假设SPY是第一个传入的数据
-        self.order_target_percent(data=self.spy, target=0.99) # 几乎全部买入
+        self.spy = self.datas[0]
+        self.log(f"Strategy started. Initial portfolio value: {self.broker.getvalue():.2f}")
+        self.order_target_percent(data=self.spy, target=0.99)
 
     def log(self, txt, dt=None):
         dt = dt or self.datas[0].datetime.date(0)
-        # print(f'{dt.isoformat()} - SPY - {txt}') # 可以取消注释来查看SPY策略的日志
+        print(f'{dt.isoformat()} - SPY Strategy - {txt}')
 
 # --- 辅助函数 ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
@@ -112,63 +98,47 @@ def load_portfolios(portfolio_path: Path) -> dict:
     return {k: v for k, v in portfolios.items() if not v.empty and 'Ticker' in v.columns}
 
 def load_all_price_data(price_path: Path, all_needed_tickers: set) -> dict:
-    """加载所有需要的股票价格数据，并按ticker分组"""
     print("Loading and preparing all price data...")
     px = pd.read_csv(price_path, sep=';', parse_dates=['Date'])
     px['Ticker'] = tidy_ticker(px['Ticker'])
     px.dropna(subset=['Ticker', 'Date', 'Adj. Close'], inplace=True)
     px.set_index('Date', inplace=True)
-
-    # Backtrader需要'open', 'high', 'low', 'close', 'volume'列
-    # 如果没有，用'Adj. Close'填充
+    
     for col in ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']:
         if col not in px.columns:
-            if col in ['Open', 'High', 'Low', 'Close']:
-                px[col] = px['Adj. Close']
-            elif col == 'Volume':
-                px[col] = 0
-            elif col == 'Dividend':
-                px[col] = 0.0
+            px[col] = px['Adj. Close'] if col in ['Open', 'High', 'Low', 'Close'] else 0
+    if 'Dividend' not in px.columns: px['Dividend'] = 0.0
 
-    # 重命名列以符合backtrader标准
     px.rename(columns={
         'Open': 'open', 'High': 'high', 'Low': 'low',
-        'Adj. Close': 'close', # 使用调整后收盘价作为'close'
-        'Volume': 'volume', 'Dividend': 'dividend'
+        'Adj. Close': 'close', 'Volume': 'volume', 'Dividend': 'dividend'
     }, inplace=True)
-
-    px['openinterest'] = 0 # backtrader需要这一列
+    
+    px['openinterest'] = 0
 
     data_feeds = {}
-    for ticker in all_needed_tickers:
+    for ticker in sorted(list(all_needed_tickers)): # 排序以保证SPY在特定位置
         df_ticker = px[px['Ticker'] == ticker][['open', 'high', 'low', 'close', 'volume', 'dividend', 'openinterest']].sort_index()
         if not df_ticker.empty:
             data_feeds[ticker] = df_ticker
-
+            if ticker == SPY_TICKER:
+                print(f"  [INFO] SPY data loaded. Date range: {df_ticker.index.min().date()} to {df_ticker.index.max().date()}")
+            
     print(f"Loaded price data for {len(data_feeds)} tickers.")
     return data_feeds
 
 def print_analysis(analyzers, initial_cash):
-    """打印分析器的结果"""
     pyfolio_analyzer = analyzers.pyfolio.get_analysis()
-
-    # 在某些 backtrader 版本中, 'returns' 可能是一个 OrderedDict。
-    # 我们将其显式转换为 pandas.Series 以确保兼容性。
     returns_series = pd.Series(pyfolio_analyzer.get('returns', {}))
-
     total_open = initial_cash
 
     if not returns_series.empty:
         total_close = initial_cash * (1 + returns_series.cumsum().iloc[-1])
         total_return = (total_close - total_open) / total_open if total_open != 0 else 0.0
-        
         num_years = len(returns_series) / 252
         annual_return = (1 + total_return) ** (1/num_years) - 1 if num_years > 0 else 0.0
     else:
-        total_close = total_open
-        total_return = 0.0
-        num_years = 0.0
-        annual_return = 0.0
+        total_close, total_return, num_years, annual_return = total_open, 0.0, 0.0, 0.0
 
     print(f'期初价值: {total_open:,.2f}')
     print(f'期末价值: {total_close:,.2f}')
@@ -176,17 +146,23 @@ def print_analysis(analyzers, initial_cash):
     if num_years > 0:
         print(f'年化回报率: {annual_return:.2%}')
 
-    if analyzers.sharpe and hasattr(analyzers.sharpe, 'sharperatio') and analyzers.sharpe.sharperatio is not None:
-        print(f'夏普比率 (年化): {analyzers.sharpe.sharperatio:.2f}')
-    if analyzers.drawdown and hasattr(analyzers.drawdown, 'max') and analyzers.drawdown.max.drawdown is not None:
-        print(f'最大回撤: {analyzers.drawdown.max.drawdown:.2%}')
-        print(f'最大回撤周期 (天): {analyzers.drawdown.max.len}')
+    sharpe_analyzer = analyzers.get('sharpe')
+    if sharpe_analyzer:
+        sharpe_ratio = sharpe_analyzer.get_analysis().get('sharperatio')
+        if sharpe_ratio is not None:
+             print(f'夏普比率 (年化): {sharpe_ratio:.2f}')
+
+    drawdown_analyzer = analyzers.get('drawdown')
+    if drawdown_analyzer:
+        dd_analysis = drawdown_analyzer.get_analysis()
+        if dd_analysis.max.drawdown is not None:
+            print(f'最大回撤: {dd_analysis.max.drawdown:.2%}')
+            print(f'最大回撤周期 (天): {dd_analysis.max.len}')
 
 # --- 主逻辑 ---
 def main():
     print("--- Running Backtest with Backtrader ---")
 
-    # 1. 加载选股信号和所有价格数据
     try:
         portfolios = load_portfolios(PORTFOLIO_FILE)
         all_portfolio_tickers = set().union(*(set(df['Ticker']) for df in portfolios.values()))
@@ -205,17 +181,17 @@ def main():
     cerebro_main = bt.Cerebro(stdstats=False)
     cerebro_main.addstrategy(PointInTimeStrategy, portfolios=portfolios)
 
-    # 添加所有需要的股票数据
+    # 优先添加 SPY 数据，以便在策略中作为时间基准
+    spy_df = price_data_dict[SPY_TICKER]
+    cerebro_main.adddata(bt.feeds.PandasData(dataname=spy_df, name=SPY_TICKER))
+
     for ticker, df in price_data_dict.items():
-        if ticker in all_needed_tickers:
-            data_feed = bt.feeds.PandasData(dataname=df, name=ticker)
-            cerebro_main.adddata(data_feed)
+        if ticker in all_portfolio_tickers:
+            cerebro_main.adddata(bt.feeds.PandasData(dataname=df, name=ticker))
             
     cerebro_main.broker.setcash(INITIAL_CASH)
     cerebro_main.broker.setcommission(commission=0.001)
     
-    cerebro_main.addobserver(bt.observers.Broker)
-    cerebro_main.addobserver(bt.observers.Trades)
     cerebro_main.addobserver(bt.observers.Value)
     cerebro_main.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
     cerebro_main.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', timeframe=bt.TimeFrame.Years)
@@ -228,11 +204,8 @@ def main():
     print("\n--- Running SPY Benchmark Backtest ---")
     cerebro_spy = bt.Cerebro(stdstats=False)
     cerebro_spy.addstrategy(BuyAndHoldSpy)
-
-    # 只添加SPY的数据
-    spy_df = price_data_dict[SPY_TICKER]
-    spy_data_feed = bt.feeds.PandasData(dataname=spy_df, name=SPY_TICKER)
-    cerebro_spy.adddata(spy_data_feed)
+    
+    cerebro_spy.adddata(bt.feeds.PandasData(dataname=price_data_dict[SPY_TICKER], name=SPY_TICKER))
     
     cerebro_spy.broker.setcash(INITIAL_CASH)
     cerebro_spy.broker.setcommission(commission=0.001)
@@ -260,9 +233,8 @@ def main():
     try:
         plot_path = OUTPUTS_DIR / 'backtrader_plot.png'
         print(f"Generating plot for the main strategy... saving to {plot_path}")
-        # 通过 plotind=False 禁用为每个数据源单独绘图，避免卡顿
-        fig = cerebro_main.plot(iplot=False, style='line', volume=False, plotind=False)[0][0]
-        fig.savefig(plot_path, dpi=300)
+        # 通过 plotmaster 和 plotind=False 精确控制绘图
+        cerebro_main.plot(iplot=False, style='line', volume=False, plotmaster=cerebro_main.datas[0], plotind=False)[0][0].savefig(plot_path, dpi=300)
         print("Plot saved successfully.")
     except Exception as e:
         print(f"[WARNING] Could not generate plot. Error: {e}")
