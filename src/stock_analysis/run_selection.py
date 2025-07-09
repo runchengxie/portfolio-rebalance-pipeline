@@ -14,6 +14,7 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 BACKTEST_FREQUENCY = 'QE'
 ROLLING_WINDOW_YEARS = 5
 NUM_STOCKS_TO_SELECT = 50
+MIN_REPORTS_IN_WINDOW = 5
 OUTPUT_FILE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
 
 # --- 因子配置 ---
@@ -85,7 +86,7 @@ def calculate_factors_point_in_time(df: pd.DataFrame) -> pd.DataFrame:
         
     return df_cleaned[['Ticker', 'date_known', 'year', 'factor_score']]
 
-def calc_factor_scores(df_financials: pd.DataFrame, as_of_date: pd.Timestamp, window_years: int) -> pd.DataFrame:
+def calc_factor_scores(df_financials: pd.DataFrame, as_of_date: pd.Timestamp, window_years: int, min_reports_required: int) -> pd.DataFrame:
     known_data = df_financials[df_financials['date_known'] <= as_of_date].copy()
     if known_data.empty: return pd.DataFrame()
 
@@ -98,7 +99,10 @@ def calc_factor_scores(df_financials: pd.DataFrame, as_of_date: pd.Timestamp, wi
 
     df_agg_scores = historical_window_scores.groupby('Ticker')['factor_score'].agg(['mean', 'count'])
     df_agg_scores.rename(columns={'mean': 'avg_factor_score', 'count': 'num_reports'}, inplace=True)
-    
+
+    # 只保留在窗口期内报告数量大于等于我们要求的最小数量的公司
+    df_agg_scores = df_agg_scores[df_agg_scores['num_reports'] >= min_reports_required]
+
     return df_agg_scores
 
 # --- Main Logic for Selection Script ---
@@ -115,7 +119,7 @@ def main():
     
     backtest_start_date = None
     for date in pd.date_range(start=earliest_known, end=latest_known, freq=BACKTEST_FREQUENCY):
-        scores = calc_factor_scores(df_financials, date, ROLLING_WINDOW_YEARS)
+        scores = calc_factor_scores(df_financials, date, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
         if len(scores) >= NUM_STOCKS_TO_SELECT:
             backtest_start_date = date
             print(f"Found a viable start date: {backtest_start_date.date()}.")
@@ -131,7 +135,7 @@ def main():
     print(f"Starting selection from {backtest_start_date.date()} to {latest_known.date()}...")
     for i, current_date in enumerate(backtest_dates):
         print(f"  - Processing {current_date.date()} ({i+1}/{len(backtest_dates)})")
-        df_agg_scores = calc_factor_scores(df_financials, current_date, ROLLING_WINDOW_YEARS)
+        df_agg_scores = calc_factor_scores(df_financials, current_date, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
         if df_agg_scores.empty: continue
         
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
