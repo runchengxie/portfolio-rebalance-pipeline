@@ -1,9 +1,23 @@
 # src/stock_analysis/run_backtest.py
+# 
+# 改进版回测脚本，支持SQLite数据库加载以获得更好的性能
+# 
+# 主要改进：
+# 1. 添加了从SQLite数据库加载数据的功能
+# 2. 使用批量查询优化数据库访问性能
+# 3. 自动回退到CSV文件加载（向后兼容）
+# 4. 添加了性能监控和数据源信息显示
+# 
+# 使用方法：
+# - 设置 USE_DATABASE = True 使用数据库模式（推荐）
+# - 设置 USE_DATABASE = False 使用传统CSV模式
+# - 确保 financial_data.db 存在（通过 tools/load_data_to_db.py 创建）
 
 import backtrader as bt
 import pandas as pd
 from pathlib import Path
 import datetime
+import sqlite3
 # --- 新增的导入 ---
 import logging
 import sys
@@ -21,6 +35,33 @@ PORTFOLIO_FILE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELEC
 PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.csv'
 if not PRICE_DATA_FILE.exists():
     PRICE_DATA_FILE = DATA_DIR / 'us-shareprices-daily.txt'
+
+# --- 数据库配置 ---
+DB_PATH = DATA_DIR / 'financial_data.db'
+USE_DATABASE = True  # 设置为True使用数据库，False使用CSV文件
+
+def configure_data_source(use_database: bool = True):
+    """
+    配置数据源。
+    
+    Args:
+        use_database (bool): True使用数据库，False使用CSV文件
+    """
+    global USE_DATABASE
+    USE_DATABASE = use_database
+    
+    if use_database:
+        if not DB_PATH.exists():
+            print(f"[WARNING] 数据库文件不存在: {DB_PATH}")
+            print("[WARNING] 请先运行 tools/load_data_to_db.py 创建数据库")
+            print("[WARNING] 将自动切换到CSV模式")
+            USE_DATABASE = False
+        else:
+            print(f"[INFO] 数据库模式已启用: {DB_PATH}")
+    else:
+        print(f"[INFO] CSV模式已启用: {PRICE_DATA_FILE}")
+    
+    return USE_DATABASE
 
 INITIAL_CASH = 1_000_000.0
 SPY_TICKER = 'SPY' # 确保这个 Ticker 与您的数据文件中的完全一致
@@ -104,11 +145,123 @@ def load_portfolios(portfolio_path: Path) -> dict:
     portfolios = {pd.to_datetime(date_str).date(): df for date_str, df in xls.items()}
     return {k: v for k, v in portfolios.items() if not v.empty and 'Ticker' in v.columns}
 
+def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_date: datetime.date, end_date: datetime.date) -> dict:
+    """
+    从SQLite数据库加载并准备所有价格数据，将所有股票对齐到主时间线。
+    """
+    print("Loading and preparing all price data from database...")
+    
+    if not db_path.exists():
+        raise FileNotFoundError(f"Database file not found: {db_path}")
+    
+    con = sqlite3.connect(db_path)
+    
+    try:
+        # 首先获取SPY数据以建立主时间线
+        spy_query = """
+        SELECT Date, Open, High, Low, Close, Volume, Dividend
+        FROM share_prices 
+        WHERE Ticker = ? AND Date >= ? AND Date <= ?
+        ORDER BY Date
+        """
+        
+        spy_df = pd.read_sql_query(
+            spy_query,
+            con,
+            params=[SPY_TICKER, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')],
+            parse_dates=['Date']
+        )
+        
+        if spy_df.empty:
+            raise ValueError(f"SPY ticker '{SPY_TICKER}' not found in database for the specified date range.")
+        
+        spy_df.set_index('Date', inplace=True)
+        master_index = spy_df.index.unique().sort_values()
+        print(f"Master timeline created from SPY data with {len(master_index)} trading days.")
+        
+        # 批量查询所有需要的股票数据
+        tickers_list = list(all_needed_tickers)
+        placeholders = ','.join(['?' for _ in tickers_list])
+        
+        bulk_query = f"""
+        SELECT Date, Ticker, Open, High, Low, Close, Volume, Dividend
+        FROM share_prices 
+        WHERE Ticker IN ({placeholders}) AND Date >= ? AND Date <= ?
+        ORDER BY Ticker, Date
+        """
+        
+        params = tickers_list + [start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')]
+        
+        all_data = pd.read_sql_query(
+            bulk_query,
+            con,
+            params=params,
+            parse_dates=['Date']
+        )
+        
+        if all_data.empty:
+            raise ValueError("No price data found in database for the specified tickers and date range.")
+        
+        # 数据预处理
+        all_data.set_index('Date', inplace=True)
+        
+        # 重命名列以符合backtrader要求
+        column_mapping = {
+            'Open': 'open',
+            'High': 'high', 
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume',
+            'Dividend': 'dividend'
+        }
+        all_data = all_data.rename(columns=column_mapping)
+        
+        # 添加openinterest列
+        all_data['openinterest'] = 0
+        
+        # 按股票分组处理数据
+        data_feeds = {}
+        for ticker in sorted(list(all_needed_tickers)):
+            df_ticker_raw = all_data[all_data['Ticker'] == ticker][['open', 'high', 'low', 'close', 'volume', 'dividend', 'openinterest']].sort_index()
+            
+            if df_ticker_raw.empty:
+                print(f"  [WARNING] No price data for ticker '{ticker}' in the specified date range.")
+                continue
+            
+            # 对齐到主时间线
+            df_aligned = df_ticker_raw.reindex(master_index)
+            
+            # 填充缺失值
+            df_aligned[['open', 'high', 'low', 'close']] = df_aligned[['open', 'high', 'low', 'close']].ffill()
+            df_aligned[['volume', 'dividend', 'openinterest']] = df_aligned[['volume', 'dividend', 'openinterest']].fillna(0)
+            df_aligned.dropna(inplace=True)
+
+            if not df_aligned.empty:
+                data_feeds[ticker] = df_aligned
+            else:
+                print(f"  [WARNING] Ticker '{ticker}' has no overlapping data with the master timeline after alignment.")
+                
+        print(f"Loaded and aligned price data for {len(data_feeds)} tickers from database.")
+        return data_feeds
+        
+    finally:
+        con.close()
+
 def load_all_price_data(price_path: Path, all_needed_tickers: set, start_date: datetime.date, end_date: datetime.date) -> dict:
     """
     Loads and prepares all price data, aligning all tickers to a master timeline.
+    优先从数据库加载，如果失败则从CSV文件加载。
     """
-    print("Loading and preparing all price data...")
+    # 如果启用数据库且数据库文件存在，优先使用数据库
+    if USE_DATABASE and DB_PATH.exists():
+        try:
+            return load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
+        except Exception as e:
+            print(f"Failed to load from database: {e}")
+            print(f"Falling back to CSV file: {price_path.name}...")
+    
+    # 备用：从CSV文件加载（原有逻辑）
+    print("Loading and preparing all price data from CSV...")
     px_full = pd.read_csv(price_path, sep=';', parse_dates=['Date'])
     px_full['Ticker'] = tidy_ticker(px_full['Ticker'])
     px_full.dropna(subset=['Ticker', 'Date', 'Adj. Close'], inplace=True)
@@ -152,7 +305,7 @@ def load_all_price_data(price_path: Path, all_needed_tickers: set, start_date: d
         else:
             print(f"  [WARNING] Ticker '{ticker}' has no overlapping data with the master timeline after alignment.")
             
-    print(f"Loaded and aligned price data for {len(data_feeds)} tickers.")
+    print(f"Loaded and aligned price data for {len(data_feeds)} tickers from CSV.")
     return data_feeds
 
 
@@ -238,7 +391,17 @@ def setup_logging(log_dir: Path):
 # ==============================================================================
 
 def main():
-    print("--- Running Backtest with Backtrader ---")
+    print("--- Running Backtest with Backtrader (Enhanced with Database Support) ---")
+    print()
+    
+    # 配置数据源
+    actual_use_db = configure_data_source(USE_DATABASE)
+    
+    if actual_use_db:
+        print(f"✓ 将使用高性能数据库模式从 {DB_PATH.name} 加载数据")
+    else:
+        print(f"→ 使用传统CSV模式从 {PRICE_DATA_FILE.name} 加载数据")
+    print()
 
     try:
         portfolios = load_portfolios(PORTFOLIO_FILE)
@@ -253,7 +416,14 @@ def main():
 
         all_portfolio_tickers = set().union(*(set(df['Ticker']) for df in portfolios.values()))
         all_needed_tickers = all_portfolio_tickers.union({SPY_TICKER})
+        
+        # 添加性能监控
+        import time
+        start_time = time.time()
         price_data_dict = load_all_price_data(PRICE_DATA_FILE, all_needed_tickers, start_date, end_date)
+        load_time = time.time() - start_time
+        print(f"\n[PERFORMANCE] 数据加载耗时: {load_time:.2f}秒")
+        print(f"[PERFORMANCE] 加载了 {len(price_data_dict)} 只股票的数据")
 
     except (FileNotFoundError, ValueError) as e:
         # 使用 logging 记录错误
