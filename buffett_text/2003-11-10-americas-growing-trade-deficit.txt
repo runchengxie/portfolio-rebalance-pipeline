@@ -1,8 +1,6 @@
-# FORTUNE
-NOVEMBER 10, 2003
-
-## America's Growing Trade Deficit Is **Selling the Nation Out From Under Us.** Here's a Way to Fix the Problem—And We Need to Do It Now.
-### by Warren E. Buffett
+Title: America's Growing Trade Deficit Is Selling the Nation Out From Under Us
+Date: 2003-11-10
+Source: Fortune
 
 I'M ABOUT TO DELIVER A WARNING regarding the U.S. trade deficit and also suggest a remedy for the problem. But first I need to mention two reasons you might want to be skeptical about what I say. To begin, my forecasting record with respect to macroeconomics is far from inspiring. For example, over the past two decades I was excessively fearful of inflation. More to the point at hand, I started way back in 1987 to publicly worry about our mounting trade deficits—and, as you know, we've not only survived but also thrived. So on the trade front, score at least one "wolf" for me. Nevertheless, I am crying wolf again and this time backing it with Berkshire Hathaway's money. Through the spring of 2002, I had lived nearly 72 years without purchasing a foreign currency. Since then Berkshire has made significant investments in—and today holds—several currencies. I won't give you particulars; in fact, it is largely irrelevant which currencies they are. What does matter is the underlying point: To hold other currencies is to believe that the dollar will decline.
 
@@ -126,4 +124,4 @@ But I believe that in the trade deficit we also have a problem that is going to 
 
 Perhaps there are other solutions that make more sense than mine. However, wishful thinking—and its usual companion, thumb sucking—is not among them. From what I now see, action to halt the rapid outflow of our national wealth is called for, and ICs seem the least painful and most certain way to get the job done. Just keep remembering that this is not a small problem: For example, at the rate at which the rest of the world is now making net investments in the U.S., it could annually buy and sock away nearly 4% of our publicly traded stocks.
 
-In evaluating business options at Berkshire, my partner, Charles Munger, suggests that we pay close attention to his jocular wish: "All I want to know is where I'm going to die, so I'll never go there." Framers of our trade policy should heed this caution—and steer clear of Squanderville. 
+In evaluating business options at Berkshire, my partner, Charles Munger, suggests that we pay close attention to his jocular wish: "All I want to know is where I'm going to die, so I'll never go there." Framers of our trade policy should heed this caution—and steer clear of Squanderville.
