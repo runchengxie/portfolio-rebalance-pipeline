@@ -28,7 +28,6 @@ EXCLUDE_DIRS_EXACT: Set[str] = {
     "dist",
     "logs",
     "renv",
-    "buffett_text",
     "docs_extra",
 }
 

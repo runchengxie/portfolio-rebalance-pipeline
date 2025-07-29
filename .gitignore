@@ -1,8 +1,3 @@
-# --- OS-specific files ---
-# Ignore macOS and Windows system files that can clutter the repo.
-.DS_Store
-Thumbs.db
-
 # --- Python & Jupyter Specific ---
 # Byte-code and cache
 __pycache__/
@@ -37,10 +32,3 @@ full_project_source.txt
 *.pdf
 *.docx
 *.xlsx
-
-# --- R & RStudio Specific ---
-.Rhistory
-.RData
-.Rprofile
-.Rproj.user/
-renv/
