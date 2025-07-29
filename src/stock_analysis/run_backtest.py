@@ -6,6 +6,7 @@ import sqlite3
 import logging
 import sys
 import time
+import copy
 
 # --- 路径配置 ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -154,7 +155,13 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
             aligned_df.loc[:, 'Dividend'] = aligned_df['Dividend'].fillna(0)
 
             if not aligned_df.empty and not aligned_df['Close'].isnull().all():
-                data_feeds[ticker] = bt.feeds.PandasData(dataname=aligned_df, name=ticker)
+                # backtrader 需要特定的列名
+                aligned_df.rename(columns={
+                    'Open': 'open', 'High': 'high', 'Low': 'low',
+                    'Close': 'close', 'Volume': 'volume', 'Dividend': 'dividend'
+                }, inplace=True)
+                aligned_df['openinterest'] = 0
+                data_feeds[ticker] = aligned_df
 
         print(f"Loaded data for {len(data_feeds)} tickers.")
         return data_feeds
@@ -176,16 +183,26 @@ def setup_logging():
     )
     print(f"日志将记录到: {log_file}")
 
-def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_date: datetime.date, end_date: datetime.date):
+def run_backtest(data_feeds_raw: dict, portfolios: dict, initial_cash: float, start_date: datetime.date, end_date: datetime.date, include_dividends: bool):
     """
     运行主要的回测策略，并在最后打印包含时间段的总结报告。
     """
-    print("\n--- Running Point-in-Time Strategy ---")
+    run_type = "Total Return (with Dividends)" if include_dividends else "Price Return (no Dividends)"
+    print(f"\n--- Running Backtest ({run_type}) ---")
+    
+    # 深拷贝数据以避免修改原始数据
+    data_feeds = copy.deepcopy(data_feeds_raw)
+
     cerebro = bt.Cerebro()
     cerebro.broker.set_cash(initial_cash)
-
-    for name in sorted(data_feeds.keys()):
-        cerebro.adddata(data_feeds[name], name=name)
+    
+    # 根据参数决定是否处理股息
+    for ticker, df in data_feeds.items():
+        if not include_dividends:
+            df['dividend'] = 0.0 # 关键步骤：移除股息数据
+            
+        data = bt.feeds.PandasData(dataname=df, name=ticker)
+        cerebro.adddata(data, name=ticker)
 
     cerebro.addstrategy(PointInTimeStrategy, portfolios=portfolios)
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
@@ -203,6 +220,7 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
 
     print(f'\n' + '='*50)
     print(f'{"Backtest Results":^50}')
+    print(f'({run_type})')
     print(f'='*50)
     print(f"Time Period Covered:     {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     print(f"Initial Portfolio Value: ${initial_cash:,.2f}")
@@ -236,27 +254,45 @@ def main():
         all_needed_tickers.update(tidy_ticker(df['Ticker']).dropna())
 
     start_date = min(portfolios.keys())
+    # 找到最后一个回测日期后，将结束日期延长一年以确保有足够的价格数据来计算最后一期的回报
     end_date = max(portfolios.keys()) + datetime.timedelta(days=365)
     
     # 打印简要信息
     print(f"Calculating for a total of {len(all_needed_tickers)} unique tickers...")
     
     start_time = time.time()
-    price_data_dict = load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
+    price_data_dict_raw = load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
     load_time = time.time() - start_time
     print(f"\n[PERFORMANCE] 数据加载耗时: {load_time:.2f}秒")
 
-    if not price_data_dict:
+    if not price_data_dict_raw:
         print("[ERROR] Price data could not be loaded. Exiting.", file=sys.stderr)
         sys.exit(1)
+        
+    # 找到回测覆盖的实际价格数据的最后一天
+    # 从任意一个数据帧中获取最后一个日期
+    actual_end_date = next(iter(price_data_dict_raw.values())).index[-1].date()
 
-    # 将 start_date 和 end_date 传递给 run_backtest 函数
+    # --- 运行两次回测 ---
+    
+    # 1. 价格回报 (不包含股息)
     run_backtest(
-        data_feeds=price_data_dict, 
+        data_feeds_raw=price_data_dict_raw, 
         portfolios=portfolios, 
         initial_cash=INITIAL_CASH,
         start_date=start_date,
-        end_date=end_date
+        end_date=actual_end_date,
+        include_dividends=False
+    )
+    
+    # 2. 总回报 (包含股息)
+    run_backtest(
+        data_feeds_raw=price_data_dict_raw, 
+        portfolios=portfolios, 
+        initial_cash=INITIAL_CASH,
+        start_date=start_date,
+        end_date=actual_end_date,
+        include_dividends=True
     )
 
 if __name__ == '__main__':
