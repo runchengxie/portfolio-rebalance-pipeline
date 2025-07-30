@@ -13,7 +13,7 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 # --- 策略配置 ---
 BACKTEST_FREQUENCY = 'QE'
 ROLLING_WINDOW_YEARS = 5
-NUM_STOCKS_TO_SELECT = 50
+NUM_STOCKS_TO_SELECT = 20
 MIN_REPORTS_IN_WINDOW = 5
 OUTPUT_FILE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
 
@@ -114,33 +114,45 @@ def main():
         return
 
     print("Finding a viable backtest start date...")
-    earliest_known = df_financials['date_known'].min().normalize()
-    latest_known = df_financials['date_known'].max().normalize()
     
+    # 获取所有唯一的、已知的财务报告发布日期
+    possible_publish_dates = sorted(df_financials['date_known'].unique())
+
     backtest_start_date = None
-    for date in pd.date_range(start=earliest_known, end=latest_known, freq=BACKTEST_FREQUENCY):
-        scores = calc_factor_scores(df_financials, date, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
+    viable_rebalance_dates = []
+
+    # 确定所有可行的调仓日期
+    for publish_date in possible_publish_dates:
+        # 调仓日 = 发布日 + 3个交易日
+        rebalance_day = publish_date + pd.offsets.BDay(3)
+        scores = calc_factor_scores(df_financials, publish_date, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
         if len(scores) >= NUM_STOCKS_TO_SELECT:
-            backtest_start_date = date
-            print(f"Found a viable start date: {backtest_start_date.date()}.")
-            break
+            if backtest_start_date is None:
+                backtest_start_date = rebalance_day
+                print(f"Found a viable start date: {backtest_start_date.date()}.")
+            viable_rebalance_dates.append(rebalance_day)
 
     if backtest_start_date is None:
         print("Could not find any period with enough stocks to start. Exiting.")
         return
 
-    backtest_dates = pd.date_range(start=backtest_start_date, end=latest_known, freq=BACKTEST_FREQUENCY)
     all_period_portfolios = {}
+    latest_known = df_financials['date_known'].max().normalize()
 
     print(f"Starting selection from {backtest_start_date.date()} to {latest_known.date()}...")
-    for i, current_date in enumerate(backtest_dates):
-        print(f"  - Processing {current_date.date()} ({i+1}/{len(backtest_dates)})")
-        df_agg_scores = calc_factor_scores(df_financials, current_date, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
+    for i, rebalance_day in enumerate(viable_rebalance_dates):
+        # 我们基于发布日的数据来决定在调仓日的持仓
+        # 因此，计算因子得分时，我们使用发布日（调仓日-3BD）
+        # 注意：这是一个简化的假设，实际中可能需要更复杂的逻辑来匹配准确的发布日
+        publish_date_for_calc = rebalance_day - pd.offsets.BDay(3)
+
+        print(f"  - Processing rebalance on {rebalance_day.date()} (based on data before {publish_date_for_calc.date()}) ({i+1}/{len(viable_rebalance_dates)})")
+        df_agg_scores = calc_factor_scores(df_financials, publish_date_for_calc, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
         if df_agg_scores.empty: continue
         
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
-        all_period_portfolios[current_date.date()] = top_stocks.reset_index()
+        all_period_portfolios[rebalance_day.date()] = top_stocks.reset_index()
 
     if all_period_portfolios:
         with pd.ExcelWriter(OUTPUT_FILE) as writer:

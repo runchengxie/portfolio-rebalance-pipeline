@@ -16,7 +16,7 @@ OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- 回测配置 ---
-NUM_STOCKS_TO_SELECT = 50
+NUM_STOCKS_TO_SELECT = 20
 PORTFOLIO_FILE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
 
 # --- 数据库配置 ---
@@ -286,12 +286,11 @@ def main():
     # 1. 定义一个固定的、更早的回测开始日期
     BACKTEST_START_DATE = datetime.date(2020, 12, 31)
     
-    # 2. 信号的日期范围保持不变，用于确定需要哪些股票代码和回测的结束时间
+    # 2. 信号的日期范围保持不变，用于确定需要哪些股票代码
     first_signal_date = min(portfolios.keys())
-    last_signal_date = max(portfolios.keys())
     
-    # 3. 回测结束日期可以基于最后一个信号日期向后延长一段时间
-    BACKTEST_END_DATE = last_signal_date + datetime.timedelta(days=365)
+    # 3. 回测结束日期固定为 2025-06-30
+    BACKTEST_END_DATE = datetime.date(2025, 6, 30)
     
     print(f"Backtest observation period: {BACKTEST_START_DATE} to {BACKTEST_END_DATE}")
     print(f"First trading signal expected around: {first_signal_date}")
@@ -320,7 +319,8 @@ def main():
         if not data_feed.p.dataname.empty:
             all_dates.append(data_feed.p.dataname.index[-1])
     
-    actual_end_date = max(all_dates).date() if all_dates else BACKTEST_END_DATE
+    # 使用固定的结束日期，不再动态计算
+    actual_end_date = BACKTEST_END_DATE
 
     # 运行回测，传入完整的观察期
     run_backtest(
