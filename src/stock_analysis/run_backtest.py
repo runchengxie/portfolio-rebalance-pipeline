@@ -15,9 +15,7 @@ DATA_DIR = PROJECT_ROOT / 'data'
 OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# --- 回测配置 ---
-NUM_STOCKS_TO_SELECT = 20
-PORTFOLIO_FILE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks.xlsx'
+PORTFOLIO_FILE = OUTPUTS_DIR / f'point_in_time_backtest_dynamic.xlsx'
 
 # --- 数据库配置 ---
 DB_PATH = DATA_DIR / 'financial_data.db'
@@ -313,14 +311,20 @@ def main():
         print("[ERROR] Price data could not be loaded. Exiting.", file=sys.stderr)
         sys.exit(1)
         
-    # 从实际加载的数据中动态确定最晚的日期
-    all_dates = []
-    for data_feed in price_data_dict.values():
-        if not data_feed.p.dataname.empty:
-            all_dates.append(data_feed.p.dataname.index[-1])
-    
-    # 使用固定的结束日期，不再动态计算
+    # --- 【代码修改点】 ---
+    # 删除了原来动态获取 actual_end_date 的逻辑。
+    # 直接使用我们预设的固定回测结束日期。
+    #
+    # BEFORE:
+    # all_dates = []
+    # for data_feed in price_data_dict.values():
+    #     if not data_feed.p.dataname.empty:
+    #         all_dates.append(data_feed.p.dataname.index[-1])
+    # actual_end_date = max(all_dates).date() if all_dates else BACKTEST_END_DATE
+    #
+    # AFTER:
     actual_end_date = BACKTEST_END_DATE
+    # --- 【修改结束】 ---
 
     # 运行回测，传入完整的观察期
     run_backtest(
