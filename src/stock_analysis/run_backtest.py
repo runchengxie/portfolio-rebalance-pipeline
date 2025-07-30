@@ -156,6 +156,8 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
             aligned_df.loc[:, 'Dividend'] = aligned_df['Dividend'].fillna(0)
 
             if not aligned_df.empty and not aligned_df['Close'].isnull().all():
+                # 注意：在Backtrader中，分红需要通过dividends=True和相应的列名来处理
+                # 此处简化为PandasData，但高级用法需注意dividend列的映射
                 data_feeds[ticker] = bt.feeds.PandasData(dataname=aligned_df, name=ticker)
 
         print(f"Loaded data for {len(data_feeds)} tickers.")
@@ -194,22 +196,40 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
     # 添加分析器
     cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='time_return')
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
+    # Returns分析器不再是计算总回报的主要来源，但仍可保留用于其他可能的分析
     cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
 
     results = cerebro.run()
-    
-    # --- 提取指标 ---
-    final_value = cerebro.broker.getvalue()
     strat = results[0]
+    
+    # --- MODIFICATION START: 统一数据源 ---
+    # 1. 从 TimeReturn 分析器获取每日回报率，并确保按日期排序
+    print("\nCalculating performance metrics from TimeReturn analyzer...")
+    tr_analyzer = strat.analyzers.getbyname('time_return')
+    returns = pd.Series(tr_analyzer.get_analysis()).sort_index()
+    
+    # 2. 计算累积回报率，这将是报告和图表的唯一数据源
+    cumulative_returns = (1 + returns).cumprod()
+
+    # 3. 基于累积回报率重新计算最终净值和总回报率，以确保一致性
+    if not cumulative_returns.empty:
+        total_return = cumulative_returns.iloc[-1] - 1
+        final_value = initial_cash * cumulative_returns.iloc[-1]
+    else:
+        # 如果没有交易或回报，则设定为初始值
+        total_return = 0.0
+        final_value = initial_cash
+
+    # 提取其他指标
     max_drawdown = strat.analyzers.drawdown.get_analysis().max.drawdown
-    total_return = strat.analyzers.returns.get_analysis().get('rtot', float('nan'))
+    # --- MODIFICATION END ---
 
     # 计算年化收益率
     duration_in_days = (end_date - start_date).days
     annualized_return = 0.0
     if duration_in_days > 0:
         duration_in_years = duration_in_days / 365.25
-        if duration_in_years > 0:
+        if duration_in_years > 0 and (1 + total_return) > 0: # 避免负总回报的开方问题
             annualized_return = ((1 + total_return) ** (1 / duration_in_years)) - 1
 
     # --- 最终结果报告 ---
@@ -226,15 +246,17 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
     print(f'='*50)
     
     # --- 生成业绩图表 ---
+    # 使用上面已计算好的累积回报数据
     print("\nGenerating performance chart...")
-    tr_analyzer = strat.analyzers.getbyname('time_return')
-    returns = pd.Series(tr_analyzer.get_analysis())
-    cumulative_returns = (1 + returns).cumprod()
-    portfolio_value = initial_cash * cumulative_returns
-    
-    # 为曲线的起点添加初始资金
-    start_date_ts = pd.Timestamp(start_date) - pd.Timedelta(days=1)
-    portfolio_value = pd.concat([pd.Series({start_date_ts: initial_cash}), portfolio_value])
+    if not cumulative_returns.empty:
+        portfolio_value = initial_cash * cumulative_returns
+        # 为曲线的起点添加初始资金
+        start_date_ts = pd.Timestamp(start_date) - pd.Timedelta(days=1)
+        portfolio_value = pd.concat([pd.Series({start_date_ts: initial_cash}), portfolio_value])
+    else:
+        # 如果没有回报数据，则只画一条代表初始资金的水平线
+        portfolio_value = pd.Series({pd.Timestamp(start_date): initial_cash, pd.Timestamp(end_date): initial_cash})
+
 
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(14, 8))
