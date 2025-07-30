@@ -49,6 +49,7 @@ class PointInTimeStrategy(bt.Strategy):
     def next(self):
         current_date = self.timeline.datetime.date(0)
 
+        # 只有当模拟的当前日期达到或超过下一个调仓日期时，才执行调仓
         if self.next_rebalance_date and current_date >= self.next_rebalance_date:
             self.log(f'--- Rebalancing on {current_date} for signal date {self.next_rebalance_date} ---')
             target_tickers_df = self.p.portfolios[self.next_rebalance_date]
@@ -97,7 +98,7 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
     """
     从SQLite数据库加载并准备所有价格数据，将所有股票对齐到统一的主时间线。
     """
-    print("Loading and preparing all price data from database...")
+    print(f"Loading and preparing all price data from {start_date} to {end_date}...")
     
     if not db_path.exists():
         print(f"[ERROR] 数据库文件不存在: {db_path}", file=sys.stderr)
@@ -107,7 +108,6 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
     con = sqlite3.connect(db_path)
     
     try:
-        # 首先，通过查询范围内的所有唯一日期来建立主时间线
         date_query = """
         SELECT DISTINCT Date 
         FROM share_prices 
@@ -126,7 +126,6 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
         master_index = pd.to_datetime(master_dates_df['Date'])
         print(f"Master timeline created with {len(master_index)} trading days.")
         
-        # 批量查询所有需要的股票数据
         tickers_list = list(all_needed_tickers)
         placeholders = ','.join(['?' for _ in tickers_list])
         
@@ -149,15 +148,12 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
         data_feeds = {}
         for ticker, group in all_data.groupby('Ticker'):
             group = group.set_index('Date')
-            # 对齐到主时间线
             aligned_df = group.reindex(master_index).ffill()
             aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']] = aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']].ffill()
             aligned_df.loc[:, 'Volume'] = aligned_df['Volume'].fillna(0)
             aligned_df.loc[:, 'Dividend'] = aligned_df['Dividend'].fillna(0)
 
             if not aligned_df.empty and not aligned_df['Close'].isnull().all():
-                # 注意：在Backtrader中，分红需要通过dividends=True和相应的列名来处理
-                # 此处简化为PandasData，但高级用法需注意dividend列的映射
                 data_feeds[ticker] = bt.feeds.PandasData(dataname=aligned_df, name=ticker)
 
         print(f"Loaded data for {len(data_feeds)} tickers.")
@@ -193,49 +189,39 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
 
     cerebro.addstrategy(PointInTimeStrategy, portfolios=portfolios)
     
-    # 添加分析器
     cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='time_return')
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
-    # Returns分析器不再是计算总回报的主要来源，但仍可保留用于其他可能的分析
     cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
 
     results = cerebro.run()
     strat = results[0]
     
-    # --- MODIFICATION START: 统一数据源 ---
-    # 1. 从 TimeReturn 分析器获取每日回报率，并确保按日期排序
     print("\nCalculating performance metrics from TimeReturn analyzer...")
     tr_analyzer = strat.analyzers.getbyname('time_return')
     returns = pd.Series(tr_analyzer.get_analysis()).sort_index()
     
-    # 2. 计算累积回报率，这将是报告和图表的唯一数据源
     cumulative_returns = (1 + returns).cumprod()
 
-    # 3. 基于累积回报率重新计算最终净值和总回报率，以确保一致性
     if not cumulative_returns.empty:
         total_return = cumulative_returns.iloc[-1] - 1
         final_value = initial_cash * cumulative_returns.iloc[-1]
     else:
-        # 如果没有交易或回报，则设定为初始值
         total_return = 0.0
         final_value = initial_cash
 
-    # 提取其他指标
     max_drawdown = strat.analyzers.drawdown.get_analysis().max.drawdown
-    # --- MODIFICATION END ---
 
-    # 计算年化收益率
     duration_in_days = (end_date - start_date).days
     annualized_return = 0.0
     if duration_in_days > 0:
         duration_in_years = duration_in_days / 365.25
-        if duration_in_years > 0 and (1 + total_return) > 0: # 避免负总回报的开方问题
+        if duration_in_years > 0 and (1 + total_return) > 0:
             annualized_return = ((1 + total_return) ** (1 / duration_in_years)) - 1
 
-    # --- 最终结果报告 ---
     print(f'\n' + '='*50)
     print(f'{"Backtest Results (Total Return)":^50}')
     print(f'='*50)
+    # 报告的起始日期现在是真正的回测开始日期
     print(f"Time Period Covered:     {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     print(f"Initial Portfolio Value: ${initial_cash:,.2f}")
     print(f"Final Portfolio Value:   ${final_value:,.2f}")
@@ -245,18 +231,14 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
     print(f"Max Drawdown:            {max_drawdown:.2f}%")
     print(f'='*50)
     
-    # --- 生成业绩图表 ---
-    # 使用上面已计算好的累积回报数据
     print("\nGenerating performance chart...")
     if not cumulative_returns.empty:
         portfolio_value = initial_cash * cumulative_returns
-        # 为曲线的起点添加初始资金
+        # 这里的 start_date 现在是更早的 BACKTEST_START，图表起点正确
         start_date_ts = pd.Timestamp(start_date) - pd.Timedelta(days=1)
         portfolio_value = pd.concat([pd.Series({start_date_ts: initial_cash}), portfolio_value])
     else:
-        # 如果没有回报数据，则只画一条代表初始资金的水平线
         portfolio_value = pd.Series({pd.Timestamp(start_date): initial_cash, pd.Timestamp(end_date): initial_cash})
-
 
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(14, 8))
@@ -300,14 +282,31 @@ def main():
     for df in portfolios.values():
         all_needed_tickers.update(tidy_ticker(df['Ticker']).dropna())
 
-    start_date = min(portfolios.keys())
-    end_date = max(portfolios.keys()) + datetime.timedelta(days=365)
+    # --- MODIFICATION START: 显式分离回测期与信号期 ---
+    # 1. 定义一个固定的、更早的回测开始日期
+    BACKTEST_START_DATE = datetime.date(2020, 12, 31)
     
-    # 打印简要信息
+    # 2. 信号的日期范围保持不变，用于确定需要哪些股票代码和回测的结束时间
+    first_signal_date = min(portfolios.keys())
+    last_signal_date = max(portfolios.keys())
+    
+    # 3. 回测结束日期可以基于最后一个信号日期向后延长一段时间
+    BACKTEST_END_DATE = last_signal_date + datetime.timedelta(days=365)
+    
+    print(f"Backtest observation period: {BACKTEST_START_DATE} to {BACKTEST_END_DATE}")
+    print(f"First trading signal expected around: {first_signal_date}")
+    # --- MODIFICATION END ---
+    
     print(f"Calculating for a total of {len(all_needed_tickers)} unique tickers...")
     
     start_time = time.time()
-    price_data_dict = load_all_price_data_from_db(DB_PATH, all_needed_tickers, start_date, end_date)
+    # 使用定义好的回测起止日期来加载数据
+    price_data_dict = load_all_price_data_from_db(
+        DB_PATH, 
+        all_needed_tickers, 
+        start_date=BACKTEST_START_DATE, 
+        end_date=BACKTEST_END_DATE
+    )
     load_time = time.time() - start_time
     print(f"\n[PERFORMANCE] 数据加载耗时: {load_time:.2f}秒")
 
@@ -315,21 +314,20 @@ def main():
         print("[ERROR] Price data could not be loaded. Exiting.", file=sys.stderr)
         sys.exit(1)
         
-    # 从数据中动态确定实际的结束日期
+    # 从实际加载的数据中动态确定最晚的日期
     all_dates = []
     for data_feed in price_data_dict.values():
-        # data_feed.p.dataname 是一个 DataFrame
         if not data_feed.p.dataname.empty:
             all_dates.append(data_feed.p.dataname.index[-1])
     
-    actual_end_date = max(all_dates).date() if all_dates else end_date
+    actual_end_date = max(all_dates).date() if all_dates else BACKTEST_END_DATE
 
-    # 运行单一的回测（总回报）
+    # 运行回测，传入完整的观察期
     run_backtest(
         data_feeds=price_data_dict, 
         portfolios=portfolios, 
         initial_cash=INITIAL_CASH,
-        start_date=start_date,
+        start_date=BACKTEST_START_DATE,
         end_date=actual_end_date
     )
 
