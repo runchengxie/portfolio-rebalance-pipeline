@@ -15,10 +15,9 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 # --- 策略配置 ---
 BACKTEST_FREQUENCY = 'QE'
 ROLLING_WINDOW_YEARS = 5
-NUM_STOCKS_TO_SELECT = 20
+# 我们保留 MIN_REPORTS_IN_WINDOW 作为筛选条件。
 MIN_REPORTS_IN_WINDOW = 5
-# 注意：文件名从 .xlsx 改为基础名，后缀将在保存时添加
-OUTPUT_FILE_BASE = OUTPUTS_DIR / f'point_in_time_backtest_top_{NUM_STOCKS_TO_SELECT}_stocks'
+OUTPUT_FILE_BASE = OUTPUTS_DIR / 'point_in_time_backtest_dynamic'
 
 
 # --- 因子配置 ---
@@ -54,8 +53,6 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     try:
         con = sqlite3.connect(db_path)
         
-        # SQL 查询，一次性完成数据提取和合并
-        # 这个查询等同于您原来的 pd.read_csv + pd.merge 操作
         query = """
         SELECT
             bs.Ticker,
@@ -87,10 +84,8 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
         print("从数据库加载的数据为空。")
         return df_final
 
-    # 数据清洗逻辑
     df_final = df_final.sort_values(['Ticker', 'year', 'date_known']).drop_duplicates(subset=['Ticker', 'year'], keep='last')
     
-    # 将负值或零值的资产和权益设为 NaN
     df_final.loc[df_final['at'] <= 0, 'at'] = np.nan
     df_final.loc[df_final['ceq'] <= 0, 'ceq'] = np.nan
     
@@ -158,14 +153,16 @@ def main():
     for publish_date in possible_publish_dates:
         rebalance_day = publish_date + pd.offsets.BDay(3)
         scores = calc_factor_scores(df_financials, publish_date, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
-        if len(scores) >= NUM_STOCKS_TO_SELECT:
+        
+        # 只要有任何股票符合条件 (>=1)，就认为该日期可行
+        if not scores.empty:  # 等价于 len(scores) > 0
             if backtest_start_date is None:
                 backtest_start_date = rebalance_day
-                print(f"找到一个可行的开始日期: {backtest_start_date.date()}.")
+                print(f"找到一个可行的开始日期: {backtest_start_date.date()}. 当期可选股票数: {len(scores)}")
             viable_rebalance_dates.append(rebalance_day)
 
     if backtest_start_date is None:
-        print("在任何时期都找不到足够数量的股票，程序退出。")
+        print("在任何时期都找不到符合条件的股票 (5年内至少有5份财报)，程序退出。")
         return
 
     all_period_portfolios = {}
@@ -175,12 +172,22 @@ def main():
     for i, rebalance_day in enumerate(viable_rebalance_dates):
         publish_date_for_calc = rebalance_day - pd.offsets.BDay(3)
 
-        print(f"  - 处理调仓日 {rebalance_day.date()} (基于 {publish_date_for_calc.date()} 前的数据) ({i+1}/{len(viable_rebalance_dates)})")
         df_agg_scores = calc_factor_scores(df_financials, publish_date_for_calc, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
-        if df_agg_scores.empty: continue
+        if df_agg_scores.empty:
+            print(f"  - 处理调仓日 {rebalance_day.date()}... 无符合条件的股票，跳过。")
+            continue
+        
+        # NOTE: 打印出当期可选的股票数量
+        print(f"  - 处理调仓日 {rebalance_day.date()} (基于 {publish_date_for_calc.date()} 前的数据) - {len(df_agg_scores)} 只股票符合条件")
         
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
-        top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
+        
+        # 不再使用 .head() 来限制数量，所有符合条件的股票都入选
+        top_stocks = df_ranked
+        
+        # NOTE (Optional): 如果你仍想设置一个数量上限（例如最多20只），可以使用下面这行代码代替上面一行
+        # top_stocks = df_ranked.head(20)
+        
         all_period_portfolios[rebalance_day.date()] = top_stocks.reset_index()
 
     if all_period_portfolios:
@@ -197,7 +204,7 @@ def main():
                     df_portfolio.to_excel(writer, sheet_name=str(date), index=False)
                     
                     # 2. 追加到同一个 TXT 文件
-                    txt_file.write(f"--- Portfolio for {date} ---\n")
+                    txt_file.write(f"--- Portfolio for {date} ({len(df_portfolio)} stocks) ---\n")
                     # 使用 to_string() 方法可以获得更好的格式对齐
                     txt_file.write(df_portfolio.to_string(index=False))
                     txt_file.write("\n\n") # 在每个表格后添加空行以分隔
