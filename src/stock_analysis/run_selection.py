@@ -182,11 +182,8 @@ def main():
         
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
         
-        # 不再使用 .head() 来限制数量，所有符合条件的股票都入选
-        top_stocks = df_ranked
-        
-        # NOTE (Optional): 如果你仍想设置一个数量上限（例如最多20只），可以使用下面这行代码代替上面一行
-        # top_stocks = df_ranked.head(20)
+        # 设置一个数量上限（最多20只）
+        top_stocks = df_ranked.head(20)
         
         all_period_portfolios[rebalance_day.date()] = top_stocks.reset_index()
 
