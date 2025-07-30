@@ -53,10 +53,25 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     try:
         con = sqlite3.connect(db_path)
         
+        # 您的分析是正确的，这里的关键是放宽对 `date_known` 的严格匹配。
+        # 我们使用 CTE (Common Table Expressions) 先为每张表找出每个公司和财年的最新记录。
         query = """
+        WITH latest_bs AS (
+            SELECT *, ROW_NUMBER() OVER(PARTITION BY Ticker, year ORDER BY date_known DESC) as rn
+            FROM balance_sheet
+        ),
+        latest_income AS (
+            SELECT *, ROW_NUMBER() OVER(PARTITION BY Ticker, year ORDER BY date_known DESC) as rn
+            FROM income
+        ),
+        latest_cf AS (
+            SELECT *, ROW_NUMBER() OVER(PARTITION BY Ticker, year ORDER BY date_known DESC) as rn
+            FROM cash_flow
+        )
         SELECT
             bs.Ticker,
             bs.year,
+            -- 我们保留资产负债表的发布日期作为基准
             bs.date_known,
             bs."Total Equity" AS ceq,
             bs."Total Assets" AS at,
@@ -64,11 +79,11 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
             i."Income Tax (Expense) Benefit, Net" AS txt,
             cf."Net Cash from Operating Activities" AS cfo
         FROM
-            balance_sheet AS bs
+            (SELECT * FROM latest_bs WHERE rn = 1) AS bs
         INNER JOIN
-            income AS i ON bs.Ticker = i.Ticker AND bs.year = i.year AND bs.date_known = i.date_known
+            (SELECT * FROM latest_income WHERE rn = 1) AS i ON bs.Ticker = i.Ticker AND bs.year = i.year
         INNER JOIN
-            cash_flow AS cf ON bs.Ticker = cf.Ticker AND bs.year = cf.year AND bs.date_known = cf.date_known
+            (SELECT * FROM latest_cf WHERE rn = 1) AS cf ON bs.Ticker = cf.Ticker AND bs.year = cf.year
         """
         
         df_final = pd.read_sql_query(query, con, parse_dates=['date_known'])
