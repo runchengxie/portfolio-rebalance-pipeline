@@ -3,6 +3,7 @@ import numpy as np
 from scipy.stats import zscore
 from pathlib import Path
 from dateutil.relativedelta import relativedelta
+import sqlite3
 
 # --- 路径配置 ---
 # 假设脚本位于项目子目录中，PROJECT_ROOT 是项目根目录
@@ -41,33 +42,59 @@ def clean_dataframe(df_raw: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
-    """加载、清理并合并财务数据"""
-    print("正在加载并合并财务数据...")
-    bs_path = data_dir / 'us-balance-ttm.csv'
-    cf_path = data_dir / 'us-cashflow-ttm.csv'
-    is_path = data_dir / 'us-income-ttm.csv'
-    
-    try:
-        df_bs = clean_dataframe(pd.read_csv(bs_path, sep=';'))
-        df_cf = clean_dataframe(pd.read_csv(cf_path, sep=';'))
-        df_is = clean_dataframe(pd.read_csv(is_path, sep=';'))
-    except FileNotFoundError as e:
-        print(f"[错误] 无法在 '{data_dir}' 中找到财务数据文件. {e}")
+    """从 financial_data.db 加载、合并并清理财务数据。"""
+    print("正在从数据库加载并合并财务数据...")
+    db_path = data_dir / 'financial_data.db'
+
+    if not db_path.exists():
+        print(f"[错误] 数据库文件不存在: {db_path}")
+        print("[提示] 请先运行 'tools/load_data_to_db.py' 脚本来创建数据库。")
         return pd.DataFrame()
 
-    merge_keys = ['Ticker', 'year', 'date_known']
-    df_cf_subset = df_cf[['Ticker', 'year', 'date_known', 'Net Cash from Operating Activities']].rename(columns={'Net Cash from Operating Activities': 'cfo'})
-    df_is_subset = df_is[['Ticker', 'year', 'date_known', 'Income Tax (Expense) Benefit, Net']].rename(columns={'Income Tax (Expense) Benefit, Net': 'txt'})
-    df_bs_subset = df_bs[['Ticker', 'year', 'date_known', 'Total Equity', 'Total Assets', 'Accounts & Notes Receivable']].rename(columns={'Total Equity': 'ceq', 'Total Assets': 'at', 'Accounts & Notes Receivable': 'rect'})
+    try:
+        con = sqlite3.connect(db_path)
+        
+        # SQL 查询，一次性完成数据提取和合并
+        # 这个查询等同于您原来的 pd.read_csv + pd.merge 操作
+        query = """
+        SELECT
+            bs.Ticker,
+            bs.year,
+            bs.date_known,
+            bs."Total Equity" AS ceq,
+            bs."Total Assets" AS at,
+            bs."Accounts & Notes Receivable" AS rect,
+            i."Income Tax (Expense) Benefit, Net" AS txt,
+            cf."Net Cash from Operating Activities" AS cfo
+        FROM
+            balance_sheet AS bs
+        INNER JOIN
+            income AS i ON bs.Ticker = i.Ticker AND bs.year = i.year AND bs.date_known = i.date_known
+        INNER JOIN
+            cash_flow AS cf ON bs.Ticker = cf.Ticker AND bs.year = cf.year AND bs.date_known = cf.date_known
+        """
+        
+        df_final = pd.read_sql_query(query, con, parse_dates=['date_known'])
 
-    df_merged = pd.merge(df_bs_subset, df_is_subset, on=merge_keys, how='inner')
-    df_final = pd.merge(df_merged, df_cf_subset, on=merge_keys, how='inner')
+    except Exception as e:
+        print(f"[错误] 从数据库读取数据时出错: {e}")
+        return pd.DataFrame()
+    finally:
+        if 'con' in locals():
+            con.close()
+
+    if df_final.empty:
+        print("从数据库加载的数据为空。")
+        return df_final
+
+    # 数据清洗逻辑
     df_final = df_final.sort_values(['Ticker', 'year', 'date_known']).drop_duplicates(subset=['Ticker', 'year'], keep='last')
     
+    # 将负值或零值的资产和权益设为 NaN
     df_final.loc[df_final['at'] <= 0, 'at'] = np.nan
     df_final.loc[df_final['ceq'] <= 0, 'ceq'] = np.nan
     
-    print(f"合并后的数据包含 {len(df_final)} 行.")
+    print(f"从数据库合并后的数据包含 {len(df_final)} 行.")
     return df_final
 
 def calculate_factors_point_in_time(df: pd.DataFrame) -> pd.DataFrame:
