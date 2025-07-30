@@ -1,5 +1,3 @@
-# src/stock_analysis/enrich_results.py
-
 import pandas as pd
 from pathlib import Path
 

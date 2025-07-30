@@ -6,12 +6,10 @@ requires-python = ">=3.10, <3.11"
 dependencies = [
     "pandas",
     "matplotlib",
-    "seaborn",
-    "notebook",
     "openpyxl",
-    "yfinance",
     "scipy",
-    "backtrader"
+    "backtrader",
+    "google-genai",
 ]
 
 [project.optional-dependencies]
