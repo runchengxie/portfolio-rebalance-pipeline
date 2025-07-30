@@ -6,6 +6,8 @@ import sqlite3
 import logging
 import sys
 import time
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 # --- 路径配置 ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -148,7 +150,7 @@ def load_all_price_data_from_db(db_path: Path, all_needed_tickers: set, start_da
         for ticker, group in all_data.groupby('Ticker'):
             group = group.set_index('Date')
             # 对齐到主时间线
-            aligned_df = group.reindex(master_index).fillna(method='ffill')
+            aligned_df = group.reindex(master_index).ffill()
             aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']] = aligned_df.loc[:, ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend']].ffill()
             aligned_df.loc[:, 'Volume'] = aligned_df['Volume'].fillna(0)
             aligned_df.loc[:, 'Dividend'] = aligned_df['Dividend'].fillna(0)
@@ -178,7 +180,7 @@ def setup_logging():
 
 def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_date: datetime.date, end_date: datetime.date):
     """
-    运行主要的回测策略，并在最后打印包含时间段的总结报告。
+    运行主要的回测策略，并在最后打印包含时间段的总结报告，并生成业绩图表。
     """
     print("\n--- Running Point-in-Time Strategy (Total Return) ---")
     cerebro = bt.Cerebro()
@@ -188,13 +190,15 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
         cerebro.adddata(data_feeds[name], name=name)
 
     cerebro.addstrategy(PointInTimeStrategy, portfolios=portfolios)
-    # 移除 SharpeRatio, 保留其他分析器
+    
+    # 添加分析器
+    cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='time_return')
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
     cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
 
     results = cerebro.run()
     
-    # --- 最终结果报告 ---
+    # --- 提取指标 ---
     final_value = cerebro.broker.getvalue()
     strat = results[0]
     max_drawdown = strat.analyzers.drawdown.get_analysis().max.drawdown
@@ -205,10 +209,10 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
     annualized_return = 0.0
     if duration_in_days > 0:
         duration_in_years = duration_in_days / 365.25
-        # 确保年数大于0以避免除零错误
         if duration_in_years > 0:
             annualized_return = ((1 + total_return) ** (1 / duration_in_years)) - 1
 
+    # --- 最终结果报告 ---
     print(f'\n' + '='*50)
     print(f'{"Backtest Results (Total Return)":^50}')
     print(f'='*50)
@@ -220,6 +224,37 @@ def run_backtest(data_feeds: dict, portfolios: dict, initial_cash: float, start_
     print(f"Annualized Return:       {annualized_return*100:.2f}%")
     print(f"Max Drawdown:            {max_drawdown:.2f}%")
     print(f'='*50)
+    
+    # --- 生成业绩图表 ---
+    print("\nGenerating performance chart...")
+    tr_analyzer = strat.analyzers.getbyname('time_return')
+    returns = pd.Series(tr_analyzer.get_analysis())
+    cumulative_returns = (1 + returns).cumprod()
+    portfolio_value = initial_cash * cumulative_returns
+    
+    # 为曲线的起点添加初始资金
+    start_date_ts = pd.Timestamp(start_date) - pd.Timedelta(days=1)
+    portfolio_value = pd.concat([pd.Series({start_date_ts: initial_cash}), portfolio_value])
+
+    plt.style.use('seaborn-v0_8-whitegrid')
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    portfolio_value.plot(ax=ax, label='Multi-Factor Strategy (Total Return)', color='royalblue', lw=2)
+    
+    ax.set_title(f'Strategy Backtest Performance ({start_date.year} - {end_date.year})', fontsize=16)
+    ax.set_xlabel('Date', fontsize=12)
+    ax.set_ylabel('Portfolio Value ($)', fontsize=12)
+    ax.legend(fontsize=12)
+    
+    formatter = mticker.FuncFormatter(lambda x, p: f'${x:,.0f}')
+    ax.yaxis.set_major_formatter(formatter)
+    
+    plt.tight_layout()
+    
+    output_path = OUTPUTS_DIR / 'strategy_cumulative_returns.png'
+    plt.savefig(output_path, dpi=300)
+    
+    print(f"Chart saved successfully to: {output_path}")
 
 def main():
     """
