@@ -235,7 +235,7 @@ def main():
     else:
         print("\n没有生成任何投资组合。")
 
-    # --- 生成并保存统计图表 ---
+    # --- 新增：生成并保存统计图表 ---
     if screening_stats:
         print("\n正在生成合格股票数量的统计图表...")
         
@@ -245,29 +245,32 @@ def main():
         df_stats = df_stats.sort_values('date').drop_duplicates(subset=['date'], keep='last')
 
         # 2. 创建图表
-        plt.style.use('seaborn-v0_8-grid') # 使用一个美观的样式
-        fig, ax = plt.subplots(figsize=(15, 8)) # 创建图和坐标轴，设置尺寸
+        plt.style.use('ggplot') # 换成一个更通用的样式，'seaborn-whitegrid' 也是一个不错的选择
+        fig, ax = plt.subplots(figsize=(15, 8)) 
 
-        ax.plot(df_stats['date'], df_stats['count'], marker='o', linestyle='-', markersize=4)
+        ax.plot(df_stats['date'], df_stats['count'], marker='o', linestyle='-', markersize=4, label='Eligible Stocks')
 
         # 3. 美化图表
         ax.set_title('Number of Eligible Stocks Over Time (Preliminary Screening)', fontsize=16)
         ax.set_xlabel('Rebalance Date', fontsize=12)
         ax.set_ylabel('Count of Eligible Stocks', fontsize=12)
+        ax.legend() # 添加图例
         
-        # 设置Y轴为整数刻度
         ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-        plt.setp(ax.get_xticklabels(), rotation=45, ha="right") # 旋转X轴标签防止重叠
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right") 
+        
+        # 确保Y轴从0开始
+        ax.set_ylim(bottom=0)
         
         # 4. 保存图表到文件
         chart_output_file = OUTPUTS_DIR / 'eligible_stocks_over_time.png'
         try:
+            # bbox_inches='tight' 可以确保旋转后的标签不会被截断
             plt.savefig(chart_output_file, dpi=300, bbox_inches='tight')
             print(f"图表已成功保存至: {chart_output_file}")
         except Exception as e:
             print(f"\n[错误] 保存图表时出错: {e}")
         
-        # (可选) 如果你想在脚本运行时直接显示图表，取消下面这行代码的注释
         # plt.show()
 
 if __name__ == "__main__":
