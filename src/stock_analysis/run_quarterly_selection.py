@@ -15,9 +15,9 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 # --- 策略配置 ---
 BACKTEST_FREQUENCY = 'QE'
 ROLLING_WINDOW_YEARS = 5
-# 我们保留 MIN_REPORTS_IN_WINDOW 作为筛选条件。
+# 我们保留 MIN_REPORTS_IN_WINDOW 作为筛选条件
 MIN_REPORTS_IN_WINDOW = 5
-OUTPUT_FILE_BASE = OUTPUTS_DIR / 'point_in_time_backtest_dynamic'
+OUTPUT_FILE_BASE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly'
 
 
 # --- 因子配置 ---
@@ -53,7 +53,6 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     try:
         con = sqlite3.connect(db_path)
         
-        # 您的分析是正确的，这里的关键是放宽对 `date_known` 的严格匹配。
         # 我们使用 CTE (Common Table Expressions) 先为每张表找出每个公司和财年的最新记录。
         query = """
         WITH latest_bs AS (

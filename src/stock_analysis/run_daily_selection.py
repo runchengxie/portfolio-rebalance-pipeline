@@ -4,10 +4,18 @@ from scipy.stats import zscore
 from pathlib import Path
 from dateutil.relativedelta import relativedelta
 import sqlite3
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+
 
 # --- 路径配置 ---
 # 假设脚本位于项目子目录中，PROJECT_ROOT 是项目根目录
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+try:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+except NameError:
+    # 在交互式环境（如 Jupyter）中运行时，__file__ 未定义
+    PROJECT_ROOT = Path('.').resolve().parent
+    
 DATA_DIR = PROJECT_ROOT / 'data'
 OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -53,7 +61,6 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     try:
         con = sqlite3.connect(db_path)
         
-        # 您的分析是正确的，这里的关键是放宽对 `date_known` 的严格匹配。
         # 我们使用 CTE (Common Table Expressions) 先为每张表找出每个公司和财年的最新记录。
         query = """
         WITH latest_bs AS (
@@ -181,6 +188,8 @@ def main():
         return
 
     all_period_portfolios = {}
+    # --- 初始化列表以存储统计数据 ---
+    screening_stats = []
     latest_known = df_financials['date_known'].max().normalize()
 
     print(f"开始从 {backtest_start_date.date()} 到 {latest_known.date()} 进行选择...")
@@ -188,38 +197,33 @@ def main():
         publish_date_for_calc = rebalance_day - pd.offsets.BDay(3)
 
         df_agg_scores = calc_factor_scores(df_financials, publish_date_for_calc, ROLLING_WINDOW_YEARS, MIN_REPORTS_IN_WINDOW)
+        
+        # --- 无论是否为空，都记录下来 ---
+        num_eligible_stocks = len(df_agg_scores)
+        screening_stats.append({'date': rebalance_day.date(), 'count': num_eligible_stocks})
+
         if df_agg_scores.empty:
             print(f"  - 处理调仓日 {rebalance_day.date()}... 无符合条件的股票，跳过。")
             continue
         
-        # NOTE: 打印出当期可选的股票数量
-        print(f"  - 处理调仓日 {rebalance_day.date()} (基于 {publish_date_for_calc.date()} 前的数据) - {len(df_agg_scores)} 只股票符合条件")
+        print(f"  - 处理调仓日 {rebalance_day.date()} (基于 {publish_date_for_calc.date()} 前的数据) - {num_eligible_stocks} 只股票符合条件")
         
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
-        
-        # 设置一个数量上限（最多20只）
         top_stocks = df_ranked.head(20)
-        
         all_period_portfolios[rebalance_day.date()] = top_stocks.reset_index()
 
     if all_period_portfolios:
-        # 定义输出文件的完整路径
         output_excel_file = OUTPUT_FILE_BASE.with_suffix('.xlsx')
         output_txt_file = OUTPUT_FILE_BASE.with_suffix('.txt')
 
         try:
-            # 使用 with 语句同时管理 Excel 和 txt 文件的写入
             with pd.ExcelWriter(output_excel_file) as writer, open(output_txt_file, 'w', encoding='utf-8') as txt_file:
                 print("\n正在生成 Excel 和 TXT 输出文件...")
                 for date, df_portfolio in all_period_portfolios.items():
-                    # 1. 写入到 Excel 的不同工作表
                     df_portfolio.to_excel(writer, sheet_name=str(date), index=False)
-                    
-                    # 2. 追加到同一个 TXT 文件
                     txt_file.write(f"--- Portfolio for {date} ({len(df_portfolio)} stocks) ---\n")
-                    # 使用 to_string() 方法可以获得更好的格式对齐
                     txt_file.write(df_portfolio.to_string(index=False))
-                    txt_file.write("\n\n") # 在每个表格后添加空行以分隔
+                    txt_file.write("\n\n")
 
             print("股票选择完成。结果已保存至:")
             print(f"  - Excel: {output_excel_file}")
@@ -230,6 +234,41 @@ def main():
             
     else:
         print("\n没有生成任何投资组合。")
+
+    # --- 生成并保存统计图表 ---
+    if screening_stats:
+        print("\n正在生成合格股票数量的统计图表...")
+        
+        # 1. 将收集的数据转换为 DataFrame
+        df_stats = pd.DataFrame(screening_stats)
+        df_stats['date'] = pd.to_datetime(df_stats['date'])
+        df_stats = df_stats.sort_values('date').drop_duplicates(subset=['date'], keep='last')
+
+        # 2. 创建图表
+        plt.style.use('seaborn-v0_8-grid') # 使用一个美观的样式
+        fig, ax = plt.subplots(figsize=(15, 8)) # 创建图和坐标轴，设置尺寸
+
+        ax.plot(df_stats['date'], df_stats['count'], marker='o', linestyle='-', markersize=4)
+
+        # 3. 美化图表
+        ax.set_title('Number of Eligible Stocks Over Time (Preliminary Screening)', fontsize=16)
+        ax.set_xlabel('Rebalance Date', fontsize=12)
+        ax.set_ylabel('Count of Eligible Stocks', fontsize=12)
+        
+        # 设置Y轴为整数刻度
+        ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right") # 旋转X轴标签防止重叠
+        
+        # 4. 保存图表到文件
+        chart_output_file = OUTPUTS_DIR / 'eligible_stocks_over_time.png'
+        try:
+            plt.savefig(chart_output_file, dpi=300, bbox_inches='tight')
+            print(f"图表已成功保存至: {chart_output_file}")
+        except Exception as e:
+            print(f"\n[错误] 保存图表时出错: {e}")
+        
+        # (可选) 如果你想在脚本运行时直接显示图表，取消下面这行代码的注释
+        # plt.show()
 
 if __name__ == "__main__":
     main()
