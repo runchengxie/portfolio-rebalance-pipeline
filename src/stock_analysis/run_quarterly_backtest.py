@@ -17,7 +17,7 @@ OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # 指向季度的选股结果文件
-PORTFOLIO_FILE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly.xlsx'
+PORTFOLIO_FILE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly_sp500_filtered.xlsx'
 
 # --- 数据库配置 ---
 DB_PATH = DATA_DIR / 'financial_data.db'
@@ -33,8 +33,6 @@ class PointInTimeStrategy(bt.Strategy):
         self.next_rebalance_idx = 0
         self.get_next_rebalance_date()
         self.timeline = self.datas[0]
-        
-        # --- 新增: 用于记录诊断信息的列表 ---
         self.rebalance_log = []
 
     def log(self, txt, dt=None):
