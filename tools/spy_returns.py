@@ -24,8 +24,8 @@ DB_PATH = DATA_DIR / 'financial_data.db'
 # --- 回测配置 ---
 SPY_TICKER = 'SPY'
 INITIAL_CASH = 100_000.0
-START_DATE = datetime.datetime(2020, 12, 31)
-END_DATE = datetime.datetime(2025, 3, 31)
+START_DATE = datetime.datetime(2021, 4, 2)
+END_DATE = datetime.datetime(2025, 7, 2)
 
 # --- 辅助函数 ---
 def load_spy_data_from_db(db_path: Path, start_date: datetime.datetime, end_date: datetime.datetime) -> pd.DataFrame:
