@@ -138,31 +138,51 @@ def calc_factor_scores(df_financials: pd.DataFrame, as_of_date: pd.Timestamp, wi
 
 # --- Main Logic for Selection Script ---
 def main():
-    """主执行函数 (季度调仓 + S&P 500 过滤 + 图表输出)"""
-    print("--- 正在运行股票选择脚本 (季度调仓 + S&P 500 过滤模式) ---")
+    """
+    主执行函数 (季度调仓 + S&P 500 强制过滤 + 图表输出)
+    """
+    print("--- 正在运行股票选择脚本 (季度调仓 + S&P 500 强制过滤模式) ---")
     
+    # 步骤 0: 获取 S&P 500 股票池
     sp500_list = get_sp500_tickers()
     
+    # ### 关键修改 ###
+    # 检查列表是否成功获取。如果失败，则直接退出，防止使用错误的股票池。
+    if not sp500_list:
+        print("\n[致命错误] 未能获取S&P 500成分股列表。")
+        print("程序将终止，以避免基于不正确的股票池（全市场）进行计算。")
+        print("请检查您的网络连接或稍后再试。")
+        return # 直接退出函数
+
+    # 步骤 1: 加载财务数据
     df_financials = load_and_merge_financial_data(DATA_DIR)
     if df_financials.empty:
         print("无法加载财务数据，程序退出。")
         return
 
-    if sp500_list:
-        initial_tickers = df_financials['Ticker'].nunique()
-        df_financials = df_financials[df_financials['Ticker'].isin(sp500_list)]
-        filtered_tickers = df_financials['Ticker'].nunique()
-        print(f"\n已应用 S&P 500 过滤器:")
-        print(f"  - 原始数据包含 {initial_tickers} 家公司。")
-        print(f"  - 筛选后，股票池保留 {filtered_tickers} 家公司进行后续分析。")
+    # 步骤 2: 应用 S&P 500 过滤器 (现在是强制执行)
+    print("\n正在应用 S&P 500 过滤器...")
+    initial_tickers_count = df_financials['Ticker'].nunique()
+    
+    # 执行过滤
+    df_financials = df_financials[df_financials['Ticker'].isin(sp500_list)]
+    
+    filtered_tickers_count = df_financials['Ticker'].nunique()
+    
+    # 更清晰的日志输出
+    print(f"  - 数据库中独特的公司总数: {initial_tickers_count}")
+    print(f"  - 获取到的 S&P 500 列表包含 {len(sp500_list)} 个代码。")
+    print(f"  - 过滤后，股票池中剩余 {filtered_tickers_count} 家公司用于后续分析。")
 
+    # 步骤 3: 确定回测的时间范围
     min_date = df_financials['date_known'].min()
     max_date = df_financials['date_known'].max()
 
     if pd.isna(min_date) or pd.isna(max_date):
-        print("数据中缺少有效的日期，无法确定回测范围。")
+        print("\n[错误] 在S&P 500股票池中未找到有效的财报日期，无法确定回测范围。")
         return
 
+    # 步骤 4: 生成固定的季度末调仓日期序列
     rebalance_dates = pd.date_range(start=min_date, end=max_date, freq=BACKTEST_FREQUENCY)
     trade_dates = [d + pd.offsets.BDay(2) for d in rebalance_dates]
     
@@ -170,8 +190,9 @@ def main():
     print([d.date() for d in trade_dates[:5]], "...")
 
     all_period_portfolios = {}
-    screening_stats = [] # ### 新增 ### 初始化列表以存储统计数据
+    screening_stats = [] # 初始化列表以存储统计数据
 
+    # 步骤 5: 遍历每个季度调仓日进行选股
     for trade_date in trade_dates:
         as_of_date = trade_date.normalize()
         
@@ -182,7 +203,7 @@ def main():
             min_reports_required=MIN_REPORTS_IN_WINDOW
         )
 
-        # ### 新增 ### 记录统计数据
+        # 记录统计数据
         num_eligible_stocks = len(df_agg_scores)
         screening_stats.append({'date': trade_date.date(), 'count': num_eligible_stocks})
 
@@ -190,15 +211,16 @@ def main():
             print(f"  - 调仓日 {trade_date.date()}: 无符合条件的股票，跳过。")
             continue
         
-        # ### 修改 ### 打印信息中加入合格股票数量
         print(f"  - 调仓日 {trade_date.date()}: {num_eligible_stocks} 只股票符合条件，正在排名...")
         
+        # 排名并选择top N
         NUM_STOCKS_TO_SELECT = 20
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
         
         all_period_portfolios[trade_date.date()] = top_stocks.reset_index()
 
+    # 步骤 6: 保存结果到文件
     if all_period_portfolios:
         output_excel_file = OUTPUT_FILE_BASE.with_suffix('.xlsx')
         output_txt_file = OUTPUT_FILE_BASE.with_suffix('.txt')
@@ -222,7 +244,7 @@ def main():
     else:
         print("\n没有生成任何投资组合。")
 
-    # ### 新增 ### 生成并保存统计图表
+    # 步骤 7: 生成并保存统计图表
     if screening_stats:
         print("\n正在生成合格股票数量的统计图表...")
         
@@ -234,7 +256,7 @@ def main():
 
         ax.plot(df_stats['date'], df_stats['count'], marker='o', linestyle='-', markersize=4, label=f'Stocks with >= {MIN_REPORTS_IN_WINDOW} reports in last {ROLLING_WINDOW_YEARS} years')
 
-        ax.set_title(f'Number of Eligible Stocks in S&P 500 Universe Over Time', fontsize=16, pad=20)
+        ax.set_title('Number of Eligible Stocks in S&P 500 Universe Over Time', fontsize=16, pad=20)
         ax.set_xlabel('Rebalance Date', fontsize=12)
         ax.set_ylabel('Count of Eligible Stocks', fontsize=12)
         ax.legend()
@@ -243,8 +265,12 @@ def main():
         ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
         
-        ax.set_ylim(bottom=0)
-        fig.tight_layout() # 自动调整布局，防止标签重叠
+        # 确保Y轴的上限合理，不会因为一两个异常值变得很大
+        # 这里设置为合格股票数最大值的1.1倍，且至少为20
+        y_max = max(20, df_stats['count'].max() * 1.1)
+        ax.set_ylim(bottom=0, top=y_max) 
+        
+        fig.tight_layout() # 自动调整布局
 
         chart_output_file = OUTPUT_FILE_BASE.with_suffix('.png')
         try:
