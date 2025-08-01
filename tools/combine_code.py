@@ -29,6 +29,7 @@ EXCLUDE_DIRS_EXACT: Set[str] = {
     "logs",
     "renv",
     "docs_extra",
+    "tools"
 }
 
 # Directory name patterns to exclude (e.g., any directory ending with .egg-info)
@@ -68,8 +69,6 @@ EXCLUDE_FILES: Set[str] = {
     ".DS_Store",
     "Thumbs.db",
     ".env",
-    "notebook.html",
-    "point_in_time_backtest_dynamic.txt"
 }
 
 
