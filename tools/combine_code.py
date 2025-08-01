@@ -69,6 +69,7 @@ EXCLUDE_FILES: Set[str] = {
     "Thumbs.db",
     ".env",
     "notebook.html",
+    "point_in_time_backtest_dynamic.txt"
 }
 
 
