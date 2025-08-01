@@ -25,6 +25,7 @@ package-dir = {"" = "src"}
 
 [tool.ruff]
 target-version = "py310"
+line-length = 88
 
 [tool.ruff.lint]
 # 选择要启用的规则集。
@@ -38,6 +39,4 @@ select = ["E", "F", "I", "UP", "B"] # B 是 flake8-bugbear
 # ignore = ["D100", "D101"] # 忽略特定规则
 
 [tool.ruff.format]
-# 这里的配置项和 Black 很相似
 quote-style = "double"
-line-length = 88

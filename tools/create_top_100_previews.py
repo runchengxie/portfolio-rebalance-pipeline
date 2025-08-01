@@ -1,7 +1,9 @@
 # tools/create_top_100_previews.py
 
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
+
 
 def create_previews():
     """
@@ -15,8 +17,8 @@ def create_previews():
         # .parent 获取父目录 (e.g., .../tools/)
         # .parent.parent 获取祖父目录, 即项目根目录
         project_root = Path(__file__).resolve().parent.parent
-        data_dir = project_root / 'data'
-        
+        data_dir = project_root / "data"
+
         print(f"[*] Searching for CSV files in: {data_dir}")
 
         # 2. 检查data目录是否存在
@@ -25,7 +27,7 @@ def create_previews():
             return
 
         # 3. 查找所有CSV文件
-        csv_files = list(data_dir.glob('*.csv'))
+        csv_files = list(data_dir.glob("*.csv"))
 
         if not csv_files:
             print(f"[*] No CSV files found in {data_dir}.")
@@ -36,11 +38,13 @@ def create_previews():
         # 4. 遍历并处理每个CSV文件
         for csv_path in csv_files:
             print(f"    -> Processing '{csv_path.name}'...")
-            
+
             try:
                 # 使用 pandas 读取前100行数据。nrows=100 非常高效，它只读取文件的开头部分。
                 # 这会读取表头（header）和接下来的100行数据。
-                df = pd.read_csv(csv_path, nrows=100, encoding='utf-8', on_bad_lines='skip')
+                df = pd.read_csv(
+                    csv_path, nrows=100, encoding="utf-8", on_bad_lines="skip"
+                )
 
                 # 5. 定义输出文件名和路径
                 # csv_path.stem 会获取不带扩展名的文件名 (e.g., 'us-balance-quarterly')
@@ -49,7 +53,7 @@ def create_previews():
 
                 # 6. 将数据帧（DataFrame）以美观的文本格式写入新文件
                 # to_string() 方法可以生成一个适合阅读的文本表示
-                with open(output_path, 'w', encoding='utf-8') as f:
+                with open(output_path, "w", encoding="utf-8") as f:
                     f.write(df.to_string())
 
                 print(f"    <- Successfully created '{output_filename}'")
@@ -61,6 +65,7 @@ def create_previews():
 
     except Exception as e:
         print(f"[!] An unexpected error occurred: {e}")
+
 
 # 当直接运行这个脚本时，执行create_previews函数
 if __name__ == "__main__":

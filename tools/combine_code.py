@@ -1,7 +1,6 @@
-import os
 import json
+import os
 from pathlib import Path
-from typing import Set, Optional
 
 # --- CONFIGURATION ---
 try:
@@ -14,7 +13,7 @@ except NameError:
 OUTPUT_FILENAME = "full_project_source.txt"
 
 # Directories to exclude by an exact match
-EXCLUDE_DIRS_EXACT: Set[str] = {
+EXCLUDE_DIRS_EXACT: set[str] = {
     ".git",
     "__pycache__",
     "cache",
@@ -29,13 +28,13 @@ EXCLUDE_DIRS_EXACT: Set[str] = {
     "logs",
     "renv",
     "docs_extra",
-    "tools"
+    "tools",
 }
 
 # Directory name patterns to exclude (e.g., any directory ending with .egg-info)
 EXCLUDE_DIRS_PATTERNS: tuple[str, ...] = (".egg-info",)
 
-EXCLUDE_EXTS: Set[str] = {
+EXCLUDE_EXTS: set[str] = {
     ".pyc",
     ".pyo",
     ".so",
@@ -63,7 +62,7 @@ EXCLUDE_EXTS: Set[str] = {
     ".xlsx",
 }
 
-EXCLUDE_FILES: Set[str] = {
+EXCLUDE_FILES: set[str] = {
     OUTPUT_FILENAME,
     "full_code_text.txt",  # Exclude the old file name just in case
     ".DS_Store",
@@ -72,13 +71,13 @@ EXCLUDE_FILES: Set[str] = {
 }
 
 
-def process_notebook(filepath: Path) -> Optional[str]:
+def process_notebook(filepath: Path) -> str | None:
     """
     Parses a Jupyter Notebook (.ipynb) file and extracts only the code and
     markdown content, ignoring all cell outputs (like images).
     """
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             notebook = json.load(f)
 
         content_parts = []
@@ -96,9 +95,9 @@ def process_notebook(filepath: Path) -> Optional[str]:
                 continue
 
             if cell_type == "code":
-                content_parts.append(f"# --- Code Cell {i+1} ---\n{source}\n")
+                content_parts.append(f"# --- Code Cell {i + 1} ---\n{source}\n")
             elif cell_type == "markdown":
-                content_parts.append(f"# --- Markdown Cell {i+1} ---\n{source}\n")
+                content_parts.append(f"# --- Markdown Cell {i + 1} ---\n{source}\n")
 
         return "\n".join(content_parts)
     except Exception as e:
@@ -116,7 +115,7 @@ def is_likely_text_file(filepath: Path) -> bool:
     try:
         with open(filepath, "rb") as f:
             return b"\0" not in f.read(1024)
-    except (IOError, PermissionError):
+    except (OSError, PermissionError):
         return False
 
 
@@ -167,7 +166,7 @@ def combine_project_files() -> None:
                         elif is_likely_text_file(filepath):
                             print(f"  + Processing Text File: {relative_path_str}")
                             with open(
-                                filepath, "r", encoding="utf-8", errors="ignore"
+                                filepath, encoding="utf-8", errors="ignore"
                             ) as infile:
                                 content = infile.read()
                         # 3. If neither, it's a file to be skipped
@@ -201,7 +200,7 @@ def combine_project_files() -> None:
         print(f"Skipped {files_skipped_count} binary, excluded, or unreadable files.")
         print(f"Combined output saved to: {output_filepath}")
 
-    except IOError as e:
+    except OSError as e:
         print(f"\n[FATAL ERROR] Could not write to output file {output_filepath}: {e}")
     except Exception as e:
         print(f"\n[FATAL ERROR] An unexpected error occurred: {e}")
