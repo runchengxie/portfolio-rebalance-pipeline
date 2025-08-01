@@ -1,10 +1,6 @@
-# --- Python & Jupyter Specific ---
 # Byte-code and cache
 __pycache__/
 *.pyc
-
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
 
 # Virtual environments (common patterns)
 .venv/
@@ -32,3 +28,12 @@ full_project_source.txt
 *.pdf
 *.docx
 *.xlsx
+
+# --- Editor & IDE Specific ---
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/tasks.json
