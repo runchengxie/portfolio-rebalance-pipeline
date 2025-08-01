@@ -23,7 +23,7 @@ DB_PATH = DATA_DIR / 'financial_data.db'
 
 INITIAL_CASH = 1_000_000.0
 
-# --- Backtrader 策略 (sin cambios) ---
+# --- Backtrader 策略 ---
 class PointInTimeStrategy(bt.Strategy):
     params = (('portfolios', None),)
 
@@ -32,6 +32,9 @@ class PointInTimeStrategy(bt.Strategy):
         self.next_rebalance_idx = 0
         self.get_next_rebalance_date()
         self.timeline = self.datas[0]
+        
+        # --- 新增: 用于记录诊断信息的列表 ---
+        self.rebalance_log = []
 
     def log(self, txt, dt=None):
         dt = dt or self.timeline.datetime.date(0)
@@ -50,11 +53,34 @@ class PointInTimeStrategy(bt.Strategy):
             self.log(f'--- Rebalancing on {current_date} for signal date {self.next_rebalance_date} ---')
             target_tickers_df = self.p.portfolios[self.next_rebalance_date]
             target_tickers = set(target_tickers_df['Ticker'])
+            
+            # --- 诊断日志 ①: 打印模型选出的原始股票池 ---
+            self.log(f"Diagnosis: Model selected {len(target_tickers)} tickers: {target_tickers}")
+
             available_data_tickers = {d._name for d in self.datas}
+            
+            # --- 诊断日志 ②: 计算并打印交集和差集 ---
             final_target_tickers = target_tickers.intersection(available_data_tickers)
+            missing_tickers = target_tickers - available_data_tickers
+
+            self.log(f"Diagnosis: {len(available_data_tickers)} tickers have price data available in the database.")
+            self.log(f"Diagnosis: Intersection has {len(final_target_tickers)} tickers: {final_target_tickers if final_target_tickers else 'EMPTY'}")
+            
+            # 记录本次调仓的诊断信息
+            log_entry = {
+                'rebalance_date': self.next_rebalance_date,
+                'model_tickers': len(target_tickers),
+                'available_tickers': len(final_target_tickers),
+                'missing_tickers_list': ', '.join(missing_tickers)
+            }
+            self.rebalance_log.append(log_entry)
 
             if not final_target_tickers:
-                self.log("Warning: No target tickers are available in the price data for this period.")
+                # --- 诊断日志 ③: 当交集为空时，打印更详细的警告 ---
+                self.log(f"CRITICAL WARNING: All-cash period. No selected tickers were found in the price database.")
+                if missing_tickers:
+                    self.log(f"CRITICAL WARNING: The following {len(missing_tickers)} tickers were missing price data: {missing_tickers}")
+                
                 self.next_rebalance_idx += 1
                 self.get_next_rebalance_date()
                 return
@@ -76,6 +102,15 @@ class PointInTimeStrategy(bt.Strategy):
             self.next_rebalance_idx += 1
             self.get_next_rebalance_date()
             self.log('--- Rebalancing Complete ---')
+
+    # --- 新增: 在策略结束时，将诊断日志保存到 CSV 文件 ---
+    def stop(self):
+        self.log('--- Backtest Finished ---')
+        log_df = pd.DataFrame(self.rebalance_log)
+        if not log_df.empty:
+            log_path = OUTPUTS_DIR / 'rebalancing_diagnostics_log.csv'
+            log_df.to_csv(log_path, index=False)
+            self.log(f"Rebalancing diagnostics saved to: {log_path}")
 
 # --- 辅助函数 ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
