@@ -8,6 +8,7 @@ import sys
 import time
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from dateutil.relativedelta import relativedelta
 
 # --- 路径配置 ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -262,10 +263,20 @@ def main():
     for df in portfolios.values():
         all_needed_tickers.update(tidy_ticker(df['Ticker']).dropna())
 
-    BACKTEST_START_DATE = datetime.date(2021, 4, 2)
-    BACKTEST_END_DATE = datetime.date(2025, 7, 4)
+    # --- 关键修复：动态确定回测开始和结束日期 ---
+    # 找到所有调仓日期中的最早和最晚日期
+    first_rebalance_date = min(portfolios.keys())
+    last_rebalance_date = max(portfolios.keys())
     
-    print(f"Backtest observation period: {BACKTEST_START_DATE} to {BACKTEST_END_DATE}")
+    # 我们将从第一个调仓信号日开始加载数据
+    BACKTEST_START_DATE = first_rebalance_date
+    # 将结束日期设为最后一个信号日之后的一段时间，确保回测完整
+    BACKTEST_END_DATE = last_rebalance_date + relativedelta(months=3)
+
+    print(f"Dynamically set backtest period based on portfolio dates:")
+    print(f"  - First signal date: {first_rebalance_date}")
+    print(f"  - Data loading will start from: {BACKTEST_START_DATE}")
+    print(f"  - Data loading will end around: {BACKTEST_END_DATE}")
     
     print(f"Calculating for a total of {len(all_needed_tickers)} unique tickers...")
     
