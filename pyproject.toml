@@ -10,6 +10,7 @@ dependencies = [
     "scipy",
     "backtrader",
     "google-genai",
+    "yfinance",
 ]
 
 [project.optional-dependencies]
