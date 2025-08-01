@@ -200,6 +200,9 @@ def main():
     all_period_portfolios = {}
     screening_stats = []
 
+    ### 新增 ### 用于控制选股是否开始的标志
+    selection_started = False
+    
     # 步骤 5: 遍历每个调仓日进行动态选股
     for trade_date in trade_dates:
         as_of_date = trade_date.normalize()
@@ -224,10 +227,22 @@ def main():
         num_eligible_stocks = len(df_agg_scores)
         screening_stats.append({'date': trade_date.date(), 'count': num_eligible_stocks})
 
-        if df_agg_scores.empty:
-            print(f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，无符合条件的股票。")
+        ### 修改 ### 检查是否达到开始选股的条件
+        # 如果选股还未开始，则检查本次符合条件的股票数是否大于250
+        if not selection_started and num_eligible_stocks > 250:
+            print(f"  - 调仓日 {trade_date.date()}: 符合条件的股票数量 ({num_eligible_stocks}) 首次超过250，从现在开始进行选股。")
+            selection_started = True # 将标志位置为True，以后将一直选股
+            
+        # 如果 df_agg_scores 为空，或者选股标志尚未开启，则打印信息并跳过本轮
+        if df_agg_scores.empty or not selection_started:
+            # 根据选股是否已开始，打印不同的提示信息
+            if not selection_started:
+                print(f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，未达到启动阈值(>250)。")
+            else: # 这种情况理论上不会发生，因为selection_started为True时，num_eligible_stocks必然>0
+                print(f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，无符合条件的股票。")
             continue
         
+        ### 修改 ### 只有在 selection_started 为 True 时才执行以下选股逻辑
         print(f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，正在排名...")
         
         NUM_STOCKS_TO_SELECT = 20
@@ -262,6 +277,10 @@ def main():
         plt.style.use('ggplot')
         fig, ax = plt.subplots(figsize=(15, 8))
         ax.plot(df_stats['date'], df_stats['count'], marker='o', linestyle='-', markersize=4, label=f'Stocks with >= {MIN_REPORTS_IN_WINDOW} reports in last {ROLLING_WINDOW_YEARS} years')
+        
+        ### 新增 ### 在图表上增加一条阈值线
+        ax.axhline(y=250, color='r', linestyle='--', label='Selection Threshold (250 stocks)')
+        
         ax.set_title('Number of Eligible Stocks in Point-in-Time S&P 500 Universe', fontsize=16, pad=20)
         ax.set_xlabel('Rebalance Date', fontsize=12)
         ax.set_ylabel('Count of Eligible Stocks', fontsize=12)
@@ -269,7 +288,7 @@ def main():
         ax.grid(True)
         ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
-        y_max = max(20, df_stats['count'].max() * 1.1)
+        y_max = max(260, df_stats['count'].max() * 1.1) # 确保阈值线可见
         ax.set_ylim(bottom=0, top=y_max) 
         fig.tight_layout()
         chart_output_file = OUTPUT_FILE_BASE.with_suffix('.png')
