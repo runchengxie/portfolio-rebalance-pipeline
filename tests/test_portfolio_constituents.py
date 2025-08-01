@@ -1,53 +1,65 @@
+# tests/test_portfolio_verification.py
+
 import pandas as pd
 from pathlib import Path
-import sys
+import pytest # 导入 pytest 库
 
-# --- 健壮的路径配置 ---
-# 这个配置能确保无论脚本从哪里被调用，都能找到项目根目录。
+# --- 路径配置 ---
 try:
-    # 当作为脚本运行时: /path/to/project/tests/verify_portfolio.py
-    # .parent 是 tests 目录, .parent.parent 是项目根目录
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
 except NameError:
-    # 当在交互式环境 (如Jupyter Notebook) 中运行时
-    # 假设 Notebook 在项目根目录或 tests 目录下
-    if 'tests' in str(Path('.').resolve()):
-         PROJECT_ROOT = Path('.').resolve().parent
-    else:
-         PROJECT_ROOT = Path('.').resolve()
+    PROJECT_ROOT = Path('.').resolve().parent if 'tests' in str(Path('.').resolve()) else Path('.').resolve()
 
-# 将项目根目录下的 src 文件夹添加到Python的搜索路径中
-# 这是一个好习惯，虽然在这个特定脚本里没用到，但在更复杂的测试中会很有用
-sys.path.append(str(PROJECT_ROOT / 'src'))
-
-
-# --- 文件路径定义 ---
 DATA_DIR = PROJECT_ROOT / 'data'
 OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 PORTFOLIO_FILE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly_sp500_historical.xlsx'
 CONSTITUENTS_FILE = DATA_DIR / 'sp500_historical_constituents.csv'
 
 
-def load_sp500_constituents(file_path: Path) -> pd.DataFrame | None:
+# --- Pytest Fixtures: 准备测试所需的数据 ---
+
+@pytest.fixture(scope="session") # scope="session" 表示这个fixture在整个测试会话中只执行一次
+def sp500_constituents() -> pd.DataFrame:
     """
-    从本地CSV文件加载S&P 500历史成分股数据。
+    加载S&P 500历史成分股数据，作为一个可复用的测试资源。
     """
-    print(f"Loading ground truth data from: {file_path}")
-    try:
-        df = pd.read_csv(file_path)
-        df['start_date'] = pd.to_datetime(df['start_date'])
-        df['end_date'] = pd.to_datetime(df['end_date'], errors='coerce')
-        df['ticker'] = df['ticker'].str.upper().str.strip()
-        return df
-    except FileNotFoundError:
-        print(f"[ERROR] Constituents file not found: {file_path}")
-        return None
+    if not CONSTITUENTS_FILE.exists():
+        pytest.skip(f"Ground truth file not found, skipping tests: {CONSTITUENTS_FILE}")
+        
+    df = pd.read_csv(CONSTITUENTS_FILE)
+    df['start_date'] = pd.to_datetime(df['start_date'])
+    df['end_date'] = pd.to_datetime(df['end_date'], errors='coerce')
+    df['ticker'] = df['ticker'].str.upper().str.strip()
+    return df
+
+@pytest.fixture(scope="session")
+def portfolio_excel_file() -> pd.ExcelFile:
+    """
+    加载投资组合Excel文件，作为一个可复用的测试资源。
+    """
+    if not PORTFOLIO_FILE.exists():
+        pytest.skip(f"Portfolio file not found, skipping tests: {PORTFOLIO_FILE}")
+    
+    return pd.ExcelFile(PORTFOLIO_FILE)
+
+
+# --- 参数化：动态生成测试用例 ---
+
+def get_portfolio_sheet_names():
+    """帮助函数：读取Excel文件的工作表名列表，用于参数化。"""
+    if not PORTFOLIO_FILE.exists():
+        return []
+    xls = pd.ExcelFile(PORTFOLIO_FILE)
+    return xls.sheet_names
+
+# --- 核心测试逻辑 ---
 
 def verify_membership(portfolio_date: pd.Timestamp, 
                       portfolio_tickers: list, 
                       df_constituents: pd.DataFrame) -> list:
     """
-    验证给定日期的一组股票是否都是S&P 500成员。
+    (Helper function) 验证给定日期的一组股票是否都是S&P 500成员。
+    返回不符合条件的股票列表。
     """
     misfit_tickers = []
     check_date = portfolio_date.normalize()
@@ -57,7 +69,7 @@ def verify_membership(portfolio_date: pd.Timestamp,
         if ticker_history.empty:
             misfit_tickers.append(ticker)
             continue
-            
+        
         is_member = ((ticker_history['start_date'] <= check_date) & \
                      (pd.isna(ticker_history['end_date']) | (ticker_history['end_date'] > check_date))).any()
 
@@ -67,55 +79,31 @@ def verify_membership(portfolio_date: pd.Timestamp,
     return misfit_tickers
 
 
-def main():
+# --- Pytest 测试函数 ---
+
+@pytest.mark.parametrize("sheet_name", get_portfolio_sheet_names())
+def test_portfolio_stocks_are_valid_sp500_members(
+    sheet_name: str, 
+    portfolio_excel_file: pd.ExcelFile, 
+    sp500_constituents: pd.DataFrame
+):
     """
-    测试脚本的主函数。
+    这是一个参数化的测试。
+    对于Excel中的每一个工作表(sheet_name)，本测试都会独立运行一次。
+    它验证该工作表中的所有股票在对应的日期都是S&P 500的有效成员。
     """
-    print("--- Running S&P 500 Portfolio Verification Script ---")
+    # 1. 从测试参数和Fixtures中准备数据
+    portfolio_date = pd.to_datetime(sheet_name)
+    df_portfolio = portfolio_excel_file.parse(sheet_name)
+    tickers_to_check = df_portfolio['Ticker'].tolist()
 
-    df_constituents = load_sp500_constituents(CONSTITUENTS_FILE)
-    if df_constituents is None:
-        return
+    if not tickers_to_check:
+        pytest.skip("Portfolio is empty for this date.")
 
-    print(f"Loading portfolio data from: {PORTFOLIO_FILE}\n")
-    try:
-        xls = pd.ExcelFile(PORTFOLIO_FILE)
-    except FileNotFoundError:
-        print(f"[ERROR] Portfolio file not found: {PORTFOLIO_FILE}")
-        print("Please run the main selection script first to generate the output.")
-        return
+    # 2. 执行核心验证逻辑
+    misfit_tickers = verify_membership(portfolio_date, tickers_to_check, sp500_constituents)
 
-    total_sheets_checked = 0
-    total_errors_found = 0
-
-    for sheet_name in xls.sheet_names:
-        total_sheets_checked += 1
-        portfolio_date = pd.to_datetime(sheet_name)
-        df_portfolio = pd.read_excel(xls, sheet_name=sheet_name)
-        tickers_to_check = df_portfolio['Ticker'].tolist()
-
-        if not tickers_to_check:
-            print(f"- Verifying portfolio for {portfolio_date.date()}... SKIP (Portfolio is empty)")
-            continue
-
-        misfit_tickers = verify_membership(portfolio_date, tickers_to_check, df_constituents)
-
-        if not misfit_tickers:
-            print(f"- Verifying portfolio for {portfolio_date.date()}... SUCCESS ({len(tickers_to_check)} stocks OK)")
-        else:
-            total_errors_found += 1
-            print(f"- Verifying portfolio for {portfolio_date.date()}... FAILURE!")
-            print(f"  [!!!] The following {len(misfit_tickers)} ticker(s) were NOT in the S&P 500 on this date:")
-            print(f"        {', '.join(misfit_tickers)}")
-
-    print("\n--- Verification Summary ---")
-    print(f"Total portfolios checked: {total_sheets_checked}")
-    if total_errors_found == 0:
-        print("✅ ALL TESTS PASSED! All selected stocks were valid S&P 500 members on their respective dates.")
-    else:
-        print(f"❌ TEST FAILED! Found errors in {total_errors_found} portfolio(s).")
-        print("Please review the logs above for details.")
-
-
-if __name__ == "__main__":
-    main()
+    # 3. 使用 assert 声明期望的结果
+    # 如果 misfit_tickers 不是空列表，assert会失败，pytest会报告错误。
+    assert not misfit_tickers, \
+        f"On {portfolio_date.date()}, found tickers that were not S&P 500 members: {misfit_tickers}"
