@@ -1,4 +1,12 @@
 from google import genai
+from dotenv import load_dotenv
+import os
+
+# 加载 .env 文件中的环境变量
+load_dotenv()
+
+# 现在您可以通过 os.environ 获取环境变量
+api_key = os.getenv("GEMINI_API_KEY")
 
 # The client gets the API key from the environment variable `GEMINI_API_KEY`.
 client = genai.Client()

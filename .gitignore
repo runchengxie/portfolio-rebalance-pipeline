@@ -37,3 +37,6 @@ full_project_source.txt
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/tasks.json
+
+# Environment variables
+.env
