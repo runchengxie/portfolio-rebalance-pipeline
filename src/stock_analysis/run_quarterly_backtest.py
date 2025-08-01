@@ -17,7 +17,7 @@ OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # 指向季度的选股结果文件
-PORTFOLIO_FILE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly_sp500_filtered.xlsx'
+PORTFOLIO_FILE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly_sp500_historical.xlsx'
 
 # --- 数据库配置 ---
 DB_PATH = DATA_DIR / 'financial_data.db'
