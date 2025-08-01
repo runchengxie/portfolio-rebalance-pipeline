@@ -4,17 +4,15 @@ from scipy.stats import zscore
 from pathlib import Path
 from dateutil.relativedelta import relativedelta
 import sqlite3
-import yfinance as yf
-import matplotlib.pyplot as plt          # ### 新增 ### 导入绘图库
-import matplotlib.ticker as mticker    # ### 新增 ### 导入绘图库的ticker模块
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 # --- 路径配置 ---
-# 假设脚本位于项目子目录中，PROJECT_ROOT 是项目根目录
 try:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 except NameError:
     PROJECT_ROOT = Path('.').resolve().parent
-
+    
 DATA_DIR = PROJECT_ROOT / 'data'
 OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -23,26 +21,51 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 BACKTEST_FREQUENCY = 'QE'
 ROLLING_WINDOW_YEARS = 5
 MIN_REPORTS_IN_WINDOW = 5
-OUTPUT_FILE_BASE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly_sp500_filtered'
-
+# 更新输出文件名以反映新方法
+OUTPUT_FILE_BASE = OUTPUTS_DIR / 'point_in_time_backtest_quarterly_sp500_historical'
 
 # --- 因子配置 ---
 FACTOR_WEIGHTS = {'cfo': 1, 'ceq': 1, 'txt': 1, 'd_txt': 1, 'd_at': -1, 'd_rect': -1}
 
-# --- S&P 500 成分股获取函数 ---
-def get_sp500_tickers() -> list:
-    """通过读取维基百科页面获取标普500成分股列表。"""
-    print("正在从网络获取最新的S&P 500成分股列表...")
+
+# ### 新增 ### 从本地CSV加载S&P 500历史成分股数据
+def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
+    """
+    从本地CSV文件加载S&P 500历史成分股数据。
+    文件应包含 'ticker', 'start_date', 'end_date' 列。
+    """
+    print("正在从本地CSV文件加载S&P 500历史成分股数据...")
+    csv_path = data_dir / 'sp500_historical_constituents.csv'
     try:
-        payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
-        sp500_tickers = payload[0]['Symbol'].values.tolist()
-        sp500_tickers = [ticker.replace('.', '-') for ticker in sp500_tickers]
-        print(f"成功获取 {len(sp500_tickers)} 只 S&P 500 成分股。")
-        return sp500_tickers
-    except Exception as e:
-        print(f"[错误] 无法从维基百科获取S&P 500成分股列表: {e}")
-        print("[提示] 请检查你的网络连接。脚本将继续运行，但不会进行S&P 500过滤。")
-        return []
+        df_constituents = pd.read_csv(csv_path)
+        # 将日期列转换为datetime对象，对于空值（仍在指数中）会变为NaT
+        df_constituents['start_date'] = pd.to_datetime(df_constituents['start_date'], errors='coerce')
+        df_constituents['end_date'] = pd.to_datetime(df_constituents['end_date'], errors='coerce')
+        
+        # 清理股票代码格式以匹配财务数据
+        df_constituents['ticker'] = df_constituents['ticker'].str.upper().str.strip()
+        
+        print(f"成功加载 {len(df_constituents)} 条历史成分股记录。")
+        return df_constituents
+    except FileNotFoundError:
+        print(f"[致命错误] S&P 500历史成分股文件未找到: {csv_path}")
+        return None
+
+# ### 新增 ### 根据日期获取当时的S&P 500股票池
+def get_universe_for_date(target_date: pd.Timestamp, df_constituents: pd.DataFrame) -> list:
+    """
+    根据给定的日期，从历史成分股DataFrame中筛选出当时有效的股票列表。
+    """
+    target_date = target_date.normalize() # 确保日期没有时间部分
+    
+    # 筛选条件：
+    # 1. 股票的起始日期必须在目标日期之前（或当天）
+    # 2. 股票的结束日期必须是空的(NaT)，或者在目标日期之后
+    is_active = (df_constituents['start_date'] <= target_date) & \
+                (pd.isna(df_constituents['end_date']) | (df_constituents['end_date'] > target_date))
+                
+    return df_constituents[is_active]['ticker'].tolist()
+
 
 # --- Helper Functions (保持不变) ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
@@ -90,6 +113,8 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
             con.close()
 
     if df_final.empty: return df_final
+    # 在这里清理 Ticker 格式
+    df_final['Ticker'] = tidy_ticker(df_final['Ticker'])
     df_final = df_final.sort_values(['Ticker', 'year', 'date_known']).drop_duplicates(subset=['Ticker', 'year'], keep='last')
     df_final.loc[df_final['at'] <= 0, 'at'] = np.nan
     df_final.loc[df_final['ceq'] <= 0, 'ceq'] = np.nan
@@ -119,12 +144,14 @@ def calculate_factors_point_in_time(df: pd.DataFrame) -> pd.DataFrame:
     return df_cleaned[['Ticker', 'date_known', 'year', 'factor_score']]
 
 def calc_factor_scores(df_financials: pd.DataFrame, as_of_date: pd.Timestamp, window_years: int, min_reports_required: int) -> pd.DataFrame:
+    # 筛选在给定日期已知的数据
     known_data = df_financials[df_financials['date_known'] <= as_of_date].copy()
     if known_data.empty: return pd.DataFrame()
 
     known_data_with_factors = calculate_factors_point_in_time(known_data)
     if known_data_with_factors.empty: return pd.DataFrame()
-
+    
+    # 筛选回测窗口内的数据
     window_start_date = as_of_date - relativedelta(years=window_years)
     historical_window_scores = known_data_with_factors[known_data_with_factors['date_known'] >= window_start_date]
     if historical_window_scores.empty: return pd.DataFrame()
@@ -132,57 +159,38 @@ def calc_factor_scores(df_financials: pd.DataFrame, as_of_date: pd.Timestamp, wi
     df_agg_scores = historical_window_scores.groupby('Ticker')['factor_score'].agg(['mean', 'count'])
     df_agg_scores.rename(columns={'mean': 'avg_factor_score', 'count': 'num_reports'}, inplace=True)
     
+    # 按报告数量筛选
     df_agg_scores = df_agg_scores[df_agg_scores['num_reports'] >= min_reports_required]
 
     return df_agg_scores
 
-# --- Main Logic for Selection Script ---
 def main():
     """
-    主执行函数 (季度调仓 + S&P 500 强制过滤 + 图表输出)
+    主执行函数 (使用本地历史CSV进行季度调仓 + 动态S&P 500过滤 + 图表输出)
     """
-    print("--- 正在运行股票选择脚本 (季度调仓 + S&P 500 强制过滤模式) ---")
+    print("--- 正在运行股票选择脚本 (历史动态S&P 500过滤模式) ---")
     
-    # 步骤 0: 获取 S&P 500 股票池
-    sp500_list = get_sp500_tickers()
-    
-    # ### 关键修改 ###
-    # 检查列表是否成功获取。如果失败，则直接退出，防止使用错误的股票池。
-    if not sp500_list:
-        print("\n[致命错误] 未能获取S&P 500成分股列表。")
-        print("程序将终止，以避免基于不正确的股票池（全市场）进行计算。")
-        print("请检查您的网络连接或稍后再试。")
-        return # 直接退出函数
+    # 步骤 1: 加载历史成分股数据
+    df_constituents = load_sp500_constituents(DATA_DIR)
+    if df_constituents is None:
+        print("无法加载S&P 500成分股数据，程序终止。")
+        return
 
-    # 步骤 1: 加载财务数据
-    df_financials = load_and_merge_financial_data(DATA_DIR)
-    if df_financials.empty:
+    # 步骤 2: 加载所有公司的财务数据 (一次性)
+    df_all_financials = load_and_merge_financial_data(DATA_DIR)
+    if df_all_financials.empty:
         print("无法加载财务数据，程序退出。")
         return
 
-    # 步骤 2: 应用 S&P 500 过滤器 (现在是强制执行)
-    print("\n正在应用 S&P 500 过滤器...")
-    initial_tickers_count = df_financials['Ticker'].nunique()
-    
-    # 执行过滤
-    df_financials = df_financials[df_financials['Ticker'].isin(sp500_list)]
-    
-    filtered_tickers_count = df_financials['Ticker'].nunique()
-    
-    # 更清晰的日志输出
-    print(f"  - 数据库中独特的公司总数: {initial_tickers_count}")
-    print(f"  - 获取到的 S&P 500 列表包含 {len(sp500_list)} 个代码。")
-    print(f"  - 过滤后，股票池中剩余 {filtered_tickers_count} 家公司用于后续分析。")
-
     # 步骤 3: 确定回测的时间范围
-    min_date = df_financials['date_known'].min()
-    max_date = df_financials['date_known'].max()
+    min_date = df_all_financials['date_known'].min()
+    max_date = df_all_financials['date_known'].max()
 
     if pd.isna(min_date) or pd.isna(max_date):
-        print("\n[错误] 在S&P 500股票池中未找到有效的财报日期，无法确定回测范围。")
+        print("\n[错误] 数据中未找到有效的财报日期，无法确定回测范围。")
         return
 
-    # 步骤 4: 生成固定的季度末调仓日期序列
+    # 步骤 4: 生成调仓日期序列
     rebalance_dates = pd.date_range(start=min_date, end=max_date, freq=BACKTEST_FREQUENCY)
     trade_dates = [d + pd.offsets.BDay(2) for d in rebalance_dates]
     
@@ -190,30 +198,38 @@ def main():
     print([d.date() for d in trade_dates[:5]], "...")
 
     all_period_portfolios = {}
-    screening_stats = [] # 初始化列表以存储统计数据
+    screening_stats = []
 
-    # 步骤 5: 遍历每个季度调仓日进行选股
+    # 步骤 5: 遍历每个调仓日进行动态选股
     for trade_date in trade_dates:
         as_of_date = trade_date.normalize()
         
+        # 5.1 获取当期有效的S&P 500股票列表
+        current_sp500_list = get_universe_for_date(trade_date, df_constituents)
+        if not current_sp500_list:
+            print(f"  - 调仓日 {trade_date.date()}: S&P 500在当日无成分股数据，跳过。")
+            continue
+            
+        # 5.2 从所有财务数据中，筛选出当期S&P 500成分股的数据
+        df_period_financials = df_all_financials[df_all_financials['Ticker'].isin(current_sp500_list)]
+        
+        # 5.3 在当期的股票池上计算因子分数
         df_agg_scores = calc_factor_scores(
-            df_financials, 
+            df_period_financials, 
             as_of_date=as_of_date, 
             window_years=ROLLING_WINDOW_YEARS, 
             min_reports_required=MIN_REPORTS_IN_WINDOW
         )
 
-        # 记录统计数据
         num_eligible_stocks = len(df_agg_scores)
         screening_stats.append({'date': trade_date.date(), 'count': num_eligible_stocks})
 
         if df_agg_scores.empty:
-            print(f"  - 调仓日 {trade_date.date()}: 无符合条件的股票，跳过。")
+            print(f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，无符合条件的股票。")
             continue
         
-        print(f"  - 调仓日 {trade_date.date()}: {num_eligible_stocks} 只股票符合条件，正在排名...")
+        print(f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，正在排名...")
         
-        # 排名并选择top N
         NUM_STOCKS_TO_SELECT = 20
         df_ranked = df_agg_scores.sort_values(by='avg_factor_score', ascending=False)
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
@@ -224,7 +240,6 @@ def main():
     if all_period_portfolios:
         output_excel_file = OUTPUT_FILE_BASE.with_suffix('.xlsx')
         output_txt_file = OUTPUT_FILE_BASE.with_suffix('.txt')
-
         try:
             with pd.ExcelWriter(output_excel_file) as writer, open(output_txt_file, 'w', encoding='utf-8') as txt_file:
                 print("\n正在生成 Excel 和 TXT 输出文件...")
@@ -233,45 +248,30 @@ def main():
                     txt_file.write(f"--- Portfolio for {date} ({len(df_portfolio)} stocks) ---\n")
                     txt_file.write(df_portfolio.to_string(index=False))
                     txt_file.write("\n\n")
-
-            print("股票选择完成。结果已保存至:")
-            print(f"  - Excel: {output_excel_file}")
-            print(f"  - TXT:   {output_txt_file}")
-            
+            print("股票选择完成。结果已保存至:\n  - Excel: {0}\n  - TXT:   {1}".format(output_excel_file, output_txt_file))
         except Exception as e:
             print(f"\n[错误] 保存文件时出错: {e}")
-            
     else:
         print("\n没有生成任何投资组合。")
 
     # 步骤 7: 生成并保存统计图表
     if screening_stats:
         print("\n正在生成合格股票数量的统计图表...")
-        
         df_stats = pd.DataFrame(screening_stats)
         df_stats['date'] = pd.to_datetime(df_stats['date'])
-
         plt.style.use('ggplot')
         fig, ax = plt.subplots(figsize=(15, 8))
-
         ax.plot(df_stats['date'], df_stats['count'], marker='o', linestyle='-', markersize=4, label=f'Stocks with >= {MIN_REPORTS_IN_WINDOW} reports in last {ROLLING_WINDOW_YEARS} years')
-
-        ax.set_title('Number of Eligible Stocks in S&P 500 Universe Over Time', fontsize=16, pad=20)
+        ax.set_title('Number of Eligible Stocks in Point-in-Time S&P 500 Universe', fontsize=16, pad=20)
         ax.set_xlabel('Rebalance Date', fontsize=12)
         ax.set_ylabel('Count of Eligible Stocks', fontsize=12)
         ax.legend()
         ax.grid(True)
-        
         ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
-        
-        # 确保Y轴的上限合理，不会因为一两个异常值变得很大
-        # 这里设置为合格股票数最大值的1.1倍，且至少为20
         y_max = max(20, df_stats['count'].max() * 1.1)
         ax.set_ylim(bottom=0, top=y_max) 
-        
-        fig.tight_layout() # 自动调整布局
-
+        fig.tight_layout()
         chart_output_file = OUTPUT_FILE_BASE.with_suffix('.png')
         try:
             plt.savefig(chart_output_file, dpi=300)
