@@ -9,6 +9,7 @@ dependencies = [
     "openpyxl",
     "scipy",
     "backtrader",
+    "dotenv",
     "google-genai",
     "yfinance",
 ]
