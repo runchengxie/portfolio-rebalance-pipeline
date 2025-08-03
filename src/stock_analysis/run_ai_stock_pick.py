@@ -97,7 +97,7 @@ def main():
     try:
         # 模仿文档，使用字典配置generation_config，并将schema类型改为 list
         response = client.models.generate_content(
-            model="gemini-1.5-pro-latest",
+            model="gemini-2.5-pro",
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
