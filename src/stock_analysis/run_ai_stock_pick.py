@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import google.generativeai as genai
 from pydantic import BaseModel, Field
-from typing import List # 在Python 3.9+中，可以直接用 list
+from typing import List
 from dotenv import load_dotenv
 
 # --- 路径和配置 ---
@@ -98,7 +98,7 @@ def main():
     
     ai_picks_for_sheet = None
     try:
-        # *** 修改点：模仿文档，使用字典配置generation_config，并将schema类型改为 list ***
+        # 模仿文档，使用字典配置generation_config，并将schema类型改为 list
         response = model.generate_content(
             contents=prompt, # 使用关键字参数 contents 传递prompt
             generation_config={
