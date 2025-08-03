@@ -1,5 +1,3 @@
-# src/stock_analysis/run_ai_refinement.py
-
 import os
 from pathlib import Path
 import pandas as pd
