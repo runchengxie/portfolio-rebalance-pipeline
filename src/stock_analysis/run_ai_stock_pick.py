@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 import pandas as pd
-import google.generativeai as genai
+from google import genai
 from pydantic import BaseModel, Field
 from typing import List
 from dotenv import load_dotenv
@@ -13,15 +13,14 @@ DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 INPUT_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
 OUTPUT_AI_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_first_sheet.xlsx" # 修改文件名以作区分
-COMPANY_INFO_FILE = DATA_DIR / "us-companies.txt"
+COMPANY_INFO_FILE = DATA_DIR / "us-companies.csv"
 
 # --- Gemini API 配置 ---
 load_dotenv(PROJECT_ROOT / ".env")
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
     raise ValueError("请在项目根目录的.env文件中设置GEMINI_API_KEY")
-genai.configure(api_key=API_KEY)
-
+client = genai.Client(api_key=API_KEY)
 
 # --- 1. 定义结构化输出的Schema ---
 # 与 structured_ouput_gemini_documentation.md 中的 Recipe 模型类似
@@ -76,7 +75,7 @@ def main():
 
     xls = pd.read_excel(INPUT_FILE, sheet_name=None)
     
-    # *** 修改点：不再循环，只处理第一张工作表 ***
+    # 只处理第一张工作表
     sheet_names = list(xls.keys())
     if not sheet_names:
         print("错误：Excel文件中没有任何工作表。")
@@ -85,7 +84,7 @@ def main():
     sheet_name = sheet_names[0] # 获取第一个工作表的名称
     df_portfolio = xls[sheet_name]
 
-    print(f"\n--- 正在为季度 {sheet_name} 进行AI精选 ---")
+    print(f"\n--- 正在为季度 {sheet_name} 进行选股 ---")
     
     # 准备数据
     analysis_date = pd.to_datetime(sheet_name).date()
@@ -94,18 +93,16 @@ def main():
     # 构建Prompt
     prompt = create_prompt(analysis_date, tickers_df)
     
-    model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    
     ai_picks_for_sheet = None
     try:
         # 模仿文档，使用字典配置generation_config，并将schema类型改为 list
-        response = model.generate_content(
-            contents=prompt, # 使用关键字参数 contents 传递prompt
+        response = client.models.generate_content(
+            model="gemini-1.5-pro-latest",
+            contents=prompt,
             generation_config={
                 "response_mime_type": "application/json",
-                # 对应文档中的 'response_schema': list[Recipe]
-                "response_schema": list[AIStockPick] 
-            }
+                "response_schema": list[AIStockPick],
+            },
         )
 
         # 解析返回的Pydantic对象，您的原逻辑是正确的
