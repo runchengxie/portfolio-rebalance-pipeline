@@ -10,8 +10,7 @@ dependencies = [
     "scipy",
     "backtrader",
     "dotenv",
-    "google-genai",
-    "yfinance",
+    "google-genai,
 ]
 
 [project.optional-dependencies]
