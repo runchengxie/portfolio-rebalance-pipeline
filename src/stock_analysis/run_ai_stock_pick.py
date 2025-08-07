@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 INPUT_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
-OUTPUT_AI_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_first_sheet.xlsx" # 修改文件名以作区分
+OUTPUT_AI_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_all_sheets.xlsx"
 COMPANY_INFO_FILE = DATA_DIR / "us-companies.csv"
 
 # --- Gemini API 配置 ---
@@ -62,7 +62,7 @@ def create_prompt(analysis_date, ticker_list_df):
 
 # --- 主逻辑 ---
 def main():
-    print("--- 正在运行AI精炼选股脚本 (仅处理第一张表) ---")
+    print("--- 正在运行AI精炼选股脚本 (处理所有表) ---")
 
     # 加载公司信息用于丰富Prompt
     df_companies = pd.read_csv(COMPANY_INFO_FILE, sep=";", on_bad_lines="skip")
@@ -73,58 +73,58 @@ def main():
         print(f"错误：找不到输入文件 {INPUT_FILE}。请先运行 `run_quarterly_selection.py`。")
         return
 
-    xls = pd.read_excel(INPUT_FILE, sheet_name=None)
+    xls = pd.ExcelFile(INPUT_FILE)
+    sheet_names = xls.sheet_names
     
-    # 只处理第一张工作表
-    sheet_names = list(xls.keys())
     if not sheet_names:
         print("错误：Excel文件中没有任何工作表。")
         return
         
-    sheet_name = sheet_names[0] # 获取第一个工作表的名称
-    df_portfolio = xls[sheet_name]
+    ai_picks_dict = {}
+    for sheet_name in sheet_names:
+        print(f"\n--- 正在为季度 {sheet_name} 进行选股 ---")
+        df_portfolio = pd.read_excel(xls, sheet_name=sheet_name)
+        
+        # 准备数据
+        analysis_date = pd.to_datetime(sheet_name).date()
+        tickers_df = df_portfolio[['Ticker']].merge(df_companies, on="Ticker", how="left").fillna({"Company Name": "N/A"})
 
-    print(f"\n--- 正在为季度 {sheet_name} 进行选股 ---")
+        # 构建Prompt
+        prompt = create_prompt(analysis_date, tickers_df)
+        
+        try:
+            # 使用字典配置generation_config，并将schema类型改为 list
+            response = client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": list[AIStockPick],
+                },
+            )
+
+            # 解析返回的Pydantic对象
+            parsed_response = response.parsed
+            if parsed_response:
+                df_ai_picks = pd.DataFrame([p.model_dump() for p in parsed_response])
+                df_ai_picks = df_ai_picks.sort_values(by="confidence_score", ascending=False)
+                ai_picks_dict[sheet_name] = df_ai_picks
+                print(f"成功为季度 {sheet_name} 选出 {len(df_ai_picks)} 只股票。")
+            else:
+                 print(f"警告：季度 {sheet_name} 的API返回为空或解析失败，跳过。")
+
+        except Exception as e:
+            print(f"错误：在处理季度 {sheet_name} 时调用API失败: {e}")
     
-    # 准备数据
-    analysis_date = pd.to_datetime(sheet_name).date()
-    tickers_df = df_portfolio[['Ticker']].merge(df_companies, on="Ticker", how="left").fillna({"Company Name": "N/A"})
-
-    # 构建Prompt
-    prompt = create_prompt(analysis_date, tickers_df)
-    
-    ai_picks_for_sheet = None
-    try:
-        # 模仿文档，使用字典配置generation_config，并将schema类型改为 list
-        response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": list[AIStockPick],
-            },
-        )
-
-        # 解析返回的Pydantic对象，您的原逻辑是正确的
-        parsed_response = response.parsed
-        if parsed_response:
-            df_ai_picks = pd.DataFrame([p.model_dump() for p in parsed_response])
-            df_ai_picks = df_ai_picks.sort_values(by="confidence_score", ascending=False)
-            ai_picks_for_sheet = df_ai_picks
-            print(f"成功为季度 {sheet_name} 选出 {len(df_ai_picks)} 只股票。")
-        else:
-             print(f"警告：季度 {sheet_name} 的API返回为空或解析失败，跳过。")
-
-    except Exception as e:
-        print(f"错误：在处理季度 {sheet_name} 时调用API失败: {e}")
-
-    # 保存AI精选结果到新的Excel文件
-    if ai_picks_for_sheet is not None and not ai_picks_for_sheet.empty:
+    # 保存所有AI精选结果到新的Excel文件
+    if ai_picks_dict:
         with pd.ExcelWriter(OUTPUT_AI_FILE) as writer:
-            ai_picks_for_sheet.to_excel(writer, sheet_name=str(sheet_name), index=False)
+            for sheet_name, df_ai_picks in ai_picks_dict.items():
+                if not df_ai_picks.empty:
+                    df_ai_picks.to_excel(writer, sheet_name=str(sheet_name), index=False)
         print(f"\n--- AI精选完成！结果已保存至: {OUTPUT_AI_FILE} ---")
     else:
-        print("\n--- 未能为第一个工作表生成任何AI投资组合 ---")
+        print("\n--- 未能为任何工作表生成AI投资组合 ---")
 
 
 if __name__ == "__main__":
