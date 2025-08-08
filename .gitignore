@@ -22,6 +22,7 @@ outputs/
 
 # Debugging or temporary files
 full_project_source.txt
+strategy_full_project_source.txt
 
 # --- Generated Documents ---
 # Ignore binary/compiled document formats. Track the source (.md, .tex) instead.
