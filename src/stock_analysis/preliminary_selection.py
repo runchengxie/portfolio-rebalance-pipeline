@@ -22,7 +22,6 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 BACKTEST_FREQUENCY = "QE"
 ROLLING_WINDOW_YEARS = 5
 MIN_REPORTS_IN_WINDOW = 5
-# 更新输出文件名以反映新方法
 OUTPUT_FILE_BASE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical"
 
 # --- 因子配置 ---
@@ -242,7 +241,7 @@ def main():
     all_period_portfolios = {}
     screening_stats = []
 
-    ### 新增 ### 用于控制选股是否开始的标志
+    # 用于控制选股是否开始的标志
     selection_started = False
 
     # 步骤 5: 遍历每个调仓日进行动态选股
@@ -273,7 +272,7 @@ def main():
             {"date": trade_date.date(), "count": num_eligible_stocks}
         )
 
-        ### 修改 ### 检查是否达到开始选股的条件
+        # 检查是否达到开始选股的条件
         # 如果选股还未开始，则检查本次符合条件的股票数是否大于250
         if not selection_started and num_eligible_stocks > 250:
             print(
@@ -294,7 +293,7 @@ def main():
                 )
             continue
 
-        ### 修改 ### 只有在 selection_started 为 True 时才执行以下选股逻辑
+        # 只有在 selection_started 为 True 时才执行以下选股逻辑
         print(
             f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，正在排名..."
         )
@@ -346,7 +345,7 @@ def main():
             label=f"Stocks with >= {MIN_REPORTS_IN_WINDOW} reports in last {ROLLING_WINDOW_YEARS} years",
         )
 
-        ### 新增 ### 在图表上增加一条阈值线
+        # 在图表上增加一条阈值线
         ax.axhline(
             y=250, color="r", linestyle="--", label="Selection Threshold (250 stocks)"
         )
