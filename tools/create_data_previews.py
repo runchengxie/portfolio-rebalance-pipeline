@@ -1,4 +1,4 @@
-# tools/create_top_100_previews.py
+# tools/create_top_5_previews.py
 
 from pathlib import Path
 
@@ -7,7 +7,7 @@ import pandas as pd
 
 def create_previews():
     """
-    Finds all CSV files in the '../data' directory, reads the first 100 data rows
+    Finds all CSV files in the '../data' directory, reads the first 5 data rows
     from each, and saves them to a new .txt file in the same directory.
     """
     try:
@@ -40,15 +40,15 @@ def create_previews():
             print(f"    -> Processing '{csv_path.name}'...")
 
             try:
-                # 使用 pandas 读取前100行数据。nrows=100 非常高效，它只读取文件的开头部分。
-                # 这会读取表头（header）和接下来的100行数据。
+                # 使用 pandas 读取前5行数据。nrows=5 非常高效，它只读取文件的开头部分。
+                # 这会读取表头（header）和接下来的5行数据。
                 df = pd.read_csv(
-                    csv_path, nrows=100, encoding="utf-8", on_bad_lines="skip"
+                    csv_path, nrows=5, encoding="utf-8", on_bad_lines="skip"
                 )
 
                 # 5. 定义输出文件名和路径
                 # csv_path.stem 会获取不带扩展名的文件名 (e.g., 'us-balance-quarterly')
-                output_filename = f"top_100_sample_{csv_path.stem}.txt"
+                output_filename = f"top_5_sample_{csv_path.stem}.txt"
                 output_path = data_dir / output_filename
 
                 # 6. 将数据帧（DataFrame）以美观的文本格式写入新文件

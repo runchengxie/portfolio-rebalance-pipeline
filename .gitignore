@@ -41,3 +41,6 @@ strategy_full_project_source.txt
 
 # Environment variables
 .env
+
+# Unit test / coverage reports
+.coverage
