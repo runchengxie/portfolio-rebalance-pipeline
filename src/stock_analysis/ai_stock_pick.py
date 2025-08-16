@@ -319,7 +319,7 @@ def main():
         print(f"结果文件: {OUTPUT_AI_FILE}")
         print("提示: 如果有失败的季度，可以重新运行脚本进行断点续跑")
     else:
-        print("⚠ 未能成功处理任何季度")
+        print("未能成功处理任何季度")
 
 
 if __name__ == "__main__":
