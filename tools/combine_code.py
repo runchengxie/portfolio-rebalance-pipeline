@@ -69,7 +69,7 @@ EXCLUDE_FILES: set[str] = {
     "full_code_text.txt",  # Exclude the old file name just in case
     ".DS_Store",
     "Thumbs.db",
-    ".env",
+#     ".env",
 }
 
 
