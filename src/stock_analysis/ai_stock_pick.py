@@ -37,7 +37,7 @@ class AIStockPick(BaseModel):
     ticker: str = Field(description="股票代码")
     company_name: str = Field(description="公司名称")
     confidence_score: int = Field(description="AI对该股票的综合置信度评分（1-10的整数）", ge=1, le=10)
-    reasoning: str = Field(description="综合分析选股理由，限制在200字以内，必须结合基本面、投资逻辑、行业地位。", max_length=200)
+    reasoning: str = Field(description="详细分析，无长度限制")
 
 
 # --- 限速器类 ---
