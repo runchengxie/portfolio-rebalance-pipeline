@@ -2,8 +2,10 @@ import os
 import time
 import random
 import json
+import threading
 from pathlib import Path
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 from google import genai
 from pydantic import BaseModel, Field
@@ -20,16 +22,14 @@ COMPANY_INFO_FILE = DATA_DIR / "us-companies.csv"
 
 # --- Gemini API 配置 ---
 load_dotenv(PROJECT_ROOT / ".env")
-API_KEY = os.getenv("GEMINI_API_KEY")
-if not API_KEY:
-    raise ValueError("请在项目根目录的.env文件中设置GEMINI_API_KEY")
 
 # API限制配置
 MAX_QPM = int(os.getenv("MAX_QPM", "24"))  # 每分钟最大请求数
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "6"))  # 最大重试次数
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "120"))  # 请求超时时间（秒）
 
-client = genai.Client(api_key=API_KEY)
+# 线程锁用于保护Excel写入操作
+WRITE_LOCK = threading.Lock()
 
 # --- 1. 定义结构化输出的Schema ---
 class AIStockPick(BaseModel):
@@ -38,6 +38,34 @@ class AIStockPick(BaseModel):
     company_name: str = Field(description="公司名称")
     confidence_score: int = Field(description="AI对该股票的综合置信度评分（1-10的整数）", ge=1, le=10)
     reasoning: str = Field(description="详细分析，无长度限制")
+
+
+# --- 多API Key客户端管理 ---
+def get_clients_and_limiters():
+    """获取多个API key对应的客户端和限速器"""
+    # 读取最多三个 key，缺哪个就跳过
+    keys = [os.getenv("GEMINI_API_KEY"),
+            os.getenv("GEMINI_API_KEY_2"),
+            os.getenv("GEMINI_API_KEY_3")]
+    keys = [k for k in keys if k]
+    
+    if not keys:
+        raise ValueError("没有可用的 GEMINI_API_KEY*")
+    
+    print(f"发现 {len(keys)} 个可用的API Key")
+    
+    # 给每个 key 分到自己的 QPM 份额
+    per_key_qpm = max(1, MAX_QPM // len(keys))
+    print(f"每个API Key分配QPM: {per_key_qpm}")
+    
+    clients = []
+    for i, k in enumerate(keys, 1):
+        c = genai.Client(api_key=k)
+        limiter = RateLimiter(per_key_qpm)
+        clients.append((c, limiter))
+        print(f"  API Key {i}: 已初始化 (QPM={per_key_qpm})")
+    
+    return clients  # list of (client, limiter)
 
 
 # --- 限速器类 ---
@@ -120,6 +148,13 @@ def call_with_retries(client, model, prompt, schema, sheet_name=""):
     raise RuntimeError("重试次数已用尽")
 
 
+# --- 线程安全的保存函数 ---
+def save_sheet_result_threadsafe(sheet_name, df_ai_picks, output_file):
+    """线程安全的保存单个sheet结果"""
+    with WRITE_LOCK:
+        return save_sheet_result(sheet_name, df_ai_picks, output_file)
+
+
 # --- 保存单个sheet结果 ---
 def save_sheet_result(sheet_name, df_ai_picks, output_file):
     """保存单个sheet的结果到Excel文件"""
@@ -168,6 +203,60 @@ def parse_response_robust(response):
         return None
 
 
+# --- 单个季度处理函数 ---
+def process_one_sheet(sheet_name, df_companies, client, limiter, processed_sheets=None):
+    """处理单个季度的股票分析"""
+    try:
+        # 断点续跑：跳过已处理的sheets
+        if processed_sheets and sheet_name in processed_sheets:
+            return (sheet_name, "skip", "已处理，跳过")
+        
+        # 读取该季度的候选股票
+        xls = pd.ExcelFile(INPUT_FILE)
+        df_portfolio = pd.read_excel(xls, sheet_name=sheet_name)
+        analysis_date = pd.to_datetime(sheet_name).date()
+        tickers_df = (df_portfolio[['Ticker']]
+                     .merge(df_companies, on="Ticker", how="left")
+                     .fillna({"Company Name": "N/A"}))
+        
+        print(f"  [{sheet_name}] 候选股票数量: {len(tickers_df)}")
+        
+        # 构建Prompt
+        prompt = create_prompt(analysis_date, tickers_df)
+        
+        # 限速并调用API
+        print(f"  [{sheet_name}] 等待API限速...")
+        limiter.wait()
+        
+        print(f"  [{sheet_name}] 调用AI分析...")
+        response = call_with_retries(
+            client=client,
+            model="gemini-2.5-pro",
+            prompt=prompt,
+            schema=list[AIStockPick],
+            sheet_name=sheet_name
+        )
+        
+        # 解析响应
+        parsed = parse_response_robust(response)
+        if not parsed:
+            return (sheet_name, None, "解析失败或空响应")
+        
+        df_ai_picks = pd.DataFrame([p.model_dump() for p in parsed]).sort_values(
+            by="confidence_score", ascending=False
+        )
+        
+        # 线程安全保存结果
+        ok = save_sheet_result_threadsafe(sheet_name, df_ai_picks, OUTPUT_AI_FILE)
+        if ok:
+            return (sheet_name, "ok", f"选出 {len(df_ai_picks)} 只股票")
+        else:
+            return (sheet_name, None, "保存失败")
+            
+    except Exception as e:
+        return (sheet_name, None, f"处理异常: {str(e)}")
+
+
 # --- 2. Prompt构建函数 ---
 def create_prompt(analysis_date, ticker_list_df):
     ticker_str = "\n".join([
@@ -204,11 +293,15 @@ def create_prompt(analysis_date, ticker_list_df):
 
 # --- 主逻辑 ---
 def main():
-    print("--- 正在运行AI精炼选股脚本 (处理所有表) ---")
+    print("--- 并发版 AI 精炼选股 ---")
     print(f"配置: MAX_QPM={MAX_QPM}, MAX_RETRIES={MAX_RETRIES}, TIMEOUT={REQUEST_TIMEOUT}s")
 
-    # 初始化限速器
-    limiter = RateLimiter(MAX_QPM)
+    # 获取多个API Key的客户端和限速器
+    try:
+        clients = get_clients_and_limiters()  # [(client, limiter), ...]
+    except ValueError as e:
+        print(f"错误: {e}")
+        return
     
     # 加载公司信息用于丰富Prompt
     df_companies = pd.read_csv(COMPANY_INFO_FILE, sep=";", on_bad_lines="skip")
@@ -216,14 +309,12 @@ def main():
 
     # 加载量化策略选出的投资组合
     if not INPUT_FILE.exists():
-        print(f"错误：找不到输入文件 {INPUT_FILE}。请先运行 `run_quarterly_selection.py`。")
+        print(f"错误：找不到输入文件 {INPUT_FILE}")
         return
 
-    xls = pd.ExcelFile(INPUT_FILE)
-    sheet_names = xls.sheet_names
-    
+    sheet_names = pd.ExcelFile(INPUT_FILE).sheet_names
     if not sheet_names:
-        print("错误：Excel文件中没有任何工作表。")
+        print("错误：Excel中没有任何工作表")
         return
     
     print(f"发现 {len(sheet_names)} 个季度需要处理")
@@ -238,88 +329,57 @@ def main():
         except Exception as e:
             print(f"读取现有结果文件失败: {e}")
     
-    success_count = 0
-    skip_count = 0
-    error_count = 0
+    # 把季度均匀分配给不同的 key：slice 分片
+    buckets = [sheet_names[i::len(clients)] for i in range(len(clients))]
+    print(f"任务分配: {[len(bucket) for bucket in buckets]} (每个API Key处理的季度数)")
     
-    for i, sheet_name in enumerate(sheet_names, 1):
-        print(f"\n[{i}/{len(sheet_names)}] --- 处理季度 {sheet_name} ---")
+    success = skip = failed = 0
+    
+    # 使用线程池并发处理
+    with ThreadPoolExecutor(max_workers=len(clients)) as executor:
+        futures = []
         
-        # 断点续跑：跳过已处理的sheets
-        if sheet_name in processed_sheets:
-            print(f"  季度 {sheet_name} 已处理，跳过")
-            skip_count += 1
-            continue
+        # 为每个客户端分配任务
+        for (client, limiter), bucket in zip(clients, buckets):
+            for sheet_name in bucket:
+                future = executor.submit(
+                    process_one_sheet, 
+                    sheet_name, 
+                    df_companies, 
+                    client, 
+                    limiter, 
+                    processed_sheets
+                )
+                futures.append(future)
         
-        try:
-            df_portfolio = pd.read_excel(xls, sheet_name=sheet_name)
-            
-            # 准备数据
-            analysis_date = pd.to_datetime(sheet_name).date()
-            tickers_df = df_portfolio[['Ticker']].merge(df_companies, on="Ticker", how="left").fillna({"Company Name": "N/A"})
-            
-            print(f"  候选股票数量: {len(tickers_df)}")
-            
-            # 如果候选股票太多，可以考虑分批处理（这里暂时保持原逻辑）
-            if len(tickers_df) > 100:
-                print(f"  候选股票较多({len(tickers_df)}只)，可能需要较长处理时间")
-
-            # 构建Prompt
-            prompt = create_prompt(analysis_date, tickers_df)
-            
-            # 限速等待
-            print(f"  检查API限速...")
-            limiter.wait()
-            
-            # 调用API（带重试）
-            print(f"  调用AI分析...")
-            response = call_with_retries(
-                client=client,
-                model="gemini-2.5-pro",
-                prompt=prompt,
-                schema=list[AIStockPick],
-                sheet_name=sheet_name
-            )
-
-            # 强健的响应解析
-            parsed_response = parse_response_robust(response)
-            
-            if parsed_response and len(parsed_response) > 0:
-                df_ai_picks = pd.DataFrame([p.model_dump() for p in parsed_response])
-                df_ai_picks = df_ai_picks.sort_values(by="confidence_score", ascending=False)
+        # 收集结果
+        for future in as_completed(futures):
+            try:
+                sheet_name, status, message = future.result()
                 
-                # 立即保存结果（断点续跑支持）
-                if save_sheet_result(sheet_name, df_ai_picks, OUTPUT_AI_FILE):
-                    success_count += 1
-                    print(f"  季度 {sheet_name} 处理完成，选出 {len(df_ai_picks)} 只股票")
+                if status == "ok":
+                    success += 1
+                    print(f"  ✓ 季度 {sheet_name} 处理完成: {message}")
+                elif status == "skip":
+                    skip += 1
+                    print(f"  - 季度 {sheet_name} 跳过: {message}")
                 else:
-                    error_count += 1
-                    print(f"  季度 {sheet_name} 保存失败")
-            else:
-                error_count += 1
-                print(f"  季度 {sheet_name} 的API返回为空或解析失败")
-                
-                # 尝试从response.text获取更多信息
-                if hasattr(response, 'text') and response.text:
-                    print(f"  原始响应: {response.text[:200]}...")
-
-        except Exception as e:
-            error_count += 1
-            print(f"  处理季度 {sheet_name} 时发生错误: {e}")
-            # 继续处理下一个季度，不中断整个流程
-            continue
+                    failed += 1
+                    print(f"  ✗ 季度 {sheet_name} 失败: {message}")
+                    
+            except Exception as e:
+                failed += 1
+                print(f"  ✗ 处理任务时发生异常: {e}")
     
     # 最终统计
     print(f"\n=== 处理完成 ===")
-    print(f"成功处理: {success_count} 个季度")
-    print(f"跳过已处理: {skip_count} 个季度")
-    print(f"处理失败: {error_count} 个季度")
+    print(f"成功处理: {success} 个季度")
+    print(f"跳过已处理: {skip} 个季度")
+    print(f"处理失败: {failed} 个季度")
+    print(f"结果文件: {OUTPUT_AI_FILE}")
     
-    if success_count > 0 or skip_count > 0:
-        print(f"结果文件: {OUTPUT_AI_FILE}")
+    if failed > 0:
         print("提示: 如果有失败的季度，可以重新运行脚本进行断点续跑")
-    else:
-        print("未能成功处理任何季度")
 
 
 if __name__ == "__main__":
