@@ -16,6 +16,8 @@ OUTPUT_FILENAME = "full_project_source.txt"
 EXCLUDE_DIRS_EXACT: set[str] = {
     ".git",
     "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
     "cache",
     "output",
     ".vscode",
