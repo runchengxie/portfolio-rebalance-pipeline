@@ -9,8 +9,8 @@ import pandas as pd
 
 # --- 路径配置 ---
 try:
-    # 假设脚本位于根目录的 'tests' 文件夹下
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    # 假设脚本位于根目录的 'src\stock_analysis\' 文件夹下
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 except NameError:
     # 如果在交互式环境（如Jupyter）中运行，则使用当前工作目录
     PROJECT_ROOT = Path.cwd()
