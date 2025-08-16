@@ -108,7 +108,7 @@ your_project_root/
 
 这是一个多步骤的工作流。请严格按顺序执行以下脚本。
 
-#### **准备工作: 环境设置**
+### 准备工作: 环境设置
 
 1. **安装依赖库**:
 
@@ -129,7 +129,7 @@ your_project_root/
     GEMINI_API_KEY="YOUR_API_KEY_HERE"
     ```
 
-#### **执行步骤**
+### 执行步骤
 
 1. **步骤 1: 创建数据库**
 
@@ -165,7 +165,7 @@ your_project_root/
     python src/stock_analysis/backtest_quarterly_ai_pick.py
     ```
 
-#### **可选步骤**
+### 可选步骤
 
 * **对比回测 (量化初筛组合)**: 如果你想评估纯量化策略的表现（作为基准），可以运行此脚本。它将回测步骤2中生成的未经过AI筛选的20只股票组合。
 
