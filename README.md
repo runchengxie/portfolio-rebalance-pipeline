@@ -57,35 +57,37 @@
 ## 项目结构
 
 ```tree
-your_project_root/
-├── data/
-│   ├── financial_data.db            # <== (由脚本生成) SQLite数据库
-│   ├── sp500_historical_constituents.csv # S&P 500历史成分股
-│   ├── us-balance-ttm.csv           # [原始数据] 资产负债表
-│   ├── us-cashflow-ttm.csv          # [原始数据] 现金流量表
-│   ├── us-income-ttm.csv            # [原始数据] 利润表
-│   ├── us-shareprices-daily.csv     # [原始数据] 日频股价
-│   └── us-companies.csv             # [原始数据] 公司基本信息
-│
-├── outputs/
-│   └── (此目录由脚本自动创建，用于存放结果)
-│
-├── src/
-│   └── stock_analysis/
-│       ├── load_data_to_db.py           # 1. 数据加载脚本
-│       ├── quarterly_selection.py       # 2. 量化初筛脚本
-│       ├── ai_stock_pick.py             # 3. AI精选脚本
-│       ├── backtest_quarterly_ai_pick.py    # 4. AI精选组合回测脚本
-│       ├── backtest_quarterly_unpicked.py   # (可选) 量化初筛组合回测脚本 (用于对比)
-│       └── enrich_selection_results.py  # (可选) 结果丰富脚本
-│
-├── tests/
-│   ├── test_portfolio_constituents.py   # 测试组合成分股是否在S&P 500内
-│   └── test_price_data_completeness.py  # 测试价格数据完整性
-│
-├── .env                             # 存储API Key的配置文件
-├── pyproject.toml                   # 项目依赖与配置
-└── README.md                        # 本文档
+.
+├─ data/
+├─ outputs/
+├─ src/
+│  └─ stock_analysis/
+│     ├─ __init__.py
+│     ├─ cli.py                    # 统一命令入口 (Typer/argparse 都行)
+│     ├─ config.py                 # 常量与路径集中管理
+│     ├─ dataio/
+│     │  ├─ db.py                  # 读写 SQLite，建表/索引
+│     │  └─ loaders.py             # CSV→DataFrame 的加载与清洗
+│     ├─ features/
+│     │  └─ factors.py             # 因子计算、打分、归一化等
+│     ├─ selection/
+│     │  ├─ screen.py              # 量化初筛主逻辑（现在的 quarterly_selection 拆出的函数）
+│     │  └─ enrich.py              # enrich_selection_results 的函数化
+│     ├─ ai/
+│     │  ├─ client.py              # Gemini 客户端与 schema
+│     │  └─ refine.py              # AI 精选逻辑（现在的 ai_stock_pick 拆出的函数）
+│     ├─ backtest/
+│     │  ├─ engine.py              # Backtrader 策略类与运行器
+│     │  └─ prep.py                # 组合与数据对齐、诊断日志等
+│     └─ utils/
+│        ├─ paths.py               # PROJECT_ROOT/DATA_DIR/OUTPUTS_DIR 统一出
+│        └─ logging.py             # 日志配置
+├─ tests/
+│  ├─ test_portfolio_constituents.py
+│  └─ test_price_data_completeness.py
+├─ pyproject.toml
+└─ README.md
+
 ```
 
 ## 数据源

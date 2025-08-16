@@ -1,5 +1,3 @@
-# filename: src/stock_analysis/run_backtest_quarterly_ai_pick.py
-
 import datetime
 import logging
 import sqlite3
