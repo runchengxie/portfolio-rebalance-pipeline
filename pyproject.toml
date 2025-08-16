@@ -1,7 +1,7 @@
 [project]
 name = "stock-analysis"
 version = "0.1.0"
-requires-python = ">=3.10, <3.11" 
+requires-python = ">=3.10, <3.11"
 
 dependencies = [
     "pandas",
@@ -17,6 +17,9 @@ dependencies = [
 dev = [
     "pytest",
     "ruff",
+    "mypy",
+    "pytest-cov",
+    "pre-commit",
 ]
 
 [tool.setuptools]
@@ -46,3 +49,14 @@ select = ["E", "F", "I", "UP", "B"] # B 是 flake8-bugbear
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=stock_analysis --cov-report=term-missing"
+testpaths = [
+    "tests",
+]

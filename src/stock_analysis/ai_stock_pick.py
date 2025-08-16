@@ -23,7 +23,6 @@ if not API_KEY:
 client = genai.Client(api_key=API_KEY)
 
 # --- 1. 定义结构化输出的Schema ---
-# 与 structured_ouput_gemini_documentation.md 中的 Recipe 模型类似
 class AIStockPick(BaseModel):
     """用于AI选股的结构化数据模型"""
     ticker: str = Field(description="股票代码")
