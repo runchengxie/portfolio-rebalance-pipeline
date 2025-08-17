@@ -18,23 +18,33 @@ from dateutil.relativedelta import relativedelta
 def load_cfg() -> Dict[str, Any]:
     """加载配置文件
     
+    优先读取 config/config.yaml，其次项目根的 config.yaml
+    
     Returns:
         Dict[str, Any]: 配置字典
     """
-    # 配置文件路径（项目根目录）
-    config_path = Path(__file__).resolve().parent.parent.parent.parent / "config.yaml"
+    # 项目根目录
+    root = Path(__file__).resolve().parents[3]
     
-    if not config_path.exists():
+    # 配置文件候选路径（按优先级排序）
+    candidates = [
+        root / "config" / "config.yaml",  # 优先：config/config.yaml
+        root / "config.yaml"              # 备选：项目根的config.yaml
+    ]
+    
+    config_path = None
+    for p in candidates:
+        if p.exists():
+            config_path = p
+            break
+    
+    if config_path is None:
         # 默认配置：回到dynamic模式，与现有逻辑一致
         return {
             "backtest": {
                 "period_mode": "dynamic",
                 "buffer": {"months": 3, "days": 10},
-                "initial_cash": {
-                    "ai": 1000000,
-                    "quant": 1000000,
-                    "spy": 100000
-                }
+                "initial_cash": 1000000  # 统一初始资金
             }
         }
     
@@ -115,6 +125,10 @@ def get_backtest_period(portfolios: Dict = None) -> Tuple[datetime.date, datetim
 def get_initial_cash(strategy: str) -> float:
     """获取指定策略的初始资金
     
+    支持两种配置格式：
+    1. 统一资金：initial_cash: 1000000
+    2. 分策略配置：initial_cash: {ai: 1000000, quant: 1000000, spy: 1000000}
+    
     Args:
         strategy: 策略名称 ('ai', 'quant', 'spy')
         
@@ -123,12 +137,12 @@ def get_initial_cash(strategy: str) -> float:
     """
     config = load_cfg()
     backtest_config = config.get("backtest", {})
-    initial_cash_config = backtest_config.get("initial_cash", {})
+    initial_cash_config = backtest_config.get("initial_cash", 1000000)
     
-    default_cash = {
-        "ai": 1000000,
-        "quant": 1000000,
-        "spy": 100000
-    }
-    
-    return initial_cash_config.get(strategy, default_cash.get(strategy, 1000000))
+    # 支持两种格式：数字（统一资金）或字典（分策略配置）
+    if isinstance(initial_cash_config, dict):
+        # 字典格式：按策略分别配置
+        return float(initial_cash_config.get(strategy, 1000000))
+    else:
+        # 数字格式：统一资金
+        return float(initial_cash_config)
