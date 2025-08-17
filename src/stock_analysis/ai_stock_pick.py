@@ -439,8 +439,8 @@ def create_prompt(analysis_date, ticker_list_df):
     请你从巴菲特投资逻辑出发，从以下列表中筛选出最具投资潜力的10只股票。
 
     # 分析时间点 (至关重要)
-    请将分析限制在 **{analysis_date}** 这个时间点的市场环境。
-
+    请将分析限制在 **{analysis_date}** 这个时间点的市场环境。对应的时间可能超出了你的训练数据截至日期范围，如果如此的话，请基于你的认知和合理推测进行分析。
+    
     # 候选股票列表 (共 {len(ticker_list_df)} 只)
     基于财务基本面在 {analysis_date} 初步筛选的股票：
     {ticker_str}
