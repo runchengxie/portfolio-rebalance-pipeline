@@ -190,10 +190,16 @@
 
 ### 可选步骤
 
-* **对比回测 (量化初筛组合)**: 评估纯量化策略（未经过AI筛选的20只股票组合）的表现。
+* **对比回测1 (量化初筛组合)**: 评估纯量化策略（未经过AI筛选的20只股票组合）的表现。
 
     ```bash
     python -m src.stock_analysis.backtest_quarterly_unpicked
+    ```
+
+* **对比回测2 (SPY基准)**：评估AI策略与SPY基准（S&P 500 ETF）的表现。
+
+    ```bash
+    python -m src.stock_analysis.backtest_benchmark_spy
     ```
 
 * **丰富初筛结果**: 为步骤2生成的Excel文件添加公司名称、行业等详细信息。
