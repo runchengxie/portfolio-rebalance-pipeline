@@ -12,9 +12,9 @@ from .backtest.prep import load_portfolios, load_price_feeds
 from .utils.paths import (
     AI_PORTFOLIO_FILE as PORTFOLIO_FILE,
     DB_PATH,
-    DEFAULT_INITIAL_CASH as INITIAL_CASH,
     OUTPUTS_DIR
 )
+from .utils.config import get_backtest_period, get_initial_cash
 from .utils.logging import setup_logging
 
 # 设置日志
@@ -52,17 +52,14 @@ def main():
     for df in portfolios.values():
         all_needed_tickers.update(df["Ticker"].dropna())
 
-    # 动态确定回测时间范围
-    first_rebalance_date = min(portfolios.keys())
-    last_rebalance_date = max(portfolios.keys())
+    # 从配置文件获取统一的回测时间范围
+    BACKTEST_START_DATE, BACKTEST_END_DATE = get_backtest_period(portfolios)
     
-    BACKTEST_START_DATE = first_rebalance_date
-    BACKTEST_END_DATE = last_rebalance_date + relativedelta(months=3, days=10)
+    # 从配置文件获取初始资金
+    initial_cash = get_initial_cash("ai")
 
-    print("Dynamically set backtest period based on portfolio dates:")
-    print(f"  - First signal date: {first_rebalance_date}")
-    print(f"  - Data loading will start from: {BACKTEST_START_DATE}")
-    print(f"  - Data loading will end around: {BACKTEST_END_DATE}")
+    print(f"Backtest period: {BACKTEST_START_DATE} to {BACKTEST_END_DATE}")
+    print(f"Initial cash: ${initial_cash:,.2f}")
     print(f"Calculating for a total of {len(all_needed_tickers)} unique tickers...")
 
     # 加载价格数据
@@ -88,7 +85,7 @@ def main():
     portfolio_value, metrics = run_quarterly_backtest(
         portfolios=portfolios,
         data_feeds=price_data_dict,
-        initial_cash=INITIAL_CASH,
+        initial_cash=initial_cash,
         start_date=BACKTEST_START_DATE,
         end_date=BACKTEST_END_DATE,
         use_logging=True,  # AI版本使用logging
