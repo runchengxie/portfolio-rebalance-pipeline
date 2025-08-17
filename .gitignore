@@ -44,3 +44,7 @@ strategy_full_project_source.txt
 
 # Unit test / coverage reports
 .coverage
+
+# Configuration files
+# Ignore actual config file, keep template in version control
+config/config.yaml
