@@ -1,6 +1,5 @@
 import sqlite3
 from pathlib import Path
-
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
@@ -28,7 +27,7 @@ OUTPUT_FILE_BASE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_histori
 FACTOR_WEIGHTS = {"cfo": 1, "ceq": 1, "txt": 1, "d_txt": 1, "d_at": -1, "d_rect": -1}
 
 
-# ### 新增 ### 从本地CSV加载S&P 500历史成分股数据
+# 从本地CSV加载S&P 500历史成分股数据
 def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
     """
     从本地CSV文件加载S&P 500历史成分股数据。
@@ -56,7 +55,7 @@ def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
         return None
 
 
-# ### 新增 ### 根据日期获取当时的S&P 500股票池
+# 根据日期获取当时的S&P 500股票池
 def get_universe_for_date(
     target_date: pd.Timestamp, df_constituents: pd.DataFrame
 ) -> list:
