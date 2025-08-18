@@ -174,6 +174,13 @@
     stockq load-data
     ```
 
+    为了更高效率推荐使用sqlite3，Windows用户可通过Powershell在项目根目录执行以下指令：
+
+    ```bash
+    # 写成一行的版本，CMD 和 PowerShell 通用
+    sqlite3 "data\financial_data.db" ".read sql\schema.sql" ".separator ;" ".import --skip 1 data\us-shareprices-daily.csv share_prices" "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);"
+    ```
+
     执行成功后，会在 `data/` 目录下生成 `financial_data.db` 文件。
 
 2. 步骤 2: 运行量化初筛策略
