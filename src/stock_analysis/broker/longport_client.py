@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from longport.openapi import (
+from longbridge.openapi import (
     AdjustType,
     Config,
     OrderSide,
