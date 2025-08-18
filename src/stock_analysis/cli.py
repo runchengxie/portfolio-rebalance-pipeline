@@ -1,8 +1,3 @@
-"""命令行接口模块
-
-提供股票分析项目的命令行入口点，支持各种回测和分析功能。
-"""
-
 import argparse
 import sys
 from pathlib import Path
