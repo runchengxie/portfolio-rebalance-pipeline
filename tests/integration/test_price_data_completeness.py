@@ -5,19 +5,8 @@ import pandas as pd
 import pytest
 
 # --- 路径配置 ---
-try:
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
-except NameError:
-    PROJECT_ROOT = (
-        Path(".").resolve().parent
-        if "tests" in str(Path(".").resolve())
-        else Path(".").resolve()
-    )
-
-DATA_DIR = PROJECT_ROOT / "data"
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
-DB_PATH = DATA_DIR / "financial_data.db"
-PORTFOLIO_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
+from stock_analysis.utils.paths import PROJECT_ROOT, DATA_DIR, OUTPUTS_DIR, DB_PATH, QUANT_PORTFOLIO_FILE
+PORTFOLIO_FILE = QUANT_PORTFOLIO_FILE
 
 # --- 测试常量配置 ---
 # 一个季度大约有 252/4 = 63 个交易日
