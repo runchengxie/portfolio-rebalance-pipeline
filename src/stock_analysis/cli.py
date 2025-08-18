@@ -22,6 +22,7 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 示例用法:
   stockq --help                    显示帮助信息
+  stockq preliminary               运行量化初筛选股
   stockq backtest ai               运行AI选股回测
   stockq backtest quant            运行量化初选回测  
   stockq backtest spy              运行SPY基准回测
@@ -71,6 +72,18 @@ def create_parser() -> argparse.ArgumentParser:
         "--data-dir",
         type=str,
         help="数据目录路径（可选，默认使用项目data目录）"
+    )
+    
+    # 量化初筛命令
+    prelim_parser = subparsers.add_parser(
+        "preliminary",
+        help="运行量化初筛选股",
+        description="执行多因子量化初筛，生成候选股票池"
+    )
+    prelim_parser.add_argument(
+        "--output-dir",
+        type=str,
+        help="输出目录路径（可选，默认使用项目outputs目录）"
     )
     
     # AI选股命令
@@ -158,6 +171,36 @@ def run_load_data(data_dir: Optional[str] = None) -> int:
         return 1
 
 
+def run_preliminary(output_dir: Optional[str] = None) -> int:
+    """运行量化初筛选股
+    
+    Args:
+        output_dir: 输出目录路径（可选）
+        
+    Returns:
+        int: 退出码（0表示成功）
+    """
+    try:
+        print("正在运行量化初筛选股...")
+        
+        if output_dir:
+            print(f"输出目录：{output_dir}")
+            # 这里可以添加输出目录配置逻辑
+        
+        from .preliminary_selection import main as prelim_main
+        prelim_main()
+        
+        print("量化初筛选股完成！")
+        return 0
+        
+    except ImportError as e:
+        print(f"错误：无法导入量化初筛模块 - {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"量化初筛选股失败：{e}", file=sys.stderr)
+        return 1
+
+
 def run_ai_pick(quarter: Optional[str] = None, output: Optional[str] = None) -> int:
     """运行AI选股分析
     
@@ -209,6 +252,8 @@ def main() -> int:
         return run_backtest(args.strategy, getattr(args, 'config', None))
     elif args.command == "load-data":
         return run_load_data(getattr(args, 'data_dir', None))
+    elif args.command == "preliminary":
+        return run_preliminary(getattr(args, 'output_dir', None))
     elif args.command == "ai-pick":
         return run_ai_pick(
             getattr(args, 'quarter', None),
