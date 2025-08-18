@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""Simple test script for LongPort integration structure.
-
-This script tests the code structure without requiring longbridge package.
-"""
-
 import sys
 from pathlib import Path
 
