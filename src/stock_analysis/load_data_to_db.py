@@ -1,4 +1,6 @@
 import sqlite3
+import subprocess
+import shutil
 from pathlib import Path
 import pandas as pd
 
@@ -17,13 +19,54 @@ def tidy_ticker(col: pd.Series) -> pd.Series:
 def _fast_pragmas(con: sqlite3.Connection, fast: bool = True) -> None:
     """设置SQLite性能优化参数"""
     if fast:
-        con.execute("PRAGMA journal_mode=OFF;")
-        con.execute("PRAGMA synchronous=OFF;")
+        con.execute("PRAGMA journal_mode=WAL;")
+        con.execute("PRAGMA synchronous=NORMAL;")
     else:
         con.execute("PRAGMA journal_mode=WAL;")
         con.execute("PRAGMA synchronous=NORMAL;")
     con.execute("PRAGMA temp_store=MEMORY;")
     con.execute("PRAGMA cache_size=-200000;")  # 约200MB
+
+
+def _check_sqlite3_cli() -> bool:
+    """检查是否有sqlite3命令行工具可用"""
+    return shutil.which("sqlite3") is not None
+
+
+def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) -> bool:
+    """使用SQLite CLI导入价格数据（最快方式）"""
+    try:
+        print("    - Using SQLite CLI for fast import...")
+        
+        # 构建SQLite命令
+        commands = [
+            f".read {schema_path.as_posix()}",
+            ".separator ;",
+            ".mode ascii",
+            f".import --skip 1 {csv_path.as_posix()} share_prices",
+            "CREATE INDEX IF NOT EXISTS idx_prices_date ON share_prices(Date);",
+            "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);",
+            "PRAGMA journal_mode=WAL;",
+            "PRAGMA synchronous=NORMAL;"
+        ]
+        
+        # 执行SQLite命令
+        cmd = ["sqlite3", str(db_path)]
+        for command in commands:
+            cmd.extend(["-cmd", command])
+        cmd.append(".quit")
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        print(f"    - SQLite CLI import completed successfully")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"    - SQLite CLI import failed: {e}")
+        print(f"    - stderr: {e.stderr}")
+        return False
+    except Exception as e:
+        print(f"    - SQLite CLI import error: {e}")
+        return False
 
 
 def _load_csv_in_chunks(csv_path: Path, table: str, con: sqlite3.Connection,
@@ -61,7 +104,6 @@ def main():
     print(f"Creating SQLite database at: {DB_PATH}")
     with sqlite3.connect(DB_PATH) as con:
         _fast_pragmas(con, fast=True)
-        con.execute("BEGIN")
 
         # 财报数据
         print("Processing financial statements...")
@@ -85,36 +127,51 @@ def main():
             else:
                 print(f"  [WARNING] File not found: {path}")
 
-        # 价格数据
+        # 价格数据 - 优先使用SQLite CLI导入（更快）
         print("Processing price data...")
         price_csv = DATA_DIR / "us-shareprices-daily.csv"
+        # schema.sql位于项目根目录
+        schema_sql = DATA_DIR.parent / "schema.sql"
+        
         if price_csv.exists():
-            price_dtype = {
-                "Ticker": "string",
-            }
-            rows = _load_csv_in_chunks(price_csv, "share_prices", con,
-                                       parse_dates=["Date"], dtype=price_dtype)
-            print(f"    - Loaded {rows} rows into share_prices")
+            # 检查文件大小，大文件优先使用CLI导入
+            file_size_mb = price_csv.stat().st_size / (1024 * 1024)
+            print(f"    - Price data file size: {file_size_mb:.1f} MB")
+            
+            cli_success = False
+            if _check_sqlite3_cli() and schema_sql.exists():
+                print("    - SQLite CLI available, attempting fast import...")
+                cli_success = _import_prices_with_cli(price_csv, DB_PATH, schema_sql)
+            
+            if not cli_success:
+                print("    - Falling back to pandas chunked import...")
+                price_dtype = {
+                    "Ticker": "string",
+                }
+                rows = _load_csv_in_chunks(price_csv, "share_prices", con,
+                                           parse_dates=["Date"], dtype=price_dtype)
+                print(f"    - Loaded {rows} rows into share_prices")
+                
+                # 为pandas导入创建索引
+                print("    - Creating indexes for pandas import...")
+                con.execute("CREATE INDEX IF NOT EXISTS idx_prices_date ON share_prices(Date);")
+                con.execute("CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);")
+            else:
+                print("    - SQLite CLI import completed with indexes")
         else:
             print(f"  [WARNING] File not found: {price_csv}")
+            if not schema_sql.exists():
+                print(f"  [WARNING] Schema file not found: {schema_sql}")
 
-        # 索引：一次性创建，且与查询对齐
-        print("Creating optimized indexes...")
+        # 财报表索引：一次性创建，且与查询对齐
+        print("Creating optimized indexes for financial data...")
         con.executescript("""
         -- 财报表：按 Ticker, year 分组按 date_known 取最新
         CREATE INDEX IF NOT EXISTS idx_bs_ty_date  ON balance_sheet (Ticker, year, date_known DESC);
         CREATE INDEX IF NOT EXISTS idx_cf_ty_date  ON cash_flow     (Ticker, year, date_known DESC);
         CREATE INDEX IF NOT EXISTS idx_in_ty_date  ON income        (Ticker, year, date_known DESC);
-
-        -- 价格表：主时间轴和按股票筛选都要快
-        CREATE INDEX IF NOT EXISTS idx_prices_date        ON share_prices (Date);
-        CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices (Ticker, Date);
-        
-        -- 可选：价格表唯一约束防止重复数据
-        -- CREATE UNIQUE INDEX IF NOT EXISTS idx_prices_unique ON share_prices (Ticker, Date);
         """)
 
-        con.execute("COMMIT")
         _fast_pragmas(con, fast=False)
 
     print("Database creation complete!")
