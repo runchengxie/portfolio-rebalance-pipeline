@@ -26,6 +26,8 @@
 
 * 模块化与可测试的代码: 项目被重构为逻辑清晰的模块（如 backtest, utils），并配备了 pytest 单元测试，保证了核心逻辑的正确性。
 
+* 券商集成 (LongPort): 项目已集成 LongPort OpenAPI，可通过命令行工具直接获取股票的实时报价，并根据AI策略结果生成调仓交易指令。
+
 ## 核心策略流程
 
 本策略结合了量化筛选的广度和 AI 深度分析的优势，分为两个核心阶段：
@@ -90,9 +92,12 @@
 │       ├── backtest/
 │       │   ├── engine.py           # 回测策略类与运行器
 │       │   └── prep.py             # 投资组合加载与数据对齐
+│       ├── broker/                 
+│       │   ├── __init__.py
+│       │   └── longport_client.py  # LongPort API 客户端
 │       └── utils/
 │           ├── config.py           # 配置加载器
-│           ├── paths.py            # 全局路径管理
+│           └── paths.py            # 全局路径管理
 │           └── ...
 ├── tests/
 │   └── ... (单元测试)
@@ -126,7 +131,7 @@
 1. 安装依赖库:
 
     Python 版本: 项目要求 Python >=3.10 且 <3.11。
-    安装: 项目依赖在 pyproject.toml 中定义。推荐使用虚拟环境，并通过以下命令安装：
+    安装: 项目依赖在 pyproject.toml 中定义，此命令会自动安装 stockq 命令行工具。推荐使用虚拟环境，并通过以下命令安装：
 
     ```bash
     # 确保pip是最新版本
@@ -137,7 +142,9 @@
 
 2. 配置API密钥:
 
-    在项目根目录下创建一个名为 .env 的文件。该项目支持最多三个API密钥以提高请求的稳健性。
+    在项目根目录下，将 .env.example 文件复制一份并重命名为 .env。然后填入你的真实凭据。
+
+    Gemini AI 凭据：
 
     ```yaml
     # 您至少需要提供一个
@@ -148,7 +155,14 @@
     GEMINI_API_KEY_3="YOUR_THIRD_API_KEY_HERE"
     ```
 
-    此命令会自动安装 stockq 命令行工具。
+    LongPort OpenAPI 凭据：
+
+    ```yaml
+    # 从 LongPort 开发者中心获取
+    LONGPORT_APP_KEY="your_app_key_here"
+    LONGPORT_APP_SECRET="your_app_secret_here"
+    LONGPORT_ACCESS_TOKEN="your_access_token_here"
+    ```
 
 3. 配置回测参数:
 
@@ -221,10 +235,22 @@
     stockq backtest spy
     ```
 
-* 丰富初筛结果: 为步骤2生成的Excel文件添加公司名称、行业等详细信息。
+* 获取实时报价: 查询一个或多个股票的最新价格。默认支持美股代码，其他市场需加后缀（如 .HK）。
 
     ```bash
-    python -m src.stock_analysis.enrich_selection_results
+    stockq lb-quote AAPL MSFT 700.HK
+    ```
+
+* 执行仓位调整 (模拟): 读取AI选股结果，并模拟执行调仓计划。默认以“干跑”（dry-run）模式运行，仅打印交易计划，不会产生真实订单。
+
+    ```bash
+    stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
+    ```
+
+* 执行真实交易: 如果要执行真实的交易，请添加 --execute 标志。请务必谨慎操作！
+
+    ```bash
+    stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
     ```
 
 ## 输出文件
