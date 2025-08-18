@@ -29,11 +29,6 @@ def setup_logging(
         logging.Logger: 配置好的日志器
     """
     logger = logging.getLogger(name)
-    
-    # 避免重复添加处理器
-    if logger.handlers:
-        return logger
-        
     logger.setLevel(level)
     
     # 创建格式器
@@ -42,20 +37,29 @@ def setup_logging(
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # 控制台处理器
-    if use_console:
+    # 控制台处理器：不存在才添加
+    if use_console and not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(level)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
     
-    # 文件处理器
+    # 文件处理器：按文件路径去判重
     if log_file:
         log_path = OUTPUTS_DIR / log_file
-        file_handler = logging.FileHandler(log_path, encoding='utf-8')
-        file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        try:
+            OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        has_same_file = any(
+            isinstance(h, logging.FileHandler) and Path(getattr(h, "baseFilename", "")) == log_path
+            for h in logger.handlers
+        )
+        if not has_same_file:
+            file_handler = logging.FileHandler(log_path, encoding='utf-8')
+            file_handler.setLevel(level)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
     
     return logger
 
