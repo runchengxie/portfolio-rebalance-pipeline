@@ -1,20 +1,13 @@
-import datetime
 import sys
 import time
-from pathlib import Path
-import pandas as pd
-from dateutil.relativedelta import relativedelta
 
 # 导入新的模块
-from .backtest.engine import run_quarterly_backtest, generate_report
+from .backtest.engine import generate_report, run_quarterly_backtest
 from .backtest.prep import load_portfolios, load_price_feeds
-from .utils.paths import (
-    AI_PORTFOLIO_FILE as PORTFOLIO_FILE,
-    DB_PATH,
-    OUTPUTS_DIR
-)
 from .utils.config import get_backtest_period, get_initial_cash
 from .utils.logging import setup_logging
+from .utils.paths import AI_PORTFOLIO_FILE as PORTFOLIO_FILE
+from .utils.paths import DB_PATH, OUTPUTS_DIR
 
 # 设置日志
 logger = setup_logging("ai_backtest", "ai_backtest.log")

@@ -1,7 +1,5 @@
 import argparse
 import sys
-from pathlib import Path
-from typing import Optional
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -144,7 +142,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_backtest(strategy: str, config_path: Optional[str] = None) -> int:
+def run_backtest(strategy: str, config_path: str | None = None) -> int:
     """运行回测分析
     
     Args:
@@ -178,7 +176,7 @@ def run_backtest(strategy: str, config_path: Optional[str] = None) -> int:
         return 1
 
 
-def run_load_data(data_dir: Optional[str] = None) -> int:
+def run_load_data(data_dir: str | None = None) -> int:
     """运行数据加载
     
     Args:
@@ -209,7 +207,7 @@ def run_load_data(data_dir: Optional[str] = None) -> int:
         return 1
 
 
-def run_preliminary(output_dir: Optional[str] = None) -> int:
+def run_preliminary(output_dir: str | None = None) -> int:
     """运行量化初筛选股
     
     Args:
@@ -239,7 +237,7 @@ def run_preliminary(output_dir: Optional[str] = None) -> int:
         return 1
 
 
-def run_ai_pick(quarter: Optional[str] = None, output: Optional[str] = None) -> int:
+def run_ai_pick(quarter: str | None = None, output: str | None = None) -> int:
     """运行AI选股分析
     
     Args:
@@ -317,6 +315,7 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
     """
     try:
         from pathlib import Path
+
         import pandas as pd
         
         print(f"正在读取AI选股结果文件: {input_file}")

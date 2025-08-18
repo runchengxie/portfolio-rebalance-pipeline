@@ -1,5 +1,5 @@
-import sys
 from pathlib import Path
+
 
 def test_file_structure():
     """Test that all required files are created."""
