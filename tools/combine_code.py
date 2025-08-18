@@ -31,6 +31,7 @@ EXCLUDE_DIRS_EXACT: set[str] = {
     "renv",
     "docs_extra",
     "tools",
+#     "tests",
 }
 
 # Directory name patterns to exclude (e.g., any directory ending with .egg-info)
