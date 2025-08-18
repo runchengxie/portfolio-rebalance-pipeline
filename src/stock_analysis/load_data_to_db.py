@@ -1,7 +1,8 @@
+import shutil
 import sqlite3
 import subprocess
-import shutil
 from pathlib import Path
+
 import pandas as pd
 
 # 统一用项目内的路径配置
@@ -57,7 +58,7 @@ def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) ->
         cmd.append(".quit")
         
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        print(f"    - SQLite CLI import completed successfully")
+        print("    - SQLite CLI import completed successfully")
         return True
         
     except subprocess.CalledProcessError as e:

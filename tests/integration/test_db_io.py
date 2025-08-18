@@ -7,14 +7,13 @@
 
 import datetime
 import sqlite3
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
-from stock_analysis.backtest.prep import load_spy_data, load_price_feeds
+from stock_analysis.backtest.prep import load_price_feeds, load_spy_data
 from stock_analysis.load_data_to_db import main as load_data_main
 
 

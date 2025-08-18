@@ -1,8 +1,15 @@
 from datetime import date
 from decimal import Decimal
+
 from longport.openapi import (
-    Config, QuoteContext, TradeContext, Period, AdjustType,
-    OrderType, OrderSide, TimeInForceType
+    AdjustType,
+    Config,
+    OrderSide,
+    OrderType,
+    Period,
+    QuoteContext,
+    TimeInForceType,
+    TradeContext,
 )
 
 

@@ -5,7 +5,7 @@
 
 import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
 
 import backtrader as bt
 import matplotlib.pyplot as plt
@@ -154,15 +154,15 @@ class BuyAndHoldStrategy(bt.Strategy):
 
 
 def run_quarterly_backtest(
-    portfolios: Dict[datetime.date, pd.DataFrame],
-    data_feeds: Dict[str, bt.feeds.PandasData],
+    portfolios: dict[datetime.date, pd.DataFrame],
+    data_feeds: dict[str, bt.feeds.PandasData],
     initial_cash: float,
     start_date: datetime.date,
     end_date: datetime.date,
     use_logging: bool = True,
     add_observers: bool = False,
     add_annual_return: bool = False
-) -> Tuple[pd.Series, Dict[str, Any]]:
+) -> tuple[pd.Series, dict[str, Any]]:
     """运行季度调仓回测
     
     Args:
@@ -262,7 +262,7 @@ def run_benchmark_backtest(
     data: pd.DataFrame,
     initial_cash: float,
     ticker: str = "SPY"
-) -> Tuple[pd.Series, Dict[str, Any]]:
+) -> tuple[pd.Series, dict[str, Any]]:
     """运行基准回测（买入并持有）
     
     Args:
@@ -333,11 +333,11 @@ def run_benchmark_backtest(
 
 
 def generate_report(
-    metrics: Dict[str, Any],
+    metrics: dict[str, Any],
     title: str,
     portfolio_value: pd.Series,
-    output_png: Optional[Path] = None,
-    benchmark_value: Optional[pd.Series] = None,
+    output_png: Path | None = None,
+    benchmark_value: pd.Series | None = None,
     benchmark_label: str = "Benchmark"
 ) -> None:
     """生成统一的回测报告

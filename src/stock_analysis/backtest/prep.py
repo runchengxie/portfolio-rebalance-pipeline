@@ -7,12 +7,9 @@ import datetime
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Dict, Set
 
 import backtrader as bt
 import pandas as pd
-
-from ..utils.paths import DB_PATH
 
 
 def tidy_ticker(col: pd.Series) -> pd.Series:
@@ -36,7 +33,7 @@ def tidy_ticker(col: pd.Series) -> pd.Series:
 def load_portfolios(
     portfolio_path: Path,
     is_ai_selection: bool = False
-) -> Dict[datetime.date, pd.DataFrame]:
+) -> dict[datetime.date, pd.DataFrame]:
     """加载投资组合数据
     
     Args:
@@ -80,10 +77,10 @@ def load_portfolios(
 
 def load_price_feeds(
     db_path: Path,
-    tickers: Set[str],
+    tickers: set[str],
     start_date: datetime.date,
     end_date: datetime.date
-) -> Dict[str, bt.feeds.PandasData]:
+) -> dict[str, bt.feeds.PandasData]:
     """从数据库加载价格数据并创建Backtrader数据源
     
     Args:
