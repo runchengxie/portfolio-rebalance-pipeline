@@ -328,27 +328,51 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
             print(f"错误：文件不存在 - {input_file}", file=sys.stderr)
             return 1
         
-        # 读取Excel文件（这里需要根据实际文件格式调整）
+        # 读取所有 sheet 并选择最新一季
+        import re
+        
         try:
-            df = pd.read_excel(file_path)
-            print(f"成功读取文件，包含 {len(df)} 条记录")
+            xls = pd.ExcelFile(file_path)
+            
+            def pick_latest_sheet(sheet_names):
+                candidates = []
+                for s in sheet_names:
+                    try:
+                        d = pd.to_datetime(s).date()
+                        candidates.append((d, s))
+                    except Exception:
+                        # 尝试匹配 yyyy-mm-dd
+                        m = re.search(r"\d{4}-\d{2}-\d{2}", s)
+                        if m:
+                            d = pd.to_datetime(m.group(0)).date()
+                            candidates.append((d, s))
+                if candidates:
+                    return max(candidates)[1]
+                return sheet_names[-1]  # 兜底
+            
+            sheet_to_use = pick_latest_sheet(xls.sheet_names)
+            df = pd.read_excel(xls, sheet_name=sheet_to_use)
+            print(f"成功读取文件，使用 sheet: {sheet_to_use}，包含 {len(df)} 条记录")
+            
+            # 识别 ticker 列
+            cols = {c.lower(): c for c in df.columns}
+            ticker_col = cols.get("ticker") or cols.get("symbol")
+            if not ticker_col:
+                raise ValueError("未找到 ticker/symbol 列")
+            
+            tickers = df[ticker_col].astype(str).str.upper().str.strip().tolist()
+            
         except Exception as e:
             print(f"读取Excel文件失败：{e}", file=sys.stderr)
             return 1
         
-        # 示例：假设文件包含 'symbol' 和 'target_weight' 列
-        # 实际实现需要根据你的文件格式调整
         if dry_run:
-            print("\n=== 干跑模式 - 仓位调整预览 ===")
+            print(f"\n=== 干跑模式 - {sheet_to_use} 仓位调整预览 ===")
             print("-" * 60)
             
-            # 示例目标仓位（实际应从文件读取）
-            targets = {"AAPL": +100, "MSFT": -50}  # +买入 -卖出，单位：股
-            
-            for sym, qty in targets.items():
-                action = "买入" if qty > 0 else "卖出"
-                print(f"DRY-RUN | {sym:8} | {action} {abs(qty):>6} 股")
-                # 真下: lb.submit_limit(sym, price=填你风控价, qty=qty)
+            # 等权目标：先只打印目标票单，数量后续接券商持仓再算
+            for t in tickers:
+                print(f"DRY-RUN | {t:<8} | 目标 等权 | QTY: 待计算")
             
             print("\n注意：这是干跑模式，未实际下单")
             print("使用 --execute 参数可实际执行交易")
