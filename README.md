@@ -181,7 +181,7 @@
     此脚本执行多因子选股逻辑，并将每个季度的前 20 名候选股保存到 outputs/ 目录的 Excel 文件中。
 
     ```bash
-    bash python -m src.stock_analysis.preliminary_selection
+    stockq preliminary
     ```
 
 3. 步骤 3: 运行 AI 筛选策略
