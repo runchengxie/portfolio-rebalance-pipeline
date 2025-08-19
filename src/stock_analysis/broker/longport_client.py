@@ -5,8 +5,13 @@ from enum import Enum
 from typing import Dict, Iterable, Tuple
 
 from dotenv import load_dotenv
-from longbridge import Config
-from longbridge.openapi import QuoteContext, TradeContext
+try:
+    # 新版 SDK（Config 在 longbridge.openapi）
+    from longbridge.openapi import Config, QuoteContext, TradeContext
+except ImportError:
+    # 旧版兜底（极少见）
+    from longbridge import Config  # type: ignore
+    from longbridge.openapi import QuoteContext, TradeContext  # type: ignore
 
 load_dotenv()
 
