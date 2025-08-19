@@ -8,7 +8,7 @@
 
 * 两阶段混合模型: 结合了基于财务报表数据的量化筛选和大型语言模型的深度分析，实现自动化、多维度的选股流程。
 
-* 时点（Point-in-Time）回测:
+* 时点回测:
 
   * 避免幸存者偏差: 在每个调仓日，选股范围限定为当时的 S&P 500 指数成分股。
 
@@ -16,17 +16,25 @@
 
 * AI筛选:
 
-  * 多 API 密钥池: 支持配置多个 Gemini API 密钥，通过轮换和熔断机制提高请求成功率和稳定性。
+  * 多 API 密钥池: 支持配置多个 Gemini API 密钥，通过轮换机制分摊请求压力，最大化吞吐量。
 
-  * 智能容错与限速: 内置滑动窗口限速器、指数退避重试和熔断器。系统自动区分 API Key 认证失败（永久移除）、项目级限流（全局冷却）和临时性网络错误（单 Key 临时退避），确保在高并发请求下依然稳健运行。
+  * 智能容错与限速: 内置一套 API 管理系统，包括：
 
-* 命令行工具 (CLI): 通过 stockq 命令及其子命令（如 load-data, ai-pick, backtest）执行所有核心工作流。
+    * 滑动窗口限速器: 为每个 API Key 精确控制请求频率，避免超出 QPM (每分钟查询数) 限制。
+
+    * 指数退避重试: 对临时性网络或服务器错误采用带“抖动”的指数退避策略进行重试。
+
+    * 熔断器机制: 当某个 Key 连续失败时，系统会将其暂时“熔断”并移出工作池，防止连锁失败。
+
+    * 分级错误处理: 系统能自动区分 API Key 认证失败（永久移除）、项目级限流（全局冷却）和临时性网络错误（单 Key 临时退避），确保在高并发请求下依然稳健运行。
+
+* 命令行工具: 通过 stockq 命令及其子命令（如 load-data, ai-pick, backtest, lb-rebalance）执行所有核心工作流，实现流程自动化。
 
 * 集中化配置: 所有回测参数（如时间范围、初始资金）均在 config/config.yaml 中统一管理，便于快速调整和复现实验。
 
 * 模块化与可测试的代码: 项目被重构为逻辑清晰的模块（如 backtest, utils），并配备了 pytest 单元测试，保证了核心逻辑的正确性。
 
-* 券商集成 (LongPort): 项目已集成 LongPort OpenAPI，可通过命令行工具直接获取股票的实时报价，并根据AI策略结果生成调仓交易指令。
+* 券商集成 (长桥): 项目已集成 Longbridge OpenAPI，可通过命令行工具直接获取股票的实时报价，并根据 AI 策略结果生成并执行调仓交易指令。
 
 ## 核心策略流程
 
@@ -86,19 +94,21 @@
 ├── src/
 │   └── stock_analysis/
 │       ├── __init__.py
-│       ├── ai_stock_pick.py
+│       ├── ai_stock_pick.py      # AI选股与API管理核心逻辑
 │       ├── cli.py                  # 命令行接口实现
-│       ├── preliminary_selection.py
+│       ├── preliminary_selection.py  # 量化初筛逻辑
 │       ├── backtest/
+│       │   ├── __init__.py
 │       │   ├── engine.py           # 回测策略类与运行器
 │       │   └── prep.py             # 投资组合加载与数据对齐
-│       ├── broker/                 
+│       ├── broker/
 │       │   ├── __init__.py
 │       │   └── longport_client.py  # LongPort API 客户端
 │       └── utils/
+│           ├── __init__.py
 │           ├── config.py           # 配置加载器
+│           ├── logging.py          # 日志配置
 │           └── paths.py            # 全局路径管理
-│           └── ...
 ├── tests/
 │   └── ... (单元测试)
 ├── .env
@@ -168,6 +178,8 @@
 
     复制 config/template.yaml 为 config/config.yaml。根据您的需求修改回测的时间范围和初始资金。
 
+    *回测周期在动态模式下会自行使用所有可用数据，考虑到不同的测试数据可能对应的可用数据的时间范围有所不用，建议探索出多个测试标的都存在有效数据的时间范围，然后使用固定模式限定回测周期。*
+
     ```yaml
     backtest:
     period_mode: fixed  # fixed 或 dynamic
@@ -221,6 +233,41 @@
     stockq backtest ai
     ```
 
+5. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance` 命令内置了一套严格的安全执行机制。该机制的核心原则是**默认安全**：让无风险的操作（如测试和模拟）变得简单，而让有风险的真实交易需要用户进行明确、多重确认。
+
+    请在执行前务必理解以下**行为矩阵**：
+
+    | 命令组合 | 行为描述 |
+    | :--- | :--- |
+    | `stockq lb-rebalance ... --env test` | ✅ **安全模拟**: 无论是否添加 `--execute`，此命令都只会在 **测试环境** 中进行模拟操作。它用于验证 API 凭据、网络连接和调仓逻辑，**绝不会** 触及您的真实资金。 |
+    | `stockq lb-rebalance ... --env real` | ❌ **拒绝执行**: 为了防止用户误操作（例如，以为自己执行了真实交易但实际上只是模拟），系统会明确 **拒绝** 此组合，并提示您必须添加 `--execute` 标志才能在真实环境下运行。这是一个关键的防呆设计。 |
+    | `stockq lb-rebalance ... --env real --execute` | ⚠️ **真实交易**: 这是 **唯一** 会触发真实下单的命令组合。执行此命令前，请务必确认您的调仓计划。所有在代码中定义的风控措施（如单笔最大金额、交易时间窗口）将在此模式下生效。 |
+
+    **推荐的执行流程：**
+
+    1. **验证连接**:
+
+        ```bash
+        # 验证API凭据和实时报价功能是否正常
+        stockq lb-quote AAPL MSFT
+        ```
+
+    2. **测试环境模拟 (Dry-Run)**:
+
+        ```bash
+        # 在一个完全隔离的环境中，检查调仓计划是否符合预期
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env test
+        ```
+
+    3. **仔细检查输出**: 审查上一步打印的交易计划，包括股票代码、数量和方向。
+
+    4. **执行真实交易 (谨慎操作!)**:
+
+        ```bash
+        # 确认所有信息无误后，才执行真实下单
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env real --execute
+        ```
+
 ### 可选步骤
 
 * 对比回测 1 (量化初筛组合): 评估纯量化策略（未经过 AI 筛选的 20 只股票组合）的表现。
@@ -233,24 +280,6 @@
 
     ```bash
     stockq backtest spy
-    ```
-
-* 获取实时报价: 查询一个或多个股票的最新价格。默认支持美股代码，其他市场需加后缀（如 .HK）。
-
-    ```bash
-    stockq lb-quote AAPL MSFT 700.HK
-    ```
-
-* 执行仓位调整 (模拟): 读取AI选股结果，并模拟执行调仓计划。默认以“干跑”（dry-run）模式运行，仅打印交易计划，不会产生真实订单。
-
-    ```bash
-    stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
-    ```
-
-* 执行真实交易: 如果要执行真实的交易，请添加 --execute 标志。请务必谨慎操作！
-
-    ```bash
-    stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
     ```
 
 ## 输出文件
