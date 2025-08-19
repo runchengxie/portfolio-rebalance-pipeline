@@ -5,13 +5,8 @@ from enum import Enum
 from typing import Dict, Iterable, Tuple
 
 from dotenv import load_dotenv
-try:
-    # 新版 SDK（Config 在 longbridge.openapi）
-    from longbridge.openapi import Config, QuoteContext, TradeContext
-except ImportError:
-    # 旧版兜底（极少见）
-    from longbridge import Config  # type: ignore
-    from longbridge.openapi import QuoteContext, TradeContext  # type: ignore
+from longbridge.openapi import Config, QuoteContext, TradeContext
+
 
 load_dotenv()
 
@@ -77,9 +72,6 @@ class LongPortClient:
             app_key=self.app_key,
             app_secret=self.app_secret,
             access_token=access_token,
-            http_url=None,  # 用默认
-            quote_endpoint=None,
-            trade_endpoint=None,
         )
 
         self.quote = QuoteContext(self.config)
