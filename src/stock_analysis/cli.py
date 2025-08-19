@@ -109,6 +109,10 @@ def create_parser() -> argparse.ArgumentParser:
         nargs="+",
         help="股票代码列表（如 AAPL MSFT 700.HK）"
     )
+    lb_quote_parser.add_argument(
+        "--env", choices=["test", "real"], default="test",
+        help="环境选择：test 纸交易 / real 实盘（默认 test）"
+    )
     
     # LongPort 仓位调整命令
     lb_rebalance_parser = subparsers.add_parser(
@@ -137,6 +141,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--execute",
         action="store_true",
         help="实际执行交易（关闭干跑模式）"
+    )
+    lb_rebalance_parser.add_argument(
+        "--env", choices=["test", "real"], default="test",
+        help="环境选择：test 纸交易 / real 实盘（默认 test）"
     )
     
     return parser
@@ -269,21 +277,23 @@ def run_ai_pick(quarter: str | None = None, output: str | None = None) -> int:
         return 1
 
 
-def run_lb_quote(tickers: list[str]) -> int:
+def run_lb_quote(tickers: list[str], env: str = "test") -> int:
     """运行LongPort实时报价查询
     
     Args:
         tickers: 股票代码列表
+        env: 环境选择（test或real）
         
     Returns:
         int: 退出码（0表示成功）
     """
     try:
         print(f"正在获取 {', '.join(tickers)} 的实时报价...")
+        print(f"环境: {env.upper()}")
         
         from .broker.longport_client import LongPortClient
         
-        client = LongPortClient()
+        client = LongPortClient(env=env)
         quotes = client.quote_last(tickers)
         
         print("\n实时报价:")
@@ -302,13 +312,14 @@ def run_lb_quote(tickers: list[str]) -> int:
         return 1
 
 
-def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = True) -> int:
+def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = True, env: str = "test") -> int:
     """运行LongPort仓位调整
     
     Args:
         input_file: AI选股结果文件路径
         account: 账户名称
         dry_run: 是否为干跑模式
+        env: 环境选择（test或real）
         
     Returns:
         int: 退出码（0表示成功）
@@ -318,8 +329,16 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
 
         import pandas as pd
         
+        # 真环境必须显式 --env real 且 --execute
+        if env == "real" and dry_run:
+            print("拒绝执行：你选择了 real 环境但仍是干跑模式。请加 --execute 再来。", file=sys.stderr)
+            return 1
+        if env == "real" and not dry_run:
+            print("警告：将实际在 REAL 环境下下单。风险自负。")
+        
         print(f"正在读取AI选股结果文件: {input_file}")
         print(f"账户: {account}")
+        print(f"环境: {env.upper()}")
         print(f"模式: {'干跑模式（只打印）' if dry_run else '实际执行模式'}")
         
         # 检查文件是否存在
@@ -366,27 +385,52 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
             print(f"读取Excel文件失败：{e}", file=sys.stderr)
             return 1
         
+        # 初始化LongBridge客户端
+        from .broker.longport_client import LongPortClient
+        client = LongPortClient(env=env)
+        
+        print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 仓位调整 ===")
+        print("-" * 60)
+        
+        # 下单逻辑
+        orders = []
+        for t in tickers:
+            # 简化示例：等权分配，这里可以根据实际需求计算目标数量
+            target_qty = 10  # 简化示例，实际应该根据资金和价格计算
+            side = "BUY"  # 简化示例
+            try:
+                res = client.place_order(t, target_qty, side, dry_run=dry_run)
+                orders.append(res)
+                status = 'DRY' if res['dry_run'] else 'LIVE'
+                est_px = res.get('est_px', 0)
+                est_notional = res.get('est_notional', 0)
+                print(f"{status} | {t:<8} {side} x{target_qty} | 估价: ${est_px:.2f} | 金额: ${est_notional:.2f} | OK")
+            except Exception as e:
+                print(f"下单跳过 {t}: {e}", file=sys.stderr)
+        
+        # 写审计日志
+        import json
+        import datetime
+        log_dir = Path("outputs/orders")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_file = log_dir / f"{stamp}_{env}_{'dry' if dry_run else 'live'}.jsonl"
+        
+        with open(log_file, "w", encoding="utf-8") as f:
+            for o in orders:
+                f.write(json.dumps(o, ensure_ascii=False) + "\n")
+        
+        print(f"\n审计日志已保存到: {log_file}")
+        print(f"总计处理 {len(orders)} 个订单")
+        
         if dry_run:
-            print(f"\n=== 干跑模式 - {sheet_to_use} 仓位调整预览 ===")
-            print("-" * 60)
-            
-            # 等权目标：先只打印目标票单，数量后续接券商持仓再算
-            for t in tickers:
-                print(f"DRY-RUN | {t:<8} | 目标 等权 | QTY: 待计算")
-            
             print("\n注意：这是干跑模式，未实际下单")
             print("使用 --execute 参数可实际执行交易")
         else:
-            print("\n=== 实际执行模式 ===")
-            print("警告：这将实际下单交易！")
-            
-            from .broker.longport_client import LongPortClient
-            client = LongPortClient()
-            
-            # 这里应该实现实际的下单逻辑
-            # 为安全起见，暂时只打印警告
-            print("实际下单功能需要进一步实现和测试")
-            print("请先在干跑模式下验证逻辑正确性")
+            print("\n警告：已实际下单，请检查券商账户确认执行情况")
+        
+        # 关闭客户端连接
+        client.close()
         
         return 0
         
@@ -425,14 +469,15 @@ def main() -> int:
             getattr(args, 'output', None)
         )
     elif args.command == "lb-quote":
-        return run_lb_quote(args.tickers)
+        return run_lb_quote(args.tickers, getattr(args, 'env', 'test'))
     elif args.command == "lb-rebalance":
         # 如果指定了 --execute，则关闭干跑模式
         dry_run = not getattr(args, 'execute', False)
         return run_lb_rebalance(
             args.input_file,
             getattr(args, 'account', 'main'),
-            dry_run
+            dry_run,
+            getattr(args, 'env', 'test')
         )
     else:
         print(f"未知命令：{args.command}", file=sys.stderr)
