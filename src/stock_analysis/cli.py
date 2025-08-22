@@ -291,9 +291,9 @@ def run_lb_quote(tickers: list[str], env: str = "test") -> int:
         print(f"正在获取 {', '.join(tickers)} 的实时报价...")
         print(f"环境: {env.upper()}")
         
-        from .broker.longport_client import LongPortClient
+        from .broker.longbridge_client import LongBridgeClient
         
-        client = LongPortClient(env=env)
+        client = LongBridgeClient(env=env)
         quotes = client.quote_last(tickers)
         
         print("\n实时报价:")
@@ -386,8 +386,8 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
             return 1
         
         # 初始化LongBridge客户端
-        from .broker.longport_client import LongPortClient
-        client = LongPortClient(env=env)
+        from .broker.longbridge_client import LongBridgeClient
+        client = LongBridgeClient(env=env)
         
         print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 仓位调整 ===")
         print("-" * 60)

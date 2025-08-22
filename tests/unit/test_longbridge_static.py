@@ -20,16 +20,16 @@ def test_broker_directory_structure():
     # 检查broker目录和文件
     broker_dir = project_root / "src" / "stock_analysis" / "broker"
     broker_init = broker_dir / "__init__.py"
-    longport_client = broker_dir / "longport_client.py"
+    longbridge_client = broker_dir / "longbridge_client.py"
     
     assert broker_dir.exists(), "broker目录不存在"
     assert broker_init.exists(), "broker/__init__.py不存在"
-    assert longport_client.exists(), "longport_client.py不存在"
+    assert longbridge_client.exists(), "longbridge_client.py不存在"
 
 
 @pytest.mark.unit
-def test_cli_contains_longport_commands():
-    """测试CLI文件包含LongPort相关命令。"""
+def test_cli_contains_longbridge_commands():
+    """测试CLI文件包含LongBridge相关命令。"""
     cli_file = Path("src/stock_analysis/cli.py")
     assert cli_file.exists(), "CLI文件不存在"
     
@@ -43,22 +43,22 @@ def test_cli_contains_longport_commands():
     assert "def run_lb_quote" in content, "run_lb_quote函数未找到"
     assert "def run_lb_rebalance" in content, "run_lb_rebalance函数未找到"
     
-    # 检查LongPort相关导入或引用
-    assert "LongPort" in content, "LongPort相关代码未找到"
+    # 检查LongBridge相关导入或引用
+    assert "LongBridge" in content, "LongBridge相关代码未找到"
 
 
 @pytest.mark.unit
-def test_longport_client_exports():
-    """测试longport_client.py导出必要的函数和类。"""
-    longport_client_file = Path("src/stock_analysis/broker/longport_client.py")
-    assert longport_client_file.exists(), "longport_client.py文件不存在"
+def test_longbridge_client_exports():
+    """测试longbridge_client.py导出必要的函数和类。"""
+    longbridge_client_file = Path("src/stock_analysis/broker/longbridge_client.py")
+    assert longbridge_client_file.exists(), "longbridge_client.py文件不存在"
     
-    content = longport_client_file.read_text(encoding='utf-8')
+    content = longbridge_client_file.read_text(encoding='utf-8')
     
     # 检查关键函数和类定义
     assert "def _to_lb_symbol" in content, "_to_lb_symbol函数未找到"
     assert "def get_config" in content, "get_config函数未找到"
-    assert "class LongPortClient" in content, "LongPortClient类未找到"
+    assert "class LongBridgeClient" in content, "LongBridgeClient类未找到"
     
     # 检查关键方法
     assert "def quote_last" in content, "quote_last方法未找到"
@@ -83,9 +83,9 @@ def test_pytest_markers_configured():
 
 @pytest.mark.unit
 def test_longbridge_imports():
-    """测试longport_client.py中的longbridge导入。"""
-    longport_client_file = Path("src/stock_analysis/broker/longport_client.py")
-    content = longport_client_file.read_text(encoding='utf-8')
+    """测试longbridge_client.py中的longbridge导入。"""
+    longbridge_client_file = Path("src/stock_analysis/broker/longbridge_client.py")
+    content = longbridge_client_file.read_text(encoding='utf-8')
     
     # 检查必要的longbridge导入
     required_imports = [
@@ -107,8 +107,8 @@ def test_longbridge_imports():
 @pytest.mark.unit
 def test_decimal_import():
     """测试Decimal导入用于精确的价格计算。"""
-    longport_client_file = Path("src/stock_analysis/broker/longport_client.py")
-    content = longport_client_file.read_text(encoding='utf-8')
+    longbridge_client_file = Path("src/stock_analysis/broker/longbridge_client.py")
+    content = longbridge_client_file.read_text(encoding='utf-8')
     
     assert "from decimal import Decimal" in content, "缺少Decimal导入"
     assert "Decimal(str(" in content, "未使用Decimal进行价格转换"
@@ -121,11 +121,11 @@ def test_env_example_file():
     # 这个文件可能存在也可能不存在，所以只是检查而不强制要求
     if env_example.exists():
         content = env_example.read_text(encoding='utf-8')
-        # 如果存在，应该包含LongPort相关的环境变量示例
-        longport_vars = ["LONGPORT_APP_KEY", "LONGPORT_APP_SECRET", "LONGPORT_ACCESS_TOKEN"]
-        for var in longport_vars:
+        # 如果存在，应该包含LongBridge相关的环境变量示例
+        longbridge_vars = ["LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN"]
+        for var in longbridge_vars:
             if var in content:
-                # 至少找到一个LongPort变量就算通过
+                # 至少找到一个LongBridge变量就算通过
                 break
         else:
-            pytest.fail("如果.env.example存在，应该包含LongPort环境变量示例")
+            pytest.fail("如果.env.example存在，应该包含LongBridge环境变量示例")

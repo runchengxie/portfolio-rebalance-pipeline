@@ -103,7 +103,7 @@
 │       │   └── prep.py             # 投资组合加载与数据对齐
 │       ├── broker/
 │       │   ├── __init__.py
-│       │   └── longport_client.py  # LongPort API 客户端
+│       │   └── longbridge_client.py  # LongBridge API 客户端
 │       └── utils/
 │           ├── __init__.py
 │           ├── config.py           # 配置加载器
@@ -165,13 +165,13 @@
     GEMINI_API_KEY_3="YOUR_THIRD_API_KEY_HERE"
     ```
 
-    LongPort OpenAPI 凭据：
+    LongBridge OpenAPI 凭据：
 
     ```yaml
-    # 从 LongPort 开发者中心获取
-    LONGPORT_APP_KEY="your_app_key_here"
-    LONGPORT_APP_SECRET="your_app_secret_here"
-    LONGPORT_ACCESS_TOKEN="your_access_token_here"
+    # 从 LongBridge 开发者中心获取
+    LONGBRIDGE_APP_KEY="your_app_key_here"
+    LONGBRIDGE_APP_SECRET="your_app_secret_here"
+    LONGBRIDGE_ACCESS_TOKEN="your_access_token_here"
     ```
 
 3. 配置回测参数:

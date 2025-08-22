@@ -35,7 +35,7 @@ def _to_lb_symbol(ticker: str) -> str:
         return t
     return f"{t}.US"  # 你的项目多数是美股，默认补 .US
 
-class LongPortClient:
+class LongBridgeClient:
     """LongBridge API client for quotes and trading.
     
     Provides a thin wrapper around LongBridge OpenAPI for:
