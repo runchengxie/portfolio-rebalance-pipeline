@@ -11,7 +11,7 @@ dependencies = [
     "backtrader",
     "dotenv",
     "google-genai",
-    "longbridge>=0.2.77",
+    "longport>=0.2.77",
 ]
 
 [project.optional-dependencies]

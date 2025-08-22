@@ -134,12 +134,12 @@ def test_main_unknown_command():
 @pytest.mark.unit
 def test_run_lb_quote_import_error(monkeypatch):
     """测试run_lb_quote在导入错误时的处理。"""
-    # 模拟导入longbridge_client模块时的错误
+    # 模拟导入longport_client模块时的错误
     original_import = __builtins__['__import__']
     
     def mock_import(name, *args, **kwargs):
-        if 'longbridge_client' in name:
-            raise ImportError("No module named 'longbridge'")
+        if 'longport_client' in name:
+            raise ImportError("No module named 'longport'")
         return original_import(name, *args, **kwargs)
     
     with patch('builtins.__import__', side_effect=mock_import):
@@ -147,7 +147,7 @@ def test_run_lb_quote_import_error(monkeypatch):
             result = cli.run_lb_quote(["AAPL"])
             assert result == 1
             # 验证错误信息被打印
-            assert any("longbridge" in str(call) or "LongBridge" in str(call) for call in mock_print.call_args_list)
+            assert any("longport" in str(call) or "LongPort" in str(call) for call in mock_print.call_args_list)
 
 
 @pytest.mark.unit
