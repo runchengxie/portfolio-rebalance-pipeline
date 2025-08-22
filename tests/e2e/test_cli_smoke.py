@@ -8,13 +8,18 @@
 
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
-from stock_analysis.cli import create_parser, main, app, run_backtest, run_load_data, run_ai_pick
+from stock_analysis.cli import (
+    app,
+    create_parser,
+    main,
+    run_ai_pick,
+    run_backtest,
+    run_load_data,
+)
 
 
 class TestCLIParser:

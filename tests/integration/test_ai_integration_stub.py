@@ -9,22 +9,21 @@
 """
 
 import json
-import time
 import threading
-from collections import deque
-from unittest.mock import Mock, patch, MagicMock
+import time
+from unittest.mock import Mock, patch
 
 import pytest
 from pydantic import ValidationError
 
 from stock_analysis.ai_stock_pick import (
-    RateLimiter,
-    Circuit,
-    KeySlot,
-    KeyPool,
     AIStockPick,
+    Circuit,
+    KeyPool,
+    KeySlot,
+    RateLimiter,
     call_with_pool,
-    create_key_pool
+    create_key_pool,
 )
 
 

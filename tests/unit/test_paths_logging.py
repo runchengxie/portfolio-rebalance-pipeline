@@ -6,24 +6,21 @@
 """
 
 import logging
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
-
+from stock_analysis.utils.logging import StrategyLogger, setup_logging
 from stock_analysis.utils.paths import (
-    get_project_root,
-    PROJECT_ROOT,
-    DATA_DIR,
-    OUTPUTS_DIR,
-    DB_PATH,
     AI_PORTFOLIO_FILE,
-    QUANT_PORTFOLIO_FILE,
+    DATA_DIR,
+    DB_PATH,
     DEFAULT_INITIAL_CASH,
-    SPY_INITIAL_CASH
+    OUTPUTS_DIR,
+    PROJECT_ROOT,
+    QUANT_PORTFOLIO_FILE,
+    SPY_INITIAL_CASH,
+    get_project_root,
 )
-from stock_analysis.utils.logging import setup_logging, StrategyLogger
 
 
 class TestPaths:
@@ -55,6 +52,7 @@ class TestPaths:
                 
                 # 重新导入以触发异常处理
                 import importlib
+
                 import stock_analysis.utils.paths
                 importlib.reload(stock_analysis.utils.paths)
     

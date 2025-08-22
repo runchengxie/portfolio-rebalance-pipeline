@@ -5,7 +5,7 @@
 
 import datetime
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Any
 
 try:
     import yaml
@@ -15,7 +15,7 @@ except ImportError:
 from dateutil.relativedelta import relativedelta
 
 
-def load_cfg() -> Dict[str, Any]:
+def load_cfg() -> dict[str, Any]:
     """加载配置文件
     
     优先读取 config/config.yaml，其次项目根的 config.yaml
@@ -52,7 +52,7 @@ def load_cfg() -> Dict[str, Any]:
         raise ImportError("PyYAML is required to read config.yaml. Install it with: pip install PyYAML")
     
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
         return config
     except Exception as e:
@@ -70,7 +70,7 @@ def load_cfg() -> Dict[str, Any]:
         }
 
 
-def get_backtest_period(portfolios: Dict = None) -> Tuple[datetime.date, datetime.date]:
+def get_backtest_period(portfolios: dict = None) -> tuple[datetime.date, datetime.date]:
     """获取回测时间区间
     
     Args:

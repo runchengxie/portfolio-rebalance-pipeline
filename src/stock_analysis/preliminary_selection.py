@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np

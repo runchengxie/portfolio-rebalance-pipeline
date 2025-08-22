@@ -1,17 +1,16 @@
-import os
-import time
-import random
 import json
+import os
+import random
 import threading
-import queue
-from pathlib import Path
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
 import pandas as pd
+from dotenv import load_dotenv
 from google import genai
 from pydantic import BaseModel, Field
-from typing import List
-from dotenv import load_dotenv
 
 # --- 路径和配置 ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -401,7 +400,7 @@ def process_one_sheet(sheet_name, df_companies, keypool):
                 },
             )
         
-        print(f"  调用AI分析...")
+        print("  调用AI分析...")
         response = call_with_pool(keypool, _do_call, max_retries=MAX_RETRIES)
         
         # 强健的响应解析
@@ -536,7 +535,7 @@ def main():
                 print(f"  ✓ 处理完成，选出 {result} 只股票")
             elif status == "save_failed":
                 error_count += 1
-                print(f"  ✗ 保存失败")
+                print("  ✗ 保存失败")
             elif status == "parse_failed":
                 error_count += 1
                 print(f"  ✗ {result}")
@@ -545,7 +544,7 @@ def main():
                 print(f"  ✗ 处理失败: {result}")
     
     # 最终统计
-    print(f"\n=== 处理完成 ===")
+    print("\n=== 处理完成 ===")
     print(f"成功处理: {success_count} 个季度")
     print(f"跳过已处理: {skip_count} 个季度")
     print(f"处理失败: {error_count} 个季度")

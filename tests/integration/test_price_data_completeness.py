@@ -1,11 +1,14 @@
 import sqlite3
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
 # --- 路径配置 ---
-from stock_analysis.utils.paths import PROJECT_ROOT, DATA_DIR, OUTPUTS_DIR, DB_PATH, QUANT_PORTFOLIO_FILE
+from stock_analysis.utils.paths import (
+    DB_PATH,
+    QUANT_PORTFOLIO_FILE,
+)
+
 PORTFOLIO_FILE = QUANT_PORTFOLIO_FILE
 
 # --- 测试常量配置 ---

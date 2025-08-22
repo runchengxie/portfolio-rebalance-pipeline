@@ -8,15 +8,14 @@
 """
 
 import datetime
-import tempfile
-import yaml
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 from dateutil.relativedelta import relativedelta
 
-from stock_analysis.utils.config import load_cfg, get_backtest_period, get_initial_cash
+from stock_analysis.utils.config import get_backtest_period, get_initial_cash, load_cfg
 
 
 class TestLoadCfg:

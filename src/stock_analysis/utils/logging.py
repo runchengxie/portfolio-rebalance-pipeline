@@ -6,14 +6,13 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from .paths import OUTPUTS_DIR
 
 
 def setup_logging(
     name: str,
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     level: int = logging.INFO,
     use_console: bool = True
 ) -> logging.Logger:
