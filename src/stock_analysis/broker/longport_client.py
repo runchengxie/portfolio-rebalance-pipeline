@@ -5,14 +5,35 @@ from enum import Enum
 from typing import Dict, Iterable, Tuple
 
 from dotenv import load_dotenv
-from longbridge.openapi import Config, QuoteContext, TradeContext
+
+# 兼容性导入：优先使用 longport，回退到 longbridge
+try:
+    from longport.openapi import Config, QuoteContext, TradeContext
+except ImportError:
+    from longbridge.openapi import Config, QuoteContext, TradeContext
 
 
 load_dotenv()
 
+
+def getenv_both(name_new: str, name_old: str, default: str = None) -> str:
+    """兼容性环境变量读取函数，优先读取新前缀，回退到旧前缀。
+    
+    Args:
+        name_new: 新的环境变量名（LONGPORT_*）
+        name_old: 旧的环境变量名（LONGBRIDGE_*）
+        default: 默认值
+        
+    Returns:
+        环境变量值或默认值
+    """
+    return os.getenv(name_new) or os.getenv(name_old) or default
+
+
 class Env(str, Enum):
     TEST = "test"
     REAL = "real"
+
 
 @dataclass
 class BrokerLimits:
@@ -21,43 +42,46 @@ class BrokerLimits:
     trading_window_start: str = "09:30"      # 本地时间
     trading_window_end: str = "16:00"
 
+
 def _to_lb_symbol(ticker: str) -> str:
-    """Convert ticker to LongBridge symbol format.
+    """Convert ticker to LongPort symbol format.
     
     Args:
         ticker: Stock ticker symbol
         
     Returns:
-        Formatted symbol for LongBridge API
+        Formatted symbol for LongPort API
     """
     t = ticker.strip().upper()
     if t.endswith((".US", ".HK", ".SG")):
         return t
     return f"{t}.US"  # 你的项目多数是美股，默认补 .US
 
-class LongBridgeClient:
-    """LongBridge API client for quotes and trading.
+
+class LongPortClient:
+    """LongPort API client for quotes and trading.
     
-    Provides a thin wrapper around LongBridge OpenAPI for:
+    Provides a thin wrapper around LongPort OpenAPI for:
     - Real-time quotes
     - Historical candlestick data
     - Order submission with risk controls
     """
     
     def __init__(self, env: str = None, limits: BrokerLimits | None = None) -> None:
-        """Initialize LongBridge client.
+        """Initialize LongPort client.
         
         Args:
-            env: Environment (test/real). If None, uses LONGBRIDGE_DEFAULT_ENV or defaults to test.
+            env: Environment (test/real). If None, uses LONGPORT_DEFAULT_ENV or defaults to test.
             limits: Risk control limits. If None, uses default limits.
         """
-        self.env = Env((env or os.getenv("LONGBRIDGE_DEFAULT_ENV", "test")).lower())
-        self.region = os.getenv("LONGBRIDGE_REGION", "hk")
-        self.app_key = os.getenv("LONGBRIDGE_APP_KEY")
-        self.app_secret = os.getenv("LONGBRIDGE_APP_SECRET")
-        self.token_test = os.getenv("LONGBRIDGE_ACCESS_TOKEN_TEST")
-        self.token_real = os.getenv("LONGBRIDGE_ACCESS_TOKEN_REAL")
-        self.token_fallback = os.getenv("LONGBRIDGE_ACCESS_TOKEN")
+        default_env = getenv_both("LONGPORT_DEFAULT_ENV", "LONGBRIDGE_DEFAULT_ENV", "test")
+        self.env = Env((env or default_env).lower())
+        self.region = getenv_both("LONGPORT_REGION", "LONGBRIDGE_REGION", "hk")
+        self.app_key = getenv_both("LONGPORT_APP_KEY", "LONGBRIDGE_APP_KEY")
+        self.app_secret = getenv_both("LONGPORT_APP_SECRET", "LONGBRIDGE_APP_SECRET")
+        self.token_test = getenv_both("LONGPORT_ACCESS_TOKEN_TEST", "LONGBRIDGE_ACCESS_TOKEN_TEST")
+        self.token_real = getenv_both("LONGPORT_ACCESS_TOKEN_REAL", "LONGBRIDGE_ACCESS_TOKEN_REAL")
+        self.token_fallback = getenv_both("LONGPORT_ACCESS_TOKEN", "LONGBRIDGE_ACCESS_TOKEN")
 
         if self.env == Env.TEST:
             access_token = self.token_test or self.token_fallback
@@ -65,9 +89,9 @@ class LongBridgeClient:
             access_token = self.token_real or self.token_fallback
 
         if not all([self.app_key, self.app_secret, access_token]):
-            raise RuntimeError("LongBridge 凭据不完整，请检查 .env")
+            raise RuntimeError("LongPort 凭据不完整，请检查 .env")
 
-        # longbridge.Config 会根据 token 自动识别纸交易或实盘
+        # Config 会根据 token 自动识别纸交易或实盘
         self.config = Config(
             app_key=self.app_key,
             app_secret=self.app_secret,
@@ -153,7 +177,7 @@ class LongBridgeClient:
             }
 
         # 真下单
-        # 这里以美股市价单演示；不同市场下单参数请按 longbridge 文档设置
+        # 这里以美股市价单演示；不同市场下单参数请按文档设置
         resp = self.trade.submit_order(
             symbol=symbol_formatted,
             order_type="MO",  # 市价
@@ -175,3 +199,7 @@ class LongBridgeClient:
         """Close quote and trade contexts."""
         self.quote.close()
         self.trade.close()
+
+
+# 兼容性别名，保持向后兼容
+LongBridgeClient = LongPortClient
