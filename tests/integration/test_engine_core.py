@@ -8,20 +8,17 @@
 """
 
 import datetime
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pandas as pd
-import pytest
 import backtrader as bt
+import pandas as pd
 
 from stock_analysis.backtest.engine import (
-    PointInTimeStrategy,
     BuyAndHoldStrategy,
-    run_quarterly_backtest,
+    PointInTimeStrategy,
+    generate_report,
     run_benchmark_backtest,
-    generate_report
+    run_quarterly_backtest,
 )
 
 

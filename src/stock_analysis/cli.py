@@ -1,7 +1,5 @@
 import argparse
 import sys
-from pathlib import Path
-from typing import Optional
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -23,6 +21,8 @@ def create_parser() -> argparse.ArgumentParser:
   stockq backtest spy              运行SPY基准回测
   stockq load-data                 加载数据到数据库
   stockq ai-pick                   运行AI选股分析
+  stockq lb-quote AAPL MSFT        获取实时报价
+  stockq lb-rebalance results.xlsx 仓位调整（干跑模式）
         """
     )
     
@@ -98,10 +98,59 @@ def create_parser() -> argparse.ArgumentParser:
         help="输出文件路径（可选）"
     )
     
+    # LongPort 报价命令
+    lb_quote_parser = subparsers.add_parser(
+        "lb-quote",
+        help="获取LongPort实时报价",
+        description="通过LongPort API获取指定股票的实时报价"
+    )
+    lb_quote_parser.add_argument(
+        "tickers",
+        nargs="+",
+        help="股票代码列表（如 AAPL MSFT 700.HK）"
+    )
+    lb_quote_parser.add_argument(
+        "--env", choices=["test", "real"], default="test",
+        help="环境选择：test 纸交易 / real 实盘（默认 test）"
+    )
+    
+    # LongPort 仓位调整命令
+    lb_rebalance_parser = subparsers.add_parser(
+        "lb-rebalance",
+        help="根据AI选股结果调整仓位",
+        description="读取AI选股结果文件，生成仓位调整订单（默认干跑模式）"
+    )
+    lb_rebalance_parser.add_argument(
+        "input_file",
+        type=str,
+        help="AI选股结果文件路径（如 outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"
+    )
+    lb_rebalance_parser.add_argument(
+        "--account",
+        type=str,
+        default="main",
+        help="账户名称（默认：main）"
+    )
+    lb_rebalance_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="干跑模式，只打印不实际下单（默认开启）"
+    )
+    lb_rebalance_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="实际执行交易（关闭干跑模式）"
+    )
+    lb_rebalance_parser.add_argument(
+        "--env", choices=["test", "real"], default="test",
+        help="环境选择：test 纸交易 / real 实盘（默认 test）"
+    )
+    
     return parser
 
 
-def run_backtest(strategy: str, config_path: Optional[str] = None) -> int:
+def run_backtest(strategy: str, config_path: str | None = None) -> int:
     """运行回测分析
     
     Args:
@@ -135,7 +184,7 @@ def run_backtest(strategy: str, config_path: Optional[str] = None) -> int:
         return 1
 
 
-def run_load_data(data_dir: Optional[str] = None) -> int:
+def run_load_data(data_dir: str | None = None) -> int:
     """运行数据加载
     
     Args:
@@ -166,7 +215,7 @@ def run_load_data(data_dir: Optional[str] = None) -> int:
         return 1
 
 
-def run_preliminary(output_dir: Optional[str] = None) -> int:
+def run_preliminary(output_dir: str | None = None) -> int:
     """运行量化初筛选股
     
     Args:
@@ -196,7 +245,7 @@ def run_preliminary(output_dir: Optional[str] = None) -> int:
         return 1
 
 
-def run_ai_pick(quarter: Optional[str] = None, output: Optional[str] = None) -> int:
+def run_ai_pick(quarter: str | None = None, output: str | None = None) -> int:
     """运行AI选股分析
     
     Args:
@@ -228,6 +277,171 @@ def run_ai_pick(quarter: Optional[str] = None, output: Optional[str] = None) -> 
         return 1
 
 
+def run_lb_quote(tickers: list[str], env: str = "test") -> int:
+    """运行LongPort实时报价查询
+    
+    Args:
+        tickers: 股票代码列表
+        env: 环境选择（test或real）
+        
+    Returns:
+        int: 退出码（0表示成功）
+    """
+    try:
+        print(f"正在获取 {', '.join(tickers)} 的实时报价...")
+        print(f"环境: {env.upper()}")
+        
+        from .broker.longbridge_client import LongBridgeClient
+        
+        client = LongBridgeClient(env=env)
+        quotes = client.quote_last(tickers)
+        
+        print("\n实时报价:")
+        print("-" * 50)
+        for symbol, (price, timestamp) in quotes.items():
+            print(f"{symbol:12} | 价格: {price:>10} | 时间: {timestamp}")
+        
+        return 0
+        
+    except ImportError as e:
+        print(f"错误：无法导入LongPort模块 - {e}", file=sys.stderr)
+        print("请确保已安装 longbridge 包：pip install longbridge", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"获取报价失败：{e}", file=sys.stderr)
+        return 1
+
+
+def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = True, env: str = "test") -> int:
+    """运行LongPort仓位调整
+    
+    Args:
+        input_file: AI选股结果文件路径
+        account: 账户名称
+        dry_run: 是否为干跑模式
+        env: 环境选择（test或real）
+        
+    Returns:
+        int: 退出码（0表示成功）
+    """
+    try:
+        from pathlib import Path
+
+        import pandas as pd
+        
+        # 真环境必须显式 --env real 且 --execute
+        if env == "real" and dry_run:
+            print("拒绝执行：你选择了 real 环境但仍是干跑模式。请加 --execute 再来。", file=sys.stderr)
+            return 1
+        if env == "real" and not dry_run:
+            print("警告：将实际在 REAL 环境下下单。风险自负。")
+        
+        print(f"正在读取AI选股结果文件: {input_file}")
+        print(f"账户: {account}")
+        print(f"环境: {env.upper()}")
+        print(f"模式: {'干跑模式（只打印）' if dry_run else '实际执行模式'}")
+        
+        # 检查文件是否存在
+        file_path = Path(input_file)
+        if not file_path.exists():
+            print(f"错误：文件不存在 - {input_file}", file=sys.stderr)
+            return 1
+        
+        # 读取所有 sheet 并选择最新一季
+        import re
+        
+        try:
+            xls = pd.ExcelFile(file_path)
+            
+            def pick_latest_sheet(sheet_names):
+                candidates = []
+                for s in sheet_names:
+                    try:
+                        d = pd.to_datetime(s).date()
+                        candidates.append((d, s))
+                    except Exception:
+                        # 尝试匹配 yyyy-mm-dd
+                        m = re.search(r"\d{4}-\d{2}-\d{2}", s)
+                        if m:
+                            d = pd.to_datetime(m.group(0)).date()
+                            candidates.append((d, s))
+                if candidates:
+                    return max(candidates)[1]
+                return sheet_names[-1]  # 兜底
+            
+            sheet_to_use = pick_latest_sheet(xls.sheet_names)
+            df = pd.read_excel(xls, sheet_name=sheet_to_use)
+            print(f"成功读取文件，使用 sheet: {sheet_to_use}，包含 {len(df)} 条记录")
+            
+            # 识别 ticker 列
+            cols = {c.lower(): c for c in df.columns}
+            ticker_col = cols.get("ticker") or cols.get("symbol")
+            if not ticker_col:
+                raise ValueError("未找到 ticker/symbol 列")
+            
+            tickers = df[ticker_col].astype(str).str.upper().str.strip().tolist()
+            
+        except Exception as e:
+            print(f"读取Excel文件失败：{e}", file=sys.stderr)
+            return 1
+        
+        # 初始化LongBridge客户端
+        from .broker.longbridge_client import LongBridgeClient
+        client = LongBridgeClient(env=env)
+        
+        print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 仓位调整 ===")
+        print("-" * 60)
+        
+        # 下单逻辑
+        orders = []
+        for t in tickers:
+            # 简化示例：等权分配，这里可以根据实际需求计算目标数量
+            target_qty = 10  # 简化示例，实际应该根据资金和价格计算
+            side = "BUY"  # 简化示例
+            try:
+                res = client.place_order(t, target_qty, side, dry_run=dry_run)
+                orders.append(res)
+                status = 'DRY' if res['dry_run'] else 'LIVE'
+                est_px = res.get('est_px', 0)
+                est_notional = res.get('est_notional', 0)
+                print(f"{status} | {t:<8} {side} x{target_qty} | 估价: ${est_px:.2f} | 金额: ${est_notional:.2f} | OK")
+            except Exception as e:
+                print(f"下单跳过 {t}: {e}", file=sys.stderr)
+        
+        # 写审计日志
+        import json
+        import datetime
+        log_dir = Path("outputs/orders")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_file = log_dir / f"{stamp}_{env}_{'dry' if dry_run else 'live'}.jsonl"
+        
+        with open(log_file, "w", encoding="utf-8") as f:
+            for o in orders:
+                f.write(json.dumps(o, ensure_ascii=False) + "\n")
+        
+        print(f"\n审计日志已保存到: {log_file}")
+        print(f"总计处理 {len(orders)} 个订单")
+        
+        if dry_run:
+            print("\n注意：这是干跑模式，未实际下单")
+            print("使用 --execute 参数可实际执行交易")
+        else:
+            print("\n警告：已实际下单，请检查券商账户确认执行情况")
+        
+        # 关闭客户端连接
+        client.close()
+        
+        return 0
+        
+    except ImportError as e:
+        print(f"错误：无法导入必要模块 - {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"仓位调整失败：{e}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     """主入口函数
     
@@ -253,6 +467,17 @@ def main() -> int:
         return run_ai_pick(
             getattr(args, 'quarter', None),
             getattr(args, 'output', None)
+        )
+    elif args.command == "lb-quote":
+        return run_lb_quote(args.tickers, getattr(args, 'env', 'test'))
+    elif args.command == "lb-rebalance":
+        # 如果指定了 --execute，则关闭干跑模式
+        dry_run = not getattr(args, 'execute', False)
+        return run_lb_rebalance(
+            args.input_file,
+            getattr(args, 'account', 'main'),
+            dry_run,
+            getattr(args, 'env', 'test')
         )
     else:
         print(f"未知命令：{args.command}", file=sys.stderr)
