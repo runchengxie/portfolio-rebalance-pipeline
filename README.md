@@ -34,7 +34,7 @@
 
 * 模块化与可测试的代码: 项目被重构为逻辑清晰的模块（如 backtest, utils），并配备了 pytest 单元测试，保证了核心逻辑的正确性。
 
-* 券商集成 (长桥): 项目已集成 Longbridge OpenAPI，可通过命令行工具直接获取股票的实时报价，并根据 AI 策略结果生成并执行调仓交易指令。
+* 券商集成 (长桥): 项目已集成 LongPort OpenAPI，可通过命令行工具直接获取股票的实时报价，并根据 AI 策略结果生成并执行调仓交易指令。
 
 ## 核心策略流程
 
@@ -103,7 +103,7 @@
 │       │   └── prep.py             # 投资组合加载与数据对齐
 │       ├── broker/
 │       │   ├── __init__.py
-│       │   └── longbridge_client.py  # LongBridge API 客户端
+│       │   └── longport_client.py  # LongPort API 客户端
 │       └── utils/
 │           ├── __init__.py
 │           ├── config.py           # 配置加载器
@@ -165,13 +165,13 @@
     GEMINI_API_KEY_3="YOUR_THIRD_API_KEY_HERE"
     ```
 
-    LongBridge OpenAPI 凭据：
+    LongPort OpenAPI 凭据：
 
     ```yaml
-    # 从 LongBridge 开发者中心获取
-    LONGBRIDGE_APP_KEY="your_app_key_here"
-    LONGBRIDGE_APP_SECRET="your_app_secret_here"
-    LONGBRIDGE_ACCESS_TOKEN="your_access_token_here"
+    # 从 LongPort 开发者中心获取
+    LONGPORT_APP_KEY="your_app_key_here"
+    LONGPORT_APP_SECRET="your_app_secret_here"
+    LONGPORT_ACCESS_TOKEN="your_access_token_here"
     ```
 
 3. 配置回测参数:

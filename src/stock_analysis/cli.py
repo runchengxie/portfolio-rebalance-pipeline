@@ -291,9 +291,9 @@ def run_lb_quote(tickers: list[str], env: str = "test") -> int:
         print(f"正在获取 {', '.join(tickers)} 的实时报价...")
         print(f"环境: {env.upper()}")
         
-        from .broker.longbridge_client import LongBridgeClient
+        from .broker.longport_client import LongPortClient
         
-        client = LongBridgeClient(env=env)
+        client = LongPortClient(env=env)
         quotes = client.quote_last(tickers)
         
         print("\n实时报价:")
@@ -305,7 +305,7 @@ def run_lb_quote(tickers: list[str], env: str = "test") -> int:
         
     except ImportError as e:
         print(f"错误：无法导入LongPort模块 - {e}", file=sys.stderr)
-        print("请确保已安装 longbridge 包：pip install longbridge", file=sys.stderr)
+        print("请确保已安装 longport 包：pip install longport", file=sys.stderr)
         return 1
     except Exception as e:
         print(f"获取报价失败：{e}", file=sys.stderr)
@@ -385,9 +385,9 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
             print(f"读取Excel文件失败：{e}", file=sys.stderr)
             return 1
         
-        # 初始化LongBridge客户端
-        from .broker.longbridge_client import LongBridgeClient
-        client = LongBridgeClient(env=env)
+        # 初始化LongPort客户端
+        from .broker.longport_client import LongPortClient
+        client = LongPortClient(env=env)
         
         print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 仓位调整 ===")
         print("-" * 60)

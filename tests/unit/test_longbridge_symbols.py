@@ -1,5 +1,5 @@
 import pytest
-from stock_analysis.broker.longbridge_client import _to_lb_symbol
+from stock_analysis.broker.longport_client import _to_lb_symbol
 
 
 @pytest.mark.unit
@@ -16,7 +16,7 @@ from stock_analysis.broker.longbridge_client import _to_lb_symbol
     ("\tAMZN\n", "AMZN.US"),  # 测试各种空白字符
 ])
 def test_to_lb_symbol(raw, expect):
-    """测试股票代码转换为LongBridge格式的函数。
+    """测试股票代码转换为LongPort格式的函数。
     
     测试规则：
     - 默认补全 .US 后缀
