@@ -6,7 +6,6 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-
 import pandas as pd
 from dotenv import load_dotenv
 from google import genai
