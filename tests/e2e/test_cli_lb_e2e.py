@@ -82,9 +82,9 @@ def test_cli_unknown_command():
 
 
 @pytest.mark.e2e
-def test_cli_lb_quote_without_longbridge():
-    """测试在没有longbridge包时lb-quote命令的行为。"""
-    # 创建一个临时环境，移除longbridge包
+def test_cli_lb_quote_without_longport():
+    """测试在没有longport包时lb-quote命令的行为。"""
+    # 创建一个临时环境，移除longport包
     env = os.environ.copy()
     # 通过修改PYTHONPATH来模拟包不存在的情况
     # 这是一个简化的测试，实际情况可能更复杂
@@ -97,12 +97,12 @@ def test_cli_lb_quote_without_longbridge():
         env=env
     )
     
-    # 如果longbridge未安装，应该返回错误码并提示安装
-    if "longbridge" in result.stderr.lower() and "import" in result.stderr.lower():
+    # 如果longport未安装，应该返回错误码并提示安装
+    if "longport" in result.stderr.lower() and "import" in result.stderr.lower():
         assert result.returncode != 0
-        assert "pip install longbridge" in result.stderr or "安装" in result.stderr
+        assert "pip install longport" in result.stderr or "安装" in result.stderr
     else:
-        # 如果longbridge已安装，可能会因为缺少API凭据而失败，这也是正常的
+        # 如果longport已安装，可能会因为缺少API凭据而失败，这也是正常的
         # 只要不是语法错误或导入错误就可以
         pass
 

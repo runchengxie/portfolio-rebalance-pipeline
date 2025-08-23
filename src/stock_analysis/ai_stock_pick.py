@@ -6,7 +6,6 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-
 import pandas as pd
 from dotenv import load_dotenv
 from google import genai
@@ -453,7 +452,6 @@ def create_prompt(analysis_date, ticker_list_df):
     # 严格要求：
     - 必须选择恰好10只股票
     - confidence_score必须是1-10的整数
-    - reasoning字段限制在200字以内
     - 每个字段必须填写，不能为空
     - 返回标准JSON格式的数组
     

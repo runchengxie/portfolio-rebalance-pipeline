@@ -4,7 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from stock_analysis.broker.longbridge_client import LongBridgeClient
+from stock_analysis.broker.longport_client import LongPortClient
 
 
 @pytest.mark.unit
@@ -21,8 +21,8 @@ def test_quote_last_mapping():
     mock_quote_context.quote.return_value = fake_resp
     
     # 创建客户端实例并替换QuoteContext
-    with patch('stock_analysis.broker.longbridge_client.get_config'):
-        client = LongBridgeClient.__new__(LongBridgeClient)
+    with patch('stock_analysis.broker.longport_client.get_config'):
+        client = LongPortClient.__new__(LongPortClient)
         client.q = mock_quote_context
         client.t = Mock()  # TradeContext也需要mock
         
@@ -45,8 +45,8 @@ def test_candles_parameters():
     mock_quote_context = Mock()
     mock_quote_context.history_candlesticks_by_date.return_value = []
     
-    with patch('stock_analysis.broker.longbridge_client.get_config'):
-        client = LongBridgeClient.__new__(LongBridgeClient)
+    with patch('stock_analysis.broker.longport_client.get_config'):
+        client = LongPortClient.__new__(LongPortClient)
         client.q = mock_quote_context
         client.t = Mock()
         
@@ -78,8 +78,8 @@ def test_submit_limit_buy_order():
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="12345")
     
-    with patch('stock_analysis.broker.longbridge_client.get_config'):
-        client = LongBridgeClient.__new__(LongBridgeClient)
+    with patch('stock_analysis.broker.longport_client.get_config'):
+        client = LongPortClient.__new__(LongPortClient)
         client.q = Mock()
         client.t = mock_trade_context
         
@@ -107,8 +107,8 @@ def test_submit_limit_sell_order():
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="67890")
     
-    with patch('stock_analysis.broker.longbridge_client.get_config'):
-        client = LongBridgeClient.__new__(LongBridgeClient)
+    with patch('stock_analysis.broker.longport_client.get_config'):
+        client = LongPortClient.__new__(LongPortClient)
         client.q = Mock()
         client.t = mock_trade_context
         
@@ -139,15 +139,15 @@ def test_submit_limit_with_custom_tif():
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="11111")
     
-    with patch('stock_analysis.broker.longbridge_client.get_config'):
-        with patch('stock_analysis.broker.longbridge_client.OrderType') as mock_ot:
-            with patch('stock_analysis.broker.longbridge_client.OrderSide') as mock_os:
-                with patch('stock_analysis.broker.longbridge_client.TimeInForceType') as mock_tif:
+    with patch('stock_analysis.broker.longport_client.get_config'):
+        with patch('stock_analysis.broker.longport_client.OrderType') as mock_ot:
+            with patch('stock_analysis.broker.longport_client.OrderSide') as mock_os:
+                with patch('stock_analysis.broker.longport_client.TimeInForceType') as mock_tif:
                     mock_ot.LO = mock_order_type
                     mock_os.Buy = mock_order_side
                     mock_tif.GTC = mock_tif_gtc
                     
-                    client = LongBridgeClient.__new__(LongBridgeClient)
+                    client = LongPortClient.__new__(LongPortClient)
                     client.q = Mock()
                     client.t = mock_trade_context
                     
@@ -173,8 +173,8 @@ def test_decimal_precision():
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="22222")
     
-    with patch('stock_analysis.broker.longbridge_client.get_config'):
-        client = LongBridgeClient.__new__(LongBridgeClient)
+    with patch('stock_analysis.broker.longport_client.get_config'):
+        client = LongPortClient.__new__(LongPortClient)
         client.q = Mock()
         client.t = mock_trade_context
         
