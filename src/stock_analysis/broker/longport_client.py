@@ -8,9 +8,17 @@ from dotenv import load_dotenv
 
 # 兼容性导入：优先使用 longport，回退到 longbridge
 try:
-    from longport.openapi import Config, QuoteContext, TradeContext
+    from longport.openapi import Config, QuoteContext, TradeContext, Market
 except ImportError:
-    from longbridge.openapi import Config, QuoteContext, TradeContext
+    from longbridge.openapi import Config, QuoteContext, TradeContext, Market
+
+# 时区支持（Python 3.9+），不可用时回退为本地时间判定
+try:
+    from zoneinfo import ZoneInfo  # type: ignore
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
+
+from datetime import datetime, date
 
 
 load_dotenv()
@@ -39,7 +47,7 @@ class Env(str, Enum):
 class BrokerLimits:
     max_notional_per_order: float = 20000.0   # 单笔最大金额
     max_qty_per_order: int = 500             # 单笔最大股数（按美股演示）
-    trading_window_start: str = "09:30"      # 本地时间
+    trading_window_start: str = "09:30"      # 本地时间（仅作为降级回退）
     trading_window_end: str = "16:00"
 
 
@@ -53,9 +61,42 @@ def _to_lb_symbol(ticker: str) -> str:
         Formatted symbol for LongPort API
     """
     t = ticker.strip().upper()
-    if t.endswith((".US", ".HK", ".SG")):
+    if t.endswith((".US", ".HK", ".SG", ".CN")):
         return t
     return f"{t}.US"  # 你的项目多数是美股，默认补 .US
+
+
+def _market_of(symbol: str) -> str:
+    s = symbol.upper()
+    if s.endswith(".US"):
+        return "US"
+    if s.endswith(".HK"):
+        return "HK"
+    if s.endswith(".CN"):
+        return "CN"
+    if s.endswith(".SG"):
+        return "SG"
+    # 默认为美股
+    return "US"
+
+
+def _market_enum(m: str) -> Market:
+    return {
+        "US": Market.US,
+        "HK": Market.HK,
+        "CN": Market.CN,
+        "SG": Market.SG,
+    }[m]
+
+
+def _market_tz(m: str) -> str:
+    # 交易所本地时区
+    return {
+        "US": "America/New_York",
+        "HK": "Asia/Hong_Kong",
+        "CN": "Asia/Shanghai",
+        "SG": "Asia/Singapore",
+    }[m]
 
 
 class LongPortClient:
@@ -102,6 +143,17 @@ class LongPortClient:
         self.trade = TradeContext(self.config)
         self.limits = limits or BrokerLimits()
 
+        # 是否允许扩展时段（盘前/盘后/隔夜）
+        enable_overnight = getenv_both("LONGPORT_ENABLE_OVERNIGHT", "LONGBRIDGE_ENABLE_OVERNIGHT", "false")
+        self.allow_extended = str(enable_overnight).strip().lower() in {"1", "true", "yes", "y"}
+
+        # 缓存：交易日与当日交易时段（TTL: 10分钟）
+        self._session_cache: dict[str, list[tuple[int, int, str]]] = {}
+        self._session_cache_expire_at: float = 0.0
+        self._is_trading_day_cache: dict[str, bool] = {}
+        self._day_cache_expire_at: float = 0.0
+        self._cache_ttl_seconds: int = 600
+
     # ---------- 读行情 ----------
     def quote_last(self, symbols: Iterable[str]) -> Dict[str, Tuple[float, str]]:
         """Get last quotes for given symbols.
@@ -119,14 +171,112 @@ class LongPortClient:
             bars[i.symbol] = (i.last_done or 0.0, i.timestamp or "")
         return bars
 
+    # ---------- 内部：权威开市信息缓存 ----------
+    def _refresh_caches_if_needed(self) -> None:
+        now_ts = time.time()
+        # 刷新交易时段缓存
+        if now_ts >= self._session_cache_expire_at:
+            try:
+                resp = self.quote.trading_session()
+                session_map: dict[str, list[tuple[int, int, str]]] = {}
+                for item in getattr(resp, "market_trade_session", []) or []:
+                    market = getattr(item, "market", "").upper()
+                    sessions = []
+                    for seg in getattr(item, "trade_session", []) or []:
+                        beg = int(getattr(seg, "beg_time", 0))  # hhmm
+                        end = int(getattr(seg, "end_time", 0))  # hhmm
+                        code = getattr(seg, "trade_session", None)
+                        # 约定：None/0 => Regular, 1 => Pre, 2 => Post, 3 => Overnight（若支持）
+                        if code in (None, 0):
+                            kind = "Regular"
+                        elif code == 1:
+                            kind = "Pre"
+                        elif code == 2:
+                            kind = "Post"
+                        elif code == 3:
+                            kind = "Overnight"
+                        else:
+                            kind = "Other"
+                        sessions.append((beg, end, kind))
+                    if market:
+                        session_map[market] = sessions
+                self._session_cache = session_map
+                self._session_cache_expire_at = now_ts + self._cache_ttl_seconds
+            except Exception:
+                # 不可用时清空并立即过期，留给降级逻辑处理
+                self._session_cache = {}
+                self._session_cache_expire_at = 0.0
+        
+        # 刷新“今天是否交易日”缓存（按市场）
+        if now_ts >= self._day_cache_expire_at:
+            try:
+                today = date.today()
+                # 我们只在用到某个市场时再填充，先清空
+                self._is_trading_day_cache = {}
+                self._day_cache_expire_at = now_ts + self._cache_ttl_seconds
+            except Exception:
+                self._is_trading_day_cache = {}
+                self._day_cache_expire_at = 0.0
+
+    def _is_trading_day(self, market_str: str) -> bool:
+        # 先看缓存
+        if market_str in self._is_trading_day_cache:
+            return self._is_trading_day_cache[market_str]
+        try:
+            today = date.today()
+            resp = self.quote.trading_days(_market_enum(market_str), today, today)
+            days = set(getattr(resp, "trade_day", []) or [])
+            # API 返回 YYMMDD 字符串，简单比较今日是否在其中
+            yymmdd = today.strftime("%Y%m%d")[2:]  # 转为YYMMDD
+            ok = yymmdd in days
+            self._is_trading_day_cache[market_str] = ok
+            return ok
+        except Exception:
+            # API 失败：保守返回 False（fail closed）
+            self._is_trading_day_cache[market_str] = False
+            return False
+
     # ---------- 下单前检查 ----------
-    def _check_window(self) -> None:
-        """Check if current time is within trading window."""
-        # 简化版：只按本地时间字符串判断
-        from datetime import datetime
-        now = datetime.now().strftime("%H:%M")
-        if not (self.limits.trading_window_start <= now <= self.limits.trading_window_end):
-            raise RuntimeError(f"不在交易时段 {self.limits.trading_window_start}-{self.limits.trading_window_end}")
+    def _check_window(self, symbol: str) -> None:
+        """Check if current time is within trading window.
+        
+        使用 LongPort 权威交易时段与交易日接口。若接口不可用则回退为本地时间粗判。
+        """
+        self._refresh_caches_if_needed()
+
+        symbol_fmt = _to_lb_symbol(symbol)
+        market_str = _market_of(symbol_fmt)
+
+        # 1) 非交易日则拒绝
+        if not self._is_trading_day(market_str):
+            raise RuntimeError("非交易日，禁止交易")
+
+        # 2) 权威分段判定
+        sessions = self._session_cache.get(market_str, [])
+        if sessions and ZoneInfo is not None:
+            tz = ZoneInfo(_market_tz(market_str))
+            now_ex = datetime.now(tz)
+            hhmm = now_ex.hour * 100 + now_ex.minute
+            # 允许的分段
+            def allowed(kind: str) -> bool:
+                if kind == "Regular":
+                    return True
+                # 盘前/盘后/隔夜：仅当允许扩展时段时放行
+                return self.allow_extended and (kind in {"Pre", "Post", "Overnight", "Other"})
+
+            in_any = any(beg <= hhmm <= end and allowed(kind) for beg, end, kind in sessions)
+            if not in_any:
+                allowed_kinds = {k for _, _, k in sessions if allowed(k)}
+                win = ", ".join([f"{beg:04d}-{end:04d}({k})" for beg, end, k in sessions if k in allowed_kinds]) or "无"
+                raise RuntimeError(f"不在允许的交易时段：{win}")
+            return
+
+        # 3) 降级：本地时间字符串粗判（原有逻辑）
+        now_local = datetime.now().strftime("%H:%M")
+        if not (self.limits.trading_window_start <= now_local <= self.limits.trading_window_end):
+            raise RuntimeError(
+                f"不在交易时段 {self.limits.trading_window_start}-{self.limits.trading_window_end}（降级判定）"
+            )
 
     def _check_lot(self, symbol: str, qty: int) -> None:
         """Check if quantity is valid lot size."""
@@ -153,7 +303,7 @@ class LongPortClient:
 
         symbol_formatted = _to_lb_symbol(symbol)
         
-        self._check_window()
+        self._check_window(symbol_formatted)
         self._check_lot(symbol_formatted, qty)
         if qty > self.limits.max_qty_per_order:
             raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
@@ -196,9 +346,15 @@ class LongPortClient:
         }
 
     def close(self):
-        """Close quote and trade contexts."""
-        self.quote.close()
-        self.trade.close()
+        """Close quote and trade contexts (容错，不依赖 SDK 是否提供 close)。"""
+        for ctx in (self.quote, self.trade):
+            try:
+                fn = getattr(ctx, "close", None)
+                if callable(fn):
+                    fn()
+            except Exception:
+                # 忽略关闭异常，避免影响主流程
+                pass
 
 
 # 兼容性别名，保持向后兼容
