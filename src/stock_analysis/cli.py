@@ -23,6 +23,7 @@ def create_parser() -> argparse.ArgumentParser:
   stockq ai-pick                   运行AI选股分析
   stockq lb-quote AAPL MSFT        获取实时报价
   stockq lb-rebalance results.xlsx 仓位调整（干跑模式）
+  stockq lb-rebalance results.xlsx --plan --budget 50000  计划模式（不受交易时段限制）
         """
     )
     
@@ -141,6 +142,17 @@ def create_parser() -> argparse.ArgumentParser:
         "--execute",
         action="store_true",
         help="实际执行交易（关闭干跑模式）"
+    )
+    lb_rebalance_parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="计划模式，只计算和显示投资计划，不受交易时段限制"
+    )
+    lb_rebalance_parser.add_argument(
+        "--budget",
+        type=float,
+        default=100000.0,
+        help="投资预算金额（默认：100,000）"
     )
     lb_rebalance_parser.add_argument(
         "--env", choices=["test", "real"], default="test",
@@ -312,7 +324,7 @@ def run_lb_quote(tickers: list[str], env: str = "test") -> int:
         return 1
 
 
-def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = True, env: str = "test") -> int:
+def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = True, env: str = "test", plan: bool = False, budget: float = 100000.0) -> int:
     """运行LongPort仓位调整
     
     Args:
@@ -320,6 +332,8 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
         account: 账户名称
         dry_run: 是否为干跑模式
         env: 环境选择（test或real）
+        plan: 是否为计划模式（只计算不下单）
+        budget: 投资预算金额
         
     Returns:
         int: 退出码（0表示成功）
@@ -389,6 +403,99 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
         from .broker.longport_client import LongPortClient
         client = LongPortClient(env=env)
         
+        # 计划模式：只计算不下单
+        if plan:
+            print(f"\n=== 计划模式（不下单） - {sheet_to_use} ===")
+            print(f"预算: ${budget:,.2f} | 等权重分配 | 标的数: {len(tickers)}")
+            print("-" * 80)
+            
+            # 1) 拉取实时价格（带错误处理）
+            from .broker.longport_client import _to_lb_symbol
+            lb_symbols = [_to_lb_symbol(t) for t in tickers]
+            
+            try:
+                px_map = client.quote_last(lb_symbols)
+            except Exception as e:
+                print(f"警告：无法连接到LongPort API ({e})，使用模拟价格数据进行演示")
+                # 使用模拟价格数据
+                import random
+                px_map = {}
+                for lb_sym in lb_symbols:
+                    # 生成合理的股价范围（50-500美元）
+                    mock_price = round(random.uniform(50, 500), 2)
+                    mock_timestamp = "2024-01-01T09:30:00"
+                    px_map[lb_sym] = (mock_price, mock_timestamp)
+                print("注意：当前使用模拟价格数据，仅供演示计划模式功能")
+                print("-" * 80)
+            
+            # 2) 计算等权重分配
+            N = len(tickers)
+            per_weight = 1.0 / N if N > 0 else 0.0
+            plan_rows = []
+            
+            print("Symbol   | RefPx    | Time                | Qty(frac) | Qty(int) | Notional(int)")
+            print("-" * 80)
+            
+            total_notional_int = 0.0
+            for i, t in enumerate(tickers):
+                sym = t.upper().strip()
+                lb_sym = _to_lb_symbol(sym)
+                
+                px, ts = px_map.get(lb_sym, (0.0, ""))
+                # 确保价格是float类型
+                px = float(px) if px else 0.0
+                if px <= 0:
+                     # 格式化时间戳显示（处理无价格情况）
+                     if ts:
+                         if hasattr(ts, 'strftime'):  # datetime对象
+                             time_display_na = ts.strftime("%Y-%m-%d %H:%M:%S")
+                         else:  # 字符串
+                             time_display_na = str(ts)[:19]
+                     else:
+                         time_display_na = "N/A"
+                     print(f"{sym:8s} | {'N/A':8s} | {time_display_na:19s} | {'N/A':9s} | {'N/A':8s} | {'N/A':>13s}")
+                     plan_rows.append((sym, ts, None, None, "NO_PRICE"))
+                     continue
+                
+                # 3) 目标名义金额与碎股数量
+                target_notional = budget * per_weight
+                qty_frac = round(target_notional / px, 3)  # 碎股数量（仅规划参考）
+                
+                # 4) 整手数量：按最小交易单位向下取整
+                try:
+                    static_info = client.quote.static_info([lb_sym])
+                    lot = max(1, static_info[0].lot_size or 1) if static_info else 1
+                except Exception:
+                    lot = 1  # 默认最小交易单位为1
+                
+                qty_int = (int(target_notional // px) // lot) * lot
+                notional_int = qty_int * px
+                total_notional_int += notional_int
+                
+                # 格式化时间戳显示
+                if ts:
+                    if hasattr(ts, 'strftime'):  # datetime对象
+                        time_display = ts.strftime("%Y-%m-%d %H:%M:%S")
+                    else:  # 字符串
+                        time_display = str(ts)[:19]
+                else:
+                    time_display = "N/A"
+                
+                print(f"{sym:8s} | {px:8.2f} | {time_display:19s} | {qty_frac:9.3f} | {qty_int:8d} | ${notional_int:>11,.2f}")
+                plan_rows.append((sym, ts, px, qty_frac, qty_int))
+            
+            print("-" * 80)
+            print(f"总计划投资金额: ${total_notional_int:,.2f} / ${budget:,.2f} ({total_notional_int/budget*100:.1f}%)")
+            print(f"\n注意：")
+            print(f"- Qty(frac): 碎股数量，仅供参考，当前系统不支持碎股交易")
+            print(f"- Qty(int): 整手数量，实际可交易的数量")
+            print(f"- 计划模式不受交易时段限制，可随时执行")
+            
+            # 关闭客户端连接
+            client.close()
+            return 0
+        
+        # 原有的下单逻辑
         print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 仓位调整 ===")
         print("-" * 60)
         
@@ -477,7 +584,9 @@ def main() -> int:
             args.input_file,
             getattr(args, 'account', 'main'),
             dry_run,
-            getattr(args, 'env', 'test')
+            getattr(args, 'env', 'test'),
+            getattr(args, 'plan', False),
+            getattr(args, 'budget', 100000.0)
         )
     else:
         print(f"未知命令：{args.command}", file=sys.stderr)
