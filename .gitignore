@@ -39,6 +39,9 @@ strategy_full_project_source.txt
 !.vscode/extensions.json
 !.vscode/tasks.json
 
+# Trae
+/.trae/
+
 # Environment variables
 .env
 
