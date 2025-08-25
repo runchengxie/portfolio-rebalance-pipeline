@@ -4,7 +4,6 @@
 """
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -46,12 +45,12 @@ class Order:
     symbol: str
     quantity: int
     side: str  # "BUY" or "SELL"
-    price: Optional[float] = None
+    price: float | None = None
     order_type: str = "MARKET"
     status: str = "PENDING"
-    order_id: Optional[str] = None
-    timestamp: Optional[datetime] = None
-    error_message: Optional[str] = None
+    order_id: str | None = None
+    timestamp: datetime | None = None
+    error_message: str | None = None
     
     def __post_init__(self):
         """数据验证"""

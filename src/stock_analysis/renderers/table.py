@@ -2,12 +2,11 @@
 
 提供表格格式的数据渲染功能。
 """
-from typing import List
 
-from ..models import AccountSnapshot, Order, Position, Quote, RebalanceResult
+from ..models import AccountSnapshot, Order, Quote, RebalanceResult
 
 
-def render_quotes(quotes: List[Quote]) -> str:
+def render_quotes(quotes: list[Quote]) -> str:
     """渲染股票报价表格
     
     Args:
@@ -73,7 +72,7 @@ def render_account_snapshot(snapshot: AccountSnapshot, only_funds: bool = False,
     return "\n".join(lines)
 
 
-def render_multiple_account_snapshots(snapshots: List[AccountSnapshot], only_funds: bool = False, only_positions: bool = False) -> str:
+def render_multiple_account_snapshots(snapshots: list[AccountSnapshot], only_funds: bool = False, only_positions: bool = False) -> str:
     """渲染多个账户快照
     
     Args:
@@ -160,7 +159,7 @@ def render_rebalance_plan(result: RebalanceResult) -> str:
     return "\n".join(lines)
 
 
-def render_orders(orders: List[Order]) -> str:
+def render_orders(orders: list[Order]) -> str:
     """渲染订单列表
     
     Args:

@@ -42,12 +42,12 @@ class TestRateLimiter:
         limiter = RateLimiter(max_calls=3, per_seconds=60)
         
         # 前3次调用应该被允许
-        for i in range(3):
-            assert limiter.allow() == True
+        for _i in range(3):
+            assert limiter.allow()
             limiter.record_call()
         
         # 第4次调用应该被拒绝
-        assert limiter.allow() == False
+        assert not limiter.allow()
     
     def test_sliding_window_behavior(self):
         """测试滑动窗口行为"""
@@ -58,13 +58,13 @@ class TestRateLimiter:
         limiter.record_call()
         
         # 应该达到限制
-        assert limiter.allow() == False
+        assert not limiter.allow()
         
         # 等待超过时间窗口
         time.sleep(1.1)
         
         # 现在应该可以再次调用
-        assert limiter.allow() == True
+        assert limiter.allow()
     
     def test_wait_method(self):
         """测试等待方法"""
@@ -117,7 +117,7 @@ class TestCircuit:
     def test_allow_when_closed(self):
         """测试熔断器关闭时允许请求"""
         circuit = Circuit(fail_threshold=3, cooldown=30)
-        assert circuit.allow() == True
+        assert circuit.allow()
     
     def test_record_failure_and_open(self):
         """测试记录失败并打开熔断器"""
@@ -126,12 +126,12 @@ class TestCircuit:
         # 第一次失败
         circuit.record_failure()
         assert circuit.failures == 1
-        assert circuit.allow() == True  # 还未达到阈值
+        assert circuit.allow()  # 还未达到阈值
         
         # 第二次失败，应该打开熔断器
         circuit.record_failure()
         assert circuit.failures == 2
-        assert circuit.allow() == False  # 熔断器打开
+        assert not circuit.allow()  # 熔断器打开
     
     def test_cooldown_period(self):
         """测试冷却期行为"""
@@ -139,13 +139,13 @@ class TestCircuit:
         
         # 触发熔断
         circuit.record_failure()
-        assert circuit.allow() == False
+        assert not circuit.allow()
         
         # 等待冷却期结束
         time.sleep(1.1)
         
         # 现在应该允许请求
-        assert circuit.allow() == True
+        assert circuit.allow()
     
     def test_record_success_resets_failures(self):
         """测试记录成功重置失败计数"""
@@ -165,7 +165,7 @@ class TestCircuit:
         circuit = Circuit(fail_threshold=1, cooldown=1)
         
         # 第一次失败
-        start_time = time.time()
+        time.time()
         circuit.record_failure()
         first_open_until = circuit.open_until
         
@@ -191,7 +191,7 @@ class TestKeySlot:
         assert slot.client == mock_client
         assert slot.limiter == mock_limiter
         assert isinstance(slot.circuit, Circuit)
-        assert slot.dead == False
+        assert not slot.dead
         assert slot.next_ok_at == 0
     
     def test_slot_states(self):
@@ -203,7 +203,7 @@ class TestKeySlot:
         
         # 测试标记为死亡
         slot.dead = True
-        assert slot.dead == True
+        assert slot.dead
         
         # 测试设置下次可用时间
         future_time = time.time() + 60
@@ -307,7 +307,7 @@ class TestKeyPool:
         pool.report_failure(slot, error_401)
         
         # 槽位应该被标记为死亡
-        assert slot.dead == True
+        assert slot.dead
     
     def test_report_failure_429(self):
         """测试报告429错误（项目级冷却）"""
@@ -697,7 +697,7 @@ class TestAIIntegrationScenarios:
             try:
                 data = json.loads(invalid_json)
                 AIStockPick(**data)
-                assert False, f"Should have raised exception for: {invalid_json}"
+                raise AssertionError(f"Should have raised exception for: {invalid_json}")
             except (json.JSONDecodeError, ValidationError, TypeError):
                 # 预期的异常
                 pass

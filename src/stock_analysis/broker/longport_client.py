@@ -312,7 +312,7 @@ class LongPortClient:
         # 刷新“今天是否交易日”缓存（按市场）
         if now_ts >= self._day_cache_expire_at:
             try:
-                today = date.today()
+                date.today()
                 # 我们只在用到某个市场时再填充，先清空
                 self._is_trading_day_cache = {}
                 self._day_cache_expire_at = now_ts + self._cache_ttl_seconds

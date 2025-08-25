@@ -5,12 +5,11 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
 
 from ..broker.longport_client import LongPortClient, _to_lb_symbol
 from ..models import AccountSnapshot, Order, Position, RebalanceResult
 from ..utils.logging import get_logger
-from .account_snapshot import get_account_snapshot, get_quotes
+from .account_snapshot import get_quotes
 
 logger = get_logger(__name__)
 
@@ -34,7 +33,7 @@ class RebalanceService:
             self.client.close()
             self.client = None
     
-    def plan_rebalance(self, target_tickers: List[str], account_snapshot: AccountSnapshot) -> RebalanceResult:
+    def plan_rebalance(self, target_tickers: list[str], account_snapshot: AccountSnapshot) -> RebalanceResult:
         """制定调仓计划
         
         Args:
@@ -132,7 +131,7 @@ class RebalanceService:
             env=self.env
         )
     
-    def execute_orders(self, orders: List[Order], dry_run: bool = True) -> List[Order]:
+    def execute_orders(self, orders: list[Order], dry_run: bool = True) -> list[Order]:
         """执行订单列表
         
         Args:

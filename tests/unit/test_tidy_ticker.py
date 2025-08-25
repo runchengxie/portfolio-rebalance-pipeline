@@ -10,6 +10,7 @@
 
 import pandas as pd
 import pytest
+
 from stock_analysis.load_data_to_db import tidy_ticker
 
 
@@ -44,7 +45,7 @@ def test_tidy_ticker_basic(raw, expect):
     out = tidy_ticker(pd.Series(raw)).tolist()
     
     # 处理pd.NA的比较
-    for i, (actual, expected) in enumerate(zip(out, expect)):
+    for i, (actual, expected) in enumerate(zip(out, expect, strict=False)):
         if pd.isna(expected):
             assert pd.isna(actual), f"Index {i}: expected NA, got {actual}"
         else:
@@ -161,7 +162,7 @@ class TestTidyTickerProperties:
         results = tidy_ticker(pd.Series(false_positives))
         expected = ["DELISTED_CORP", "SOME_DELISTED_CO", "DELISTED"]
         
-        for result, expect in zip(results, expected):
+        for result, expect in zip(results, expected, strict=False):
             assert result == expect, f"Incorrectly removed DELISTED from {result}"
 
 
@@ -182,7 +183,7 @@ class TestTidyTickerEdgeCases:
         
         # Unicode字符应该被保留并转为大写
         expected = ["AAPL™", "MSFT®", "GOOGL©"]
-        for result, expect in zip(results, expected):
+        for result, expect in zip(results, expected, strict=False):
             assert result == expect
     
     def test_multiple_underscores(self):
@@ -197,7 +198,7 @@ class TestTidyTickerEdgeCases:
         
         # 只有结尾的_DELISTED应该被移除
         expected = ["AAPL_", "AAPL_TEST", "AAPL_DELISTED_"]
-        for result, expect in zip(results, expected):
+        for result, expect in zip(results, expected, strict=False):
             assert result == expect, f"Expected {expect}, got {result}"
     
     def test_mixed_data_types_in_series(self):
