@@ -209,6 +209,12 @@
 
     执行成功后，会在 `data/` 目录下生成 `financial_data.db` 文件。
 
+    后续的股价数据更新
+
+    ```bash
+    sqlite3 "data\financial_data.db" ".read sql\rebuild_share_prices.sql"
+    ```
+
 2. 步骤 2: 运行量化初筛策略
 
     此脚本执行多因子选股逻辑，并将每个季度的前 20 名候选股保存到 outputs/ 目录的 Excel 文件中。
@@ -239,9 +245,9 @@
 
     * `--env real` 允许“只读展示”，但打印一个巨醒目的横幅，告诉你现在是在看真实账户数据。
 
-	* `--env both` 时，除非显式允许 real，否则降级为只展示 test 并给出提示。
+    * `--env both` 时，除非显式允许 real，否则降级为只展示 test 并给出提示。
 
-	```bash
+    ```bash
     # 只看测试账户（默认）
     stockq lb-account
 
