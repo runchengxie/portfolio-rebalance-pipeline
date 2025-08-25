@@ -57,12 +57,15 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=stock_analysis --cov-report=term-missing"
+addopts = "--cov=stock_analysis --cov-report=term-missing --cov-fail-under=75 -m 'not integration'"
 testpaths = [
     "tests",
 ]
 markers = [
     "unit: fast unit tests",
-    "integration: slow or IO-heavy tests",
-    "e2e: full pipeline/CLI tests"
+    "integration: slow or IO-heavy tests (skipped by default)",
+    "e2e: full pipeline/CLI tests",
+    "slow: tests that take a long time to run",
+    "requires_api: tests that require external API access",
+    "requires_db: tests that require database access"
 ]

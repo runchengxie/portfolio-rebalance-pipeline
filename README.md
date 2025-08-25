@@ -4,6 +4,138 @@
 
 项目利用 SQLite 进行数据管理，并通过 config/config.yaml 进行统一的参数配置。所有核心操作都通过 stockq 命令行工具执行。
 
+## 回测结果图
+
+![AI策略回测示例](outputs/ai_quarterly_strategy_returns.png)
+
+*(上图为AI策略在2021-04-01至2025-07-01期间的回测表现示例)*
+
+## 执行步骤
+
+所有操作均通过 stockq 命令行工具完成。
+
+1. 步骤 1: 创建数据库
+
+    此脚本将所有原始 CSV 数据加载到 data/financial_data.db 文件中，并创建索引以加速后续查询。此步骤仅在初次运行时需要执行。
+
+    ```bash
+    stockq load-data
+    ```
+
+    为了更高效率推荐使用sqlite3，Windows用户可通过Powershell在项目根目录执行以下指令：
+
+    ```bash
+    # 写成一行的版本，CMD 和 PowerShell 通用
+    sqlite3 "data\financial_data.db" ".read sql\schema.sql" ".separator ;" ".import --skip 1 data\us-shareprices-daily.csv share_prices" "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);"
+    ```
+
+    执行成功后，会在 `data/` 目录下生成 `financial_data.db` 文件。
+
+    后续的股价数据更新
+
+    ```bash
+    sqlite3 "data\financial_data.db" ".read sql\rebuild_share_prices.sql"
+    ```
+
+2. 步骤 2: 运行量化初筛策略
+
+    此脚本执行多因子选股逻辑，并将每个季度的前 20 名候选股保存到 outputs/ 目录的 Excel 文件中。
+
+    ```bash
+    stockq preliminary
+    ```
+
+3. 步骤 3: 运行 AI 筛选策略
+
+    此脚本读取上一步生成的 Excel 文件，提交给 Gemini AI 进行分析，并将 AI 筛选的 10 只股票及其分析理由保存到新的 Excel 文件中。
+
+    ```bash
+    stockq ai-pick
+    ```
+
+4. 步骤 4: 运行 AI 筛选组合的回测
+
+    此脚本读取 AI 筛选的股票列表，使用 backtrader 引擎进行回测，并生成最终的累计收益图和性能指标。
+
+    ```bash
+    stockq backtest ai
+    ```
+
+5. 查看当下账户情况
+
+    * 默认 `--env test`。
+
+    * `--env real` 允许“只读展示”，但打印一个巨醒目的横幅，告诉你现在是在看真实账户数据。
+
+    * `--env both` 时，除非显式允许 real，否则降级为只展示 test 并给出提示。
+
+    ```bash
+    # 只看测试账户（默认）
+    stockq lb-account
+
+    # 明确查看真实账户（只读）
+    stockq lb-account --env real
+
+    # 同时查看两个账户，并并排输出
+    stockq lb-account --env both
+
+    # 只看资金或只看持仓
+    stockq lb-account --funds
+    stockq lb-account --positions
+
+    # 机器可读
+    stockq lb-account --format json
+   ```
+
+6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance` 命令内置了一套严格的安全执行机制。该机制的核心原则是**默认安全**：让无风险的操作（如测试和模拟）变得简单，而让有风险的真实交易需要用户进行明确、多重确认。
+
+    请在执行前务必理解以下**行为矩阵**：
+
+    | 命令组合 | 行为描述 |
+    | :--- | :--- |
+    | `stockq lb-rebalance ... --env test` | ✅ **安全模拟**: 无论是否添加 `--execute`，此命令都只会在 **测试环境** 中进行模拟操作。它用于验证 API 凭据、网络连接和调仓逻辑，**绝不会** 触及您的真实资金。 |
+    | `stockq lb-rebalance ... --env real` | ❌ **拒绝执行**: 为了防止用户误操作（例如，以为自己执行了真实交易但实际上只是模拟），系统会明确 **拒绝** 此组合，并提示您必须添加 `--execute` 标志才能在真实环境下运行。这是一个关键的防呆设计。 |
+    | `stockq lb-rebalance ... --env real --execute` | ⚠️ **真实交易**: 这是 **唯一** 会触发真实下单的命令组合。执行此命令前，请务必确认您的调仓计划。所有在代码中定义的风控措施（如单笔最大金额、交易时间窗口）将在此模式下生效。 |
+
+    **推荐的执行流程：**
+
+    1. **验证连接**:
+
+        ```bash
+        # 验证API凭据和实时报价功能是否正常
+        stockq lb-quote AAPL MSFT
+        ```
+
+    2. **测试环境模拟 (Dry-Run)**:
+
+        ```bash
+        # 在一个完全隔离的环境中，检查调仓计划是否符合预期
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env test
+        ```
+
+    3. **仔细检查输出**: 审查上一步打印的交易计划，包括股票代码、数量和方向。
+
+    4. **执行真实交易 (谨慎操作!)**:
+
+        ```bash
+        # 确认所有信息无误后，才执行真实下单
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env real --execute
+        ```
+
+## 可选步骤
+
+* 对比回测 1 (量化初筛组合): 评估纯量化策略（未经过 AI 筛选的 20 只股票组合）的表现。
+
+    ```bash
+    stockq backtest quant
+    ```
+
+* 对比回测 2 (SPY 基准)：评估 AI 策略与 SPY 基准（S&P 500 ETF）的表现。
+
+    ```bash
+    stockq backtest spy
+    ```
+
 ## 核心特性
 
 * 两阶段混合模型: 结合了基于财务报表数据的量化筛选和大型语言模型的深度分析，实现自动化、多维度的选股流程。
@@ -171,7 +303,10 @@
     # 从 LongPort 开发者中心获取
     LONGPORT_APP_KEY="your_app_key_here"
     LONGPORT_APP_SECRET="your_app_secret_here"
-    LONGPORT_ACCESS_TOKEN="your_access_token_here"
+    
+    # 根据 --env test 或 --env real 参数，程序会自动读取对应的Token
+    LONGPORT_ACCESS_TOKEN_TEST="your_test_access_token_here"
+    LONGPORT_ACCESS_TOKEN_REAL="your_real_access_token_here"
     ```
 
 3. 配置回测参数:
@@ -186,132 +321,6 @@
     start: 2021-04-02
     end: 2025-07-02
     initial_cash: 1000000
-    ```
-
-### 执行步骤
-
-所有操作均通过 stockq 命令行工具完成。
-
-1. 步骤 1: 创建数据库
-
-    此脚本将所有原始 CSV 数据加载到 data/financial_data.db 文件中，并创建索引以加速后续查询。此步骤仅在初次运行时需要执行。
-
-    ```bash
-    stockq load-data
-    ```
-
-    为了更高效率推荐使用sqlite3，Windows用户可通过Powershell在项目根目录执行以下指令：
-
-    ```bash
-    # 写成一行的版本，CMD 和 PowerShell 通用
-    sqlite3 "data\financial_data.db" ".read sql\schema.sql" ".separator ;" ".import --skip 1 data\us-shareprices-daily.csv share_prices" "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);"
-    ```
-
-    执行成功后，会在 `data/` 目录下生成 `financial_data.db` 文件。
-
-    后续的股价数据更新
-
-    ```bash
-    sqlite3 "data\financial_data.db" ".read sql\rebuild_share_prices.sql"
-    ```
-
-2. 步骤 2: 运行量化初筛策略
-
-    此脚本执行多因子选股逻辑，并将每个季度的前 20 名候选股保存到 outputs/ 目录的 Excel 文件中。
-
-    ```bash
-    stockq preliminary
-    ```
-
-3. 步骤 3: 运行 AI 筛选策略
-
-    此脚本读取上一步生成的 Excel 文件，提交给 Gemini AI 进行分析，并将 AI 筛选的 10 只股票及其分析理由保存到新的 Excel 文件中。
-
-    ```bash
-    stockq ai-pick
-    ```
-
-4. 步骤 4: 运行 AI 筛选组合的回测
-
-    此脚本读取 AI 筛选的股票列表，使用 backtrader 引擎进行回测，并生成最终的累计收益图和性能指标。
-
-    ```bash
-    stockq backtest ai
-    ```
-
-5. 查看当下账户情况
-
-    * 默认 `--env test`。
-
-    * `--env real` 允许“只读展示”，但打印一个巨醒目的横幅，告诉你现在是在看真实账户数据。
-
-    * `--env both` 时，除非显式允许 real，否则降级为只展示 test 并给出提示。
-
-    ```bash
-    # 只看测试账户（默认）
-    stockq lb-account
-
-    # 明确查看真实账户（只读）
-    stockq lb-account --env real
-
-    # 同时查看两个账户，并并排输出
-    stockq lb-account --env both
-
-    # 只看资金或只看持仓
-    stockq lb-account --funds
-    stockq lb-account --positions
-
-    # 机器可读
-    stockq lb-account --format json
-   ```
-
-6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance` 命令内置了一套严格的安全执行机制。该机制的核心原则是**默认安全**：让无风险的操作（如测试和模拟）变得简单，而让有风险的真实交易需要用户进行明确、多重确认。
-
-    请在执行前务必理解以下**行为矩阵**：
-
-    | 命令组合 | 行为描述 |
-    | :--- | :--- |
-    | `stockq lb-rebalance ... --env test` | ✅ **安全模拟**: 无论是否添加 `--execute`，此命令都只会在 **测试环境** 中进行模拟操作。它用于验证 API 凭据、网络连接和调仓逻辑，**绝不会** 触及您的真实资金。 |
-    | `stockq lb-rebalance ... --env real` | ❌ **拒绝执行**: 为了防止用户误操作（例如，以为自己执行了真实交易但实际上只是模拟），系统会明确 **拒绝** 此组合，并提示您必须添加 `--execute` 标志才能在真实环境下运行。这是一个关键的防呆设计。 |
-    | `stockq lb-rebalance ... --env real --execute` | ⚠️ **真实交易**: 这是 **唯一** 会触发真实下单的命令组合。执行此命令前，请务必确认您的调仓计划。所有在代码中定义的风控措施（如单笔最大金额、交易时间窗口）将在此模式下生效。 |
-
-    **推荐的执行流程：**
-
-    1. **验证连接**:
-
-        ```bash
-        # 验证API凭据和实时报价功能是否正常
-        stockq lb-quote AAPL MSFT
-        ```
-
-    2. **测试环境模拟 (Dry-Run)**:
-
-        ```bash
-        # 在一个完全隔离的环境中，检查调仓计划是否符合预期
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env test
-        ```
-
-    3. **仔细检查输出**: 审查上一步打印的交易计划，包括股票代码、数量和方向。
-
-    4. **执行真实交易 (谨慎操作!)**:
-
-        ```bash
-        # 确认所有信息无误后，才执行真实下单
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env real --execute
-        ```
-
-### 可选步骤
-
-* 对比回测 1 (量化初筛组合): 评估纯量化策略（未经过 AI 筛选的 20 只股票组合）的表现。
-
-    ```bash
-    stockq backtest quant
-    ```
-
-* 对比回测 2 (SPY 基准)：评估 AI 策略与 SPY 基准（S&P 500 ETF）的表现。
-
-    ```bash
-    stockq backtest spy
     ```
 
 ## 输出文件
@@ -331,6 +340,10 @@
 * ai_backtest.log: AI 策略回测期间的详细日志。
 
 * rebalancing_diagnostics_log.csv: 回测诊断日志，记录模型选股与实际可交易股票的差异。
+
+## 数据源
+
+本项目使用的原始数据可从SimFin获取。请确保下载的CSV文件格式与说明一致。
 
 ## 项目测试
 
