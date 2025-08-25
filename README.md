@@ -233,7 +233,33 @@
     stockq backtest ai
     ```
 
-5. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance` 命令内置了一套严格的安全执行机制。该机制的核心原则是**默认安全**：让无风险的操作（如测试和模拟）变得简单，而让有风险的真实交易需要用户进行明确、多重确认。
+5. 查看当下账户情况
+
+    * 默认 `--env test`。
+
+    * `--env real` 允许“只读展示”，但打印一个巨醒目的横幅，告诉你现在是在看真实账户数据。
+
+	* `--env both` 时，除非显式允许 real，否则降级为只展示 test 并给出提示。
+
+	```bash
+    # 只看测试账户（默认）
+    stockq lb-account
+
+    # 明确查看真实账户（只读）
+    stockq lb-account --env real
+
+    # 同时查看两个账户，并并排输出
+    stockq lb-account --env both
+
+    # 只看资金或只看持仓
+    stockq lb-account --funds
+    stockq lb-account --positions
+
+    # 机器可读
+    stockq lb-account --format json
+   ```
+
+6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance` 命令内置了一套严格的安全执行机制。该机制的核心原则是**默认安全**：让无风险的操作（如测试和模拟）变得简单，而让有风险的真实交易需要用户进行明确、多重确认。
 
     请在执行前务必理解以下**行为矩阵**：
 

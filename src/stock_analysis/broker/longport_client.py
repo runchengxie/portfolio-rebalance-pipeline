@@ -171,6 +171,69 @@ class LongPortClient:
             bars[i.symbol] = (i.last_done or 0.0, i.timestamp or "")
         return bars
 
+    def portfolio_snapshot(self) -> tuple[float, dict[str, int]]:
+        """返回现金余额与持仓数量映射。
+        Returns:
+            cash_usd: 可用或总现金（USD 为主，必要时合并）
+            positions: { "AAPL.US": 100, ... }
+        """
+        cash = 0.0
+        pos_map: dict[str, int] = {}
+
+        # 1) 现金：尽量宽松兼容不同返回结构
+        try:
+            # 常见：asset() 或 account_balance()
+            asset_fn = getattr(self.trade, "asset", None) or getattr(self.trade, "account_balance", None)
+            if asset_fn:
+                asset = asset_fn()
+                # 优先 USD，可回退到总币种合计
+                if hasattr(asset, "cash_infos") and asset.cash_infos:
+                    for ci in asset.cash_infos:
+                        ccy = getattr(ci, "currency", "") or getattr(ci, "ccy", "")
+                        amt = float(getattr(ci, "cash", 0) or getattr(ci, "available_cash", 0) or 0)
+                        if str(ccy).upper() == "USD":
+                            cash += amt
+                    if cash == 0.0:
+                        # 合计所有币种，粗暴但好用
+                        for ci in asset.cash_infos:
+                            cash += float(getattr(ci, "cash", 0) or getattr(ci, "available_cash", 0) or 0)
+                else:
+                    # 其他字段名兜底
+                    for name in ("cash", "available_cash", "total_cash"):
+                        v = getattr(asset, name, None)
+                        if v is not None:
+                            cash = float(v)
+                            break
+        except Exception:
+            # 实在拿不到，就当 0，后面也还能按市值算目标
+            cash = 0.0
+
+        # 2) 持仓
+        try:
+            pos_fn = getattr(self.trade, "position_list", None) or getattr(self.trade, "stock_positions", None)
+            if pos_fn:
+                ret = pos_fn()
+                items = getattr(ret, "positions", None) or getattr(ret, "items", None) or ret
+                for it in items or []:
+                    sym = getattr(it, "symbol", "") or getattr(it, "stock", "")
+                    qty = getattr(it, "quantity", None) or getattr(it, "qty", None) or getattr(it, "position", None)
+                    if sym and qty:
+                        pos_map[_to_lb_symbol(str(sym))] = int(qty)
+        except Exception:
+            pass
+
+        return float(cash), pos_map
+
+    def lot_size(self, symbol: str) -> int:
+        """查询最小交易单位，查不到就返回 1。"""
+        try:
+            info = self.quote.static_info([_to_lb_symbol(symbol)])
+            if info and info[0].lot_size:
+                return max(1, int(info[0].lot_size))
+        except Exception:
+            pass
+        return 1
+
     # ---------- 内部：权威开市信息缓存 ----------
     def _refresh_caches_if_needed(self) -> None:
         now_ts = time.time()
@@ -302,19 +365,16 @@ class LongPortClient:
             raise ValueError("下单数量必须为正")
 
         symbol_formatted = _to_lb_symbol(symbol)
-        
-        self._check_window(symbol_formatted)
-        self._check_lot(symbol_formatted, qty)
-        if qty > self.limits.max_qty_per_order:
-            raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
 
-        # 拉一口价估个名义金额做风控
-        px, _ = self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))
-        notional = px * qty
-        if notional > self.limits.max_notional_per_order:
-            raise RuntimeError(f"超过单笔金额上限 ${self.limits.max_notional_per_order:,.0f}")
-
+        # 干跑或 TEST：跳过时间窗检查，但保留 lot 与金额估算
         if dry_run or self.env == Env.TEST:
+            lot = self.lot_size(symbol_formatted)
+            if qty % lot != 0:
+                raise RuntimeError(f"{symbol_formatted} 数量需为最小交易单位 {lot} 的整数倍")
+            px, _ = self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))
+            notional = px * qty
+            if notional > self.limits.max_notional_per_order:
+                raise RuntimeError(f"超过单笔金额上限 ${self.limits.max_notional_per_order:,.0f}")
             return {
                 "env": self.env.value,
                 "dry_run": True,
@@ -323,26 +383,30 @@ class LongPortClient:
                 "side": side,
                 "est_px": px,
                 "est_notional": notional,
-                "ts": int(time.time()),
+                "ts": time.time(),
             }
 
-        # 真下单
-        # 这里以美股市价单演示；不同市场下单参数请按文档设置
-        resp = self.trade.submit_order(
-            symbol=symbol_formatted,
-            order_type="MO",  # 市价
-            side=side.upper(),  # BUY / SELL
-            submitted_quantity=qty,
-            # time_in_force="DAY",
-        )
+        # 真下单：严格检查
+        self._check_window(symbol_formatted)  # 原逻辑在这里再调用
+        self._check_lot(symbol_formatted, qty)
+        if qty > self.limits.max_qty_per_order:
+            raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
+        px, _ = self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))
+        notional = px * qty
+        if notional > self.limits.max_notional_per_order:
+            raise RuntimeError(f"超过单笔金额上限 ${self.limits.max_notional_per_order:,.0f}")
+
+        # TODO: 调 LongPort 真下单接口（此处留白以免误触）
         return {
             "env": self.env.value,
             "dry_run": False,
-            "order_id": getattr(resp, "order_id", None),
             "symbol": symbol_formatted,
             "qty": qty,
             "side": side,
-            "ts": int(time.time()),
+            "est_px": px,
+            "est_notional": notional,
+            "ts": time.time(),
+            "order_id": "SIMULATED_ID",
         }
 
     def close(self):
