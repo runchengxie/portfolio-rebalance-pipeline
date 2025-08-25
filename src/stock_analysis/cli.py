@@ -602,14 +602,14 @@ def run_lb_account(env: str = "test", only_funds: bool = False, only_positions: 
             # 简单表格输出
             for block in payload:
                 print(f"\n[{block['env'].upper()}] 现金(USD): ${block['cash_usd']:,.2f}")
-                if not only_funds and block['positions']:
-                    if not only_positions:
-                        print("Symbol        Qty        Last       Est.Value")
-                        print("-" * 50)
-                    for r in block["positions"]:
-                        print(f"{r['symbol']:12} {r['qty']:10} {r['last']:10.2f} ${r['est_value']:>10,.2f}")
-                elif not only_funds and not block['positions']:
-                    if not only_positions:
+                if not only_funds:
+                    if block['positions']:
+                        if not only_positions:
+                            print("Symbol        Qty        Last       Est.Value")
+                            print("-" * 50)
+                        for r in block["positions"]:
+                            print(f"{r['symbol']:12} {r['qty']:10} {r['last']:10.2f} ${r['est_value']:>10,.2f}")
+                    else:
                         print("无持仓")
         
         return 0
