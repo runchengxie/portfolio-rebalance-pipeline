@@ -2,7 +2,6 @@
 
 处理股票报价查询的命令逻辑。
 """
-from typing import List
 
 from ..renderers.table import render_quotes
 from ..services.account_snapshot import get_quotes
@@ -11,7 +10,7 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def run_lb_quote(tickers: List[str], env: str = "test") -> int:
+def run_lb_quote(tickers: list[str], env: str = "test") -> int:
     """运行LongPort实时报价查询
     
     Args:

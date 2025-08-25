@@ -2,7 +2,6 @@
 
 提供账户快照相关的业务逻辑，返回结构化数据。
 """
-from typing import Dict, List, Tuple
 
 from ..broker.longport_client import LongPortClient
 from ..models import AccountSnapshot, Position, Quote
@@ -63,7 +62,7 @@ def get_account_snapshot(env: str) -> AccountSnapshot:
         )
 
 
-def get_multiple_account_snapshots(envs: List[str]) -> List[AccountSnapshot]:
+def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
     """获取多个环境的账户快照
     
     Args:
@@ -80,7 +79,7 @@ def get_multiple_account_snapshots(envs: List[str]) -> List[AccountSnapshot]:
     return snapshots
 
 
-def get_quotes(symbols: List[str], env: str = "test") -> Dict[str, Quote]:
+def get_quotes(symbols: list[str], env: str = "test") -> dict[str, Quote]:
     """获取股票报价
     
     Args:

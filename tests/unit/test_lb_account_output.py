@@ -8,7 +8,6 @@
 """
 
 import json
-import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 

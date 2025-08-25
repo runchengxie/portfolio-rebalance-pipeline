@@ -3,12 +3,12 @@
 提供 JSON 格式的数据渲染功能。
 """
 import json
-from typing import Any, Dict, List
+from typing import Any
 
-from ..models import AccountSnapshot, Order, Position, Quote, RebalanceResult
+from ..models import AccountSnapshot, Order, Quote, RebalanceResult
 
 
-def _serialize_dataclass(obj: Any) -> Dict[str, Any]:
+def _serialize_dataclass(obj: Any) -> dict[str, Any]:
     """序列化 dataclass 对象为字典
     
     Args:
@@ -33,7 +33,7 @@ def _serialize_dataclass(obj: Any) -> Dict[str, Any]:
     return obj
 
 
-def render_quotes_json(quotes: List[Quote]) -> str:
+def render_quotes_json(quotes: list[Quote]) -> str:
     """渲染股票报价 JSON
     
     Args:
@@ -59,7 +59,7 @@ def render_account_snapshot_json(snapshot: AccountSnapshot) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def render_multiple_account_snapshots_json(snapshots: List[AccountSnapshot]) -> str:
+def render_multiple_account_snapshots_json(snapshots: list[AccountSnapshot]) -> str:
     """渲染多个账户快照 JSON
     
     Args:
@@ -85,7 +85,7 @@ def render_rebalance_result_json(result: RebalanceResult) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def render_orders_json(orders: List[Order]) -> str:
+def render_orders_json(orders: list[Order]) -> str:
     """渲染订单列表 JSON
     
     Args:

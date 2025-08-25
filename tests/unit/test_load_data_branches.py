@@ -10,7 +10,7 @@
 import sqlite3
 import subprocess
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
@@ -19,7 +19,7 @@ from stock_analysis.load_data_to_db import (
     _check_sqlite3_cli,
     _import_prices_with_cli,
     _load_csv_in_chunks,
-    main
+    main,
 )
 
 
@@ -121,7 +121,6 @@ class TestPandasFallback:
         con = sqlite3.connect(db_file)
         
         # 模拟CSV数据
-        csv_data = "Ticker,Date,Close\nAAPL,2023-01-01,150.0\nMSFT,2023-01-01,250.0\n"
         
         with patch('pandas.read_csv') as mock_read_csv:
             # 模拟pandas.read_csv返回的DataFrame
@@ -160,7 +159,7 @@ class TestPandasFallback:
             mock_read_csv.return_value = [mock_df]
             
             with patch.object(pd.DataFrame, 'to_sql') as mock_to_sql:
-                rows = _load_csv_in_chunks(
+                _load_csv_in_chunks(
                     Path("dummy.csv"), 
                     "test_table", 
                     con
@@ -214,9 +213,9 @@ class TestPandasFallback:
             })
             mock_read_csv.return_value = [mock_df]
             
-            with patch.object(pd.DataFrame, 'to_sql') as mock_to_sql:
+            with patch.object(pd.DataFrame, 'to_sql'):
                 with patch.object(pd.DataFrame, 'drop_duplicates', return_value=mock_df) as mock_drop_dup:
-                    rows = _load_csv_in_chunks(
+                    _load_csv_in_chunks(
                         Path("dummy.csv"), 
                         "share_prices",
                         con

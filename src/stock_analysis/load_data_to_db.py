@@ -57,7 +57,7 @@ def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) ->
             cmd.extend(["-cmd", command])
         cmd.append(".quit")
         
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
         print("    - SQLite CLI import completed successfully")
         return True
         

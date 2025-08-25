@@ -231,7 +231,7 @@ class TestStrategyLogger:
         with patch('stock_analysis.utils.logging.OUTPUTS_DIR', tmp_path):
             strategy_logger = StrategyLogger(use_logging=True, logger_name="test_strategy")
             
-            assert strategy_logger.use_logging == True
+            assert strategy_logger.use_logging
             assert strategy_logger.logger is not None
             assert isinstance(strategy_logger.logger, logging.Logger)
     
@@ -239,7 +239,7 @@ class TestStrategyLogger:
         """测试使用print的策略日志器"""
         strategy_logger = StrategyLogger(use_logging=False)
         
-        assert strategy_logger.use_logging == False
+        assert not strategy_logger.use_logging
         assert strategy_logger.logger is None
     
     def test_strategy_logger_log_method_with_datetime(self, capsys):

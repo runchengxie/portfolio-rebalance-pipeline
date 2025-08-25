@@ -4,7 +4,6 @@
 """
 import re
 from pathlib import Path
-from typing import List, Tuple
 
 import pandas as pd
 
@@ -13,7 +12,7 @@ from .logging import get_logger
 logger = get_logger(__name__)
 
 
-def pick_latest_sheet(sheet_names: List[str]) -> str:
+def pick_latest_sheet(sheet_names: list[str]) -> str:
     """从 sheet 名称列表中选择最新的季度
     
     Args:
@@ -47,7 +46,7 @@ def pick_latest_sheet(sheet_names: List[str]) -> str:
     return sheet_names[-1] if sheet_names else ""
 
 
-def read_latest_sheet_tickers(file_path: Path) -> Tuple[List[str], str]:
+def read_latest_sheet_tickers(file_path: Path) -> tuple[list[str], str]:
     """读取 Excel 文件中最新 sheet 的股票代码列表
     
     Args:
@@ -136,7 +135,7 @@ def read_excel_data(file_path: Path, sheet_name: str = None) -> pd.DataFrame:
         raise
 
 
-def get_sheet_names(file_path: Path) -> List[str]:
+def get_sheet_names(file_path: Path) -> list[str]:
     """获取 Excel 文件中所有 sheet 名称
     
     Args:
