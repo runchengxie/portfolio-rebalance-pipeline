@@ -1,4 +1,5 @@
 import pytest
+
 from stock_analysis.broker.longport_client import _to_lb_symbol
 
 

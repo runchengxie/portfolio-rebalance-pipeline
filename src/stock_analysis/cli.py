@@ -515,8 +515,8 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
                 print(f"  -> 下单失败: {e}", file=sys.stderr)
         
         # 写审计日志
-        import json
         import datetime
+        import json
         log_dir = Path("outputs/orders")
         log_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -561,8 +561,9 @@ def run_lb_account(env: str = "test", only_funds: bool = False, only_positions: 
         int: 退出码（0表示成功）
     """
     try:
-        from .broker.longport_client import LongPortClient
         import json
+
+        from .broker.longport_client import LongPortClient
         
         def snap(one_env: str):
             """获取单个环境的账户快照"""

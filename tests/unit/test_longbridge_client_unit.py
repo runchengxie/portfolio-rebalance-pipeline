@@ -1,8 +1,9 @@
-import pytest
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+import pytest
 
 from stock_analysis.broker.longport_client import LongPortClient
 
@@ -73,7 +74,7 @@ def test_candles_parameters():
 @pytest.mark.unit
 def test_submit_limit_buy_order():
     """测试提交买入限价单。"""
-    from longbridge.openapi import OrderType, OrderSide, TimeInForceType
+    from longbridge.openapi import OrderSide, OrderType, TimeInForceType
     
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="12345")
@@ -102,7 +103,7 @@ def test_submit_limit_buy_order():
 @pytest.mark.unit
 def test_submit_limit_sell_order():
     """测试提交卖出限价单。"""
-    from longbridge.openapi import OrderType, OrderSide, TimeInForceType
+    from longbridge.openapi import OrderSide, OrderType, TimeInForceType
     
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="67890")
@@ -168,7 +169,6 @@ def test_submit_limit_with_custom_tif():
 @pytest.mark.unit
 def test_decimal_precision():
     """测试价格和数量的Decimal精度处理。"""
-    from longbridge.openapi import OrderType, OrderSide, TimeInForceType
     
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="22222")

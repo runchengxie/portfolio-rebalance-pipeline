@@ -1,16 +1,16 @@
 import os
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Iterable, Tuple
 
 from dotenv import load_dotenv
 
 # 兼容性导入：优先使用 longport，回退到 longbridge
 try:
-    from longport.openapi import Config, QuoteContext, TradeContext, Market
+    from longport.openapi import Config, Market, QuoteContext, TradeContext
 except ImportError:
-    from longbridge.openapi import Config, QuoteContext, TradeContext, Market
+    from longbridge.openapi import Config, Market, QuoteContext, TradeContext
 
 # 时区支持（Python 3.9+），不可用时回退为本地时间判定
 try:
@@ -18,8 +18,7 @@ try:
 except Exception:  # pragma: no cover
     ZoneInfo = None  # type: ignore
 
-from datetime import datetime, date
-
+from datetime import date, datetime
 
 load_dotenv()
 
@@ -155,7 +154,7 @@ class LongPortClient:
         self._cache_ttl_seconds: int = 600
 
     # ---------- 读行情 ----------
-    def quote_last(self, symbols: Iterable[str]) -> Dict[str, Tuple[float, str]]:
+    def quote_last(self, symbols: Iterable[str]) -> dict[str, tuple[float, str]]:
         """Get last quotes for given symbols.
         
         Args:
@@ -164,7 +163,7 @@ class LongPortClient:
         Returns:
             Dict mapping symbol to (last_price, timestamp) tuple
         """
-        bars: Dict[str, Tuple[float, str]] = {}
+        bars: dict[str, tuple[float, str]] = {}
         symbol_list = [_to_lb_symbol(x) for x in symbols]
         ret = self.quote.quote(symbol_list)
         for i in ret:
