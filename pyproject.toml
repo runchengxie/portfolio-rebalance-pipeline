@@ -9,7 +9,7 @@ dependencies = [
     "openpyxl",
     "scipy",
     "backtrader",
-    "dotenv",
+    "python-dotenv",
     "google-genai",
     "longport>=0.2.77",
 ]

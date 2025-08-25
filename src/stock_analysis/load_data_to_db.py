@@ -132,7 +132,7 @@ def main():
         print("Processing price data...")
         price_csv = DATA_DIR / "us-shareprices-daily.csv"
         # schema.sql位于项目根目录
-        schema_sql = DATA_DIR.parent / "schema.sql"
+        schema_sql = DATA_DIR.parent / "sql" / "schema.sql"
         
         if price_csv.exists():
             # 检查文件大小，大文件优先使用CLI导入

@@ -1,118 +1,93 @@
-"""统一日志配置模块
-
-提供统一的日志配置功能，解决不同脚本使用不同日志方式的问题。
-"""
+# src/stock_analysis/utils/logging.py
+from __future__ import annotations
 
 import logging
 import sys
 from pathlib import Path
 
-from .paths import OUTPUTS_DIR
+# 这个模块其他地方已经在用
+try:
+    from .paths import OUTPUTS_DIR
+except Exception:
+    # 兜底，别因为路径模块问题再炸一次
+    OUTPUTS_DIR = Path.cwd() / "outputs"
+
+__all__ = ["setup_logging", "get_logger", "StrategyLogger"]
+
+_DEFAULT_FMT = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
+_DEFAULT_DATEFMT = "%Y-%m-%d %H:%M:%S"
 
 
-def setup_logging(
-    name: str,
-    log_file: str | None = None,
-    level: int = logging.INFO,
-    use_console: bool = True
-) -> logging.Logger:
-    """设置统一的日志配置
-    
-    Args:
-        name: 日志器名称
-        log_file: 日志文件名（可选），如果提供则会在OUTPUTS_DIR下创建日志文件
-        level: 日志级别
-        use_console: 是否同时输出到控制台
-        
-    Returns:
-        logging.Logger: 配置好的日志器
+def _ensure_outputs_dir() -> Path:
+    try:
+        OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # 最坏情况回到当前目录
+        return Path.cwd()
+    return OUTPUTS_DIR
+
+
+def setup_logging(name: str,
+                  filename: str | None = None,
+                  level: int = logging.INFO) -> logging.Logger:
+    """
+    创建/获取一个带控制台输出与可选文件输出的 logger。
+    多次调用不会重复加 handler。
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    
-    # 创建格式器
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # 控制台处理器：不存在才添加
-    if use_console and not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-    
-    # 文件处理器：按文件路径去判重
-    if log_file:
-        log_path = OUTPUTS_DIR / log_file
-        try:
-            OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            pass
-        has_same_file = any(
-            isinstance(h, logging.FileHandler) and Path(getattr(h, "baseFilename", "")) == log_path
-            for h in logger.handlers
-        )
-        if not has_same_file:
-            file_handler = logging.FileHandler(log_path, encoding='utf-8')
-            file_handler.setLevel(level)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-    
+
+    # 已经配置过就直接用，避免重复 handler
+    if getattr(logger, "_configured", False):
+        return logger
+
+    formatter = logging.Formatter(_DEFAULT_FMT, datefmt=_DEFAULT_DATEFMT)
+
+    # 控制台
+    sh = logging.StreamHandler(stream=sys.stdout)
+    sh.setLevel(level)
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+
+    # 文件
+    if filename:
+        out_dir = _ensure_outputs_dir()
+        fh_path = out_dir / filename
+        fh = logging.FileHandler(fh_path, encoding="utf-8")
+        fh.setLevel(level)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
+    logger._configured = True  # type: ignore[attr-defined]
     return logger
 
 
-class StrategyLogger:
-    """策略日志器
-    
-    提供统一的策略日志接口，兼容原有的print和logging.info两种方式。
+def get_logger(name: str) -> logging.Logger:
     """
-    
+    兼容老代码的获取函数。不给文件名的话，只配控制台。
+    需要落盘的地方自己先调一次 setup_logging(name, 'xxx.log')。
+    """
+    return setup_logging(name, filename=None)
+
+
+class StrategyLogger:
+    """
+    给回测策略用的小包装：可以走 logging，也可以退回 print。
+    """
     def __init__(self, use_logging: bool = True, logger_name: str = "strategy"):
-        """初始化策略日志器
-        
-        Args:
-            use_logging: 是否使用logging模块，False则使用print
-            logger_name: 日志器名称
-        """
         self.use_logging = use_logging
         if use_logging:
+            # 确保至少有控制台输出；文件输出让上层自行决定
             self.logger = setup_logging(logger_name)
         else:
             self.logger = None
-    
-    def log(self, message: str, dt=None) -> None:
-        """记录日志
-        
-        Args:
-            message: 日志消息
-            dt: 日期时间（可选），用于兼容原有接口
-        """
-        if dt:
-            formatted_message = f"{dt.isoformat()} - {message}"
-        else:
-            formatted_message = message
-            
+
+    def log(self, txt: str, dt=None) -> None:
         if self.use_logging and self.logger:
-            self.logger.info(formatted_message)
+            if dt is not None:
+                self.logger.info(f"{dt} - {txt}")
+            else:
+                self.logger.info(txt)
         else:
-            print(formatted_message)
-    
-    def info(self, message: str) -> None:
-        """记录信息级别日志"""
-        self.log(message)
-    
-    def warning(self, message: str) -> None:
-        """记录警告级别日志"""
-        if self.use_logging and self.logger:
-            self.logger.warning(message)
-        else:
-            print(f"WARNING: {message}")
-    
-    def error(self, message: str) -> None:
-        """记录错误级别日志"""
-        if self.use_logging and self.logger:
-            self.logger.error(message)
-        else:
-            print(f"ERROR: {message}", file=sys.stderr)
+            prefix = f"{dt} - " if dt is not None else ""
+            print(prefix + txt)

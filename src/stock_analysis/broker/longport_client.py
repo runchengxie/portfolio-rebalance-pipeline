@@ -117,11 +117,17 @@ class LongPortClient:
         default_env = getenv_both("LONGPORT_DEFAULT_ENV", "LONGBRIDGE_DEFAULT_ENV", "test")
         self.env = Env((env or default_env).lower())
         self.region = getenv_both("LONGPORT_REGION", "LONGBRIDGE_REGION", "hk")
+
         self.app_key = getenv_both("LONGPORT_APP_KEY", "LONGBRIDGE_APP_KEY")
         self.app_secret = getenv_both("LONGPORT_APP_SECRET", "LONGBRIDGE_APP_SECRET")
         self.token_test = getenv_both("LONGPORT_ACCESS_TOKEN_TEST", "LONGBRIDGE_ACCESS_TOKEN_TEST")
         self.token_real = getenv_both("LONGPORT_ACCESS_TOKEN_REAL", "LONGBRIDGE_ACCESS_TOKEN_REAL")
 
+        # 先把必需项校验干净
+        if not self.app_key or not self.app_secret:
+            raise RuntimeError("缺少 LONGPORT_APP_KEY/SECRET，请在 .env 配置。")
+
+        # 彻底移除 fallback：哪个环境就必须有哪个 token
         if self.env == Env.TEST:
             if not self.token_test:
                 raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_TEST，请在 .env 配置测试账户 token。")
@@ -131,14 +137,7 @@ class LongPortClient:
                 raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_REAL，请在 .env 配置实盘账户 token。")
             access_token = self.token_real
 
-        if not all([self.app_key, self.app_secret, access_token]):
-            raise RuntimeError("LongPort 凭据不完整，请检查 .env")
-
-        # 添加 token 检查警告
-        if self.env == Env.REAL and not self.token_real and self.token_fallback:
-            print("⚠️ REAL 环境正在使用 LONGPORT_ACCESS_TOKEN 作为后备；如果 TEST 也用它，那你其实在看同一个账户。")
-
-        # Config 会根据 token 自动识别纸交易或实盘
+        # 别再打印"REAL 正在使用 fallback"之类的提示了，相关代码整块删除
         self.config = Config(
             app_key=self.app_key,
             app_secret=self.app_secret,
@@ -149,11 +148,9 @@ class LongPortClient:
         self.trade = TradeContext(self.config)
         self.limits = limits or BrokerLimits()
 
-        # 是否允许扩展时段（盘前/盘后/隔夜）
         enable_overnight = getenv_both("LONGPORT_ENABLE_OVERNIGHT", "LONGBRIDGE_ENABLE_OVERNIGHT", "false")
         self.allow_extended = str(enable_overnight).strip().lower() in {"1", "true", "yes", "y"}
 
-        # 缓存：交易日与当日交易时段（TTL: 10分钟）
         self._session_cache: dict[str, list[tuple[int, int, str]]] = {}
         self._session_cache_expire_at: float = 0.0
         self._is_trading_day_cache: dict[str, bool] = {}
