@@ -121,12 +121,15 @@ class LongPortClient:
         self.app_secret = getenv_both("LONGPORT_APP_SECRET", "LONGBRIDGE_APP_SECRET")
         self.token_test = getenv_both("LONGPORT_ACCESS_TOKEN_TEST", "LONGBRIDGE_ACCESS_TOKEN_TEST")
         self.token_real = getenv_both("LONGPORT_ACCESS_TOKEN_REAL", "LONGBRIDGE_ACCESS_TOKEN_REAL")
-        self.token_fallback = getenv_both("LONGPORT_ACCESS_TOKEN", "LONGBRIDGE_ACCESS_TOKEN")
 
         if self.env == Env.TEST:
-            access_token = self.token_test or self.token_fallback
+            if not self.token_test:
+                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_TEST，请在 .env 配置测试账户 token。")
+            access_token = self.token_test
         else:
-            access_token = self.token_real or self.token_fallback
+            if not self.token_real:
+                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_REAL，请在 .env 配置实盘账户 token。")
+            access_token = self.token_real
 
         if not all([self.app_key, self.app_secret, access_token]):
             raise RuntimeError("LongPort 凭据不完整，请检查 .env")
