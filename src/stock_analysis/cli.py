@@ -184,21 +184,6 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-# 业务逻辑已移至 commands/ 目录
-
-
-# 所有业务逻辑已移至 commands/ 目录
-
-
-# LongPort 相关业务逻辑已移至 commands/ 目录
-
-
-# 调仓业务逻辑已移至 commands/lb_rebalance.py
-
-
-# 账户业务逻辑已移至 commands/lb_account.py
-
-
 def main() -> int:
     """主入口函数 - 只负责参数解析和命令分发
     

@@ -461,7 +461,3 @@ class LongPortClient:
             except Exception:
                 # 忽略关闭异常，避免影响主流程
                 pass
-
-
-# 兼容性别名，保持向后兼容
-LongBridgeClient = LongPortClient
