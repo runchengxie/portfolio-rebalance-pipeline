@@ -22,6 +22,11 @@ def create_parser() -> argparse.ArgumentParser:
   stockq load-data                 加载数据到数据库
   stockq ai-pick                   运行AI选股分析
   stockq lb-quote AAPL MSFT        获取实时报价
+  stockq lb-account                查看账户总览（默认test环境）
+  stockq lb-account --env real     查看真实账户总览
+  stockq lb-account --env both     同时查看test和real环境
+  stockq lb-account --funds        只显示资金信息
+  stockq lb-account --format json  JSON格式输出
   stockq lb-rebalance results.xlsx 仓位调整（干跑模式）
   stockq lb-rebalance results.xlsx --plan --budget 50000  计划模式（不受交易时段限制）
         """
@@ -147,6 +152,29 @@ def create_parser() -> argparse.ArgumentParser:
     lb_rebalance_parser.add_argument(
         "--env", choices=["test", "real"], default="test",
         help="环境选择：test 纸交易 / real 实盘（默认 test）"
+    )
+    
+    # LongPort 账户总览命令
+    lb_account_parser = subparsers.add_parser(
+        "lb-account",
+        help="查看 LongPort 账户概览",
+        description="展示资金与持仓（默认 test 环境）"
+    )
+    lb_account_parser.add_argument(
+        "--env", choices=["test", "real", "both"], default="test",
+        help="环境选择：test / real / both"
+    )
+    lb_account_parser.add_argument(
+        "--funds", action="store_true", 
+        help="只看资金"
+    )
+    lb_account_parser.add_argument(
+        "--positions", action="store_true", 
+        help="只看持仓"
+    )
+    lb_account_parser.add_argument(
+        "--format", choices=["table", "json"], default="table",
+        help="输出格式：table 表格 / json JSON格式"
     )
     
     return parser
@@ -520,6 +548,81 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
         return 1
 
 
+def run_lb_account(env: str = "test", only_funds: bool = False, only_positions: bool = False, fmt: str = "table") -> int:
+    """运行LongPort账户总览
+    
+    Args:
+        env: 环境选择（test/real/both）
+        only_funds: 只显示资金信息
+        only_positions: 只显示持仓信息
+        fmt: 输出格式（table/json）
+        
+    Returns:
+        int: 退出码（0表示成功）
+    """
+    try:
+        from .broker.longport_client import LongPortClient
+        import json
+        
+        def snap(one_env: str):
+            """获取单个环境的账户快照"""
+            try:
+                c = LongPortClient(env=one_env)
+                cash_usd, pos_map = c.portfolio_snapshot()
+                quotes = c.quote_last(pos_map.keys()) if pos_map else {}
+                # 组装展示结构：symbol, qty, last, est_value
+                rows = []
+                for sym, qty in pos_map.items():
+                    last = quotes.get(sym, (0.0, ""))[0]
+                    rows.append({
+                        "env": one_env, 
+                        "symbol": sym, 
+                        "qty": qty, 
+                        "last": last, 
+                        "est_value": round(qty * last, 2)
+                    })
+                c.close()
+                return {"env": one_env, "cash_usd": cash_usd, "positions": rows}
+            except Exception as e:
+                print(f"警告：无法获取 {one_env} 环境账户数据 ({e})，使用模拟数据", file=sys.stderr)
+                return {"env": one_env, "cash_usd": 0.0, "positions": []}
+        
+        envs = ["test", "real"] if env == "both" else [env]
+        
+        # 只读横幅
+        if env in ("real", "both"):
+            print("!!! REAL ACCOUNT DATA (READ-ONLY) !!!")
+        
+        payload = [snap(e) for e in envs if e in ("test", "real")]
+        
+        # 输出
+        if fmt == "json":
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            # 简单表格输出
+            for block in payload:
+                print(f"\n[{block['env'].upper()}] 现金(USD): ${block['cash_usd']:,.2f}")
+                if not only_funds and block['positions']:
+                    if not only_positions:
+                        print("Symbol        Qty        Last       Est.Value")
+                        print("-" * 50)
+                    for r in block["positions"]:
+                        print(f"{r['symbol']:12} {r['qty']:10} {r['last']:10.2f} ${r['est_value']:>10,.2f}")
+                elif not only_funds and not block['positions']:
+                    if not only_positions:
+                        print("无持仓")
+        
+        return 0
+        
+    except ImportError as e:
+        print(f"错误：无法导入LongPort模块 - {e}", file=sys.stderr)
+        print("请确保已安装 longport 包：pip install longport", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"账户总览失败：{e}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     """主入口函数
     
@@ -556,6 +659,13 @@ def main() -> int:
             getattr(args, 'account', 'main'),
             dry_run,
             getattr(args, 'env', 'test')
+        )
+    elif args.command == "lb-account":
+        return run_lb_account(
+            getattr(args, 'env', 'test'),
+            getattr(args, 'funds', False),
+            getattr(args, 'positions', False),
+            getattr(args, 'format', 'table')
         )
     else:
         print(f"未知命令：{args.command}", file=sys.stderr)
