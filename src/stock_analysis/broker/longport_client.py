@@ -121,15 +121,22 @@ class LongPortClient:
         self.app_secret = getenv_both("LONGPORT_APP_SECRET", "LONGBRIDGE_APP_SECRET")
         self.token_test = getenv_both("LONGPORT_ACCESS_TOKEN_TEST", "LONGBRIDGE_ACCESS_TOKEN_TEST")
         self.token_real = getenv_both("LONGPORT_ACCESS_TOKEN_REAL", "LONGBRIDGE_ACCESS_TOKEN_REAL")
-        self.token_fallback = getenv_both("LONGPORT_ACCESS_TOKEN", "LONGBRIDGE_ACCESS_TOKEN")
 
         if self.env == Env.TEST:
-            access_token = self.token_test or self.token_fallback
+            if not self.token_test:
+                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_TEST，请在 .env 配置测试账户 token。")
+            access_token = self.token_test
         else:
-            access_token = self.token_real or self.token_fallback
+            if not self.token_real:
+                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_REAL，请在 .env 配置实盘账户 token。")
+            access_token = self.token_real
 
         if not all([self.app_key, self.app_secret, access_token]):
             raise RuntimeError("LongPort 凭据不完整，请检查 .env")
+
+        # 添加 token 检查警告
+        if self.env == Env.REAL and not self.token_real and self.token_fallback:
+            print("⚠️ REAL 环境正在使用 LONGPORT_ACCESS_TOKEN 作为后备；如果 TEST 也用它，那你其实在看同一个账户。")
 
         # Config 会根据 token 自动识别纸交易或实盘
         self.config = Config(
@@ -171,57 +178,93 @@ class LongPortClient:
         return bars
 
     def portfolio_snapshot(self) -> tuple[float, dict[str, int]]:
-        """返回现金余额与持仓数量映射。
-        Returns:
-            cash_usd: 可用或总现金（USD 为主，必要时合并）
-            positions: { "AAPL.US": 100, ... }
         """
-        cash = 0.0
+        返回 (现金USD估算, 持仓映射{ 'AAPL.US': 100, ... })。
+        兼容不同 SDK 版本的 asset/balance 与 stock_positions/position_list 返回形态。
+        """
+        cash_usd = 0.0
         pos_map: dict[str, int] = {}
 
-        # 1) 现金：尽量宽松兼容不同返回结构
+        # ---------- 现金 ----------
         try:
-            # 常见：asset() 或 account_balance()
             asset_fn = getattr(self.trade, "asset", None) or getattr(self.trade, "account_balance", None)
             if asset_fn:
                 asset = asset_fn()
-                # 优先 USD，可回退到总币种合计
-                if hasattr(asset, "cash_infos") and asset.cash_infos:
-                    for ci in asset.cash_infos:
-                        ccy = getattr(ci, "currency", "") or getattr(ci, "ccy", "")
-                        amt = float(getattr(ci, "cash", 0) or getattr(ci, "available_cash", 0) or 0)
-                        if str(ccy).upper() == "USD":
-                            cash += amt
-                    if cash == 0.0:
-                        # 合计所有币种，粗暴但好用
-                        for ci in asset.cash_infos:
-                            cash += float(getattr(ci, "cash", 0) or getattr(ci, "available_cash", 0) or 0)
-                else:
-                    # 其他字段名兜底
+                # 1) 优先从 cash_infos 聚合
+                ci_list = getattr(asset, "cash_infos", None) or getattr(asset, "cash_info", None) or []
+                totals: dict[str, float] = {}
+                for ci in ci_list:
+                    ccy = str(getattr(ci, "currency", "") or getattr(ci, "ccy", "")).upper()
+                    amt = float(getattr(ci, "cash", 0) or getattr(ci, "available_cash", 0) or 0)
+                    if not ccy:
+                        continue
+                    totals[ccy] = totals.get(ccy, 0.0) + amt
+                cash_usd = totals.get("USD", 0.0) if totals else 0.0
+                # 2) 没有 USD，就把所有币种粗略相加当展示值
+                if cash_usd == 0.0 and totals:
+                    cash_usd = sum(totals.values())
+                # 3) 再不行就兜底找常见字段
+                if cash_usd == 0.0:
                     for name in ("cash", "available_cash", "total_cash"):
                         v = getattr(asset, name, None)
                         if v is not None:
-                            cash = float(v)
+                            cash_usd = float(v)
                             break
         except Exception:
-            # 实在拿不到，就当 0，后面也还能按市值算目标
-            cash = 0.0
+            pass  # 展示而已，拿不到就算了
 
-        # 2) 持仓
+        # ---------- 持仓 ----------
         try:
-            pos_fn = getattr(self.trade, "position_list", None) or getattr(self.trade, "stock_positions", None)
-            if pos_fn:
-                ret = pos_fn()
-                items = getattr(ret, "positions", None) or getattr(ret, "items", None) or ret
-                for it in items or []:
-                    sym = getattr(it, "symbol", "") or getattr(it, "stock", "")
-                    qty = getattr(it, "quantity", None) or getattr(it, "qty", None) or getattr(it, "position", None)
-                    if sym and qty:
-                        pos_map[_to_lb_symbol(str(sym))] = int(qty)
+            pos_fn = getattr(self.trade, "stock_positions", None) or getattr(self.trade, "position_list", None)
+            if not pos_fn:
+                return cash_usd, pos_map
+
+            ret = pos_fn()
+
+            # 兼容三种形态：1) 对象有 .list；2) dict 有 'list'；3) 直接是 list
+            groups = getattr(ret, "list", None)
+            if groups is None and isinstance(ret, dict):
+                groups = ret.get("list", None)
+            if groups is None:
+                groups = ret  # 有些 SDK 直接返回拍平的 list
+
+            def push(sym, qty, market=None):
+                if sym is None or qty is None:
+                    return
+                try:
+                    q = int(float(qty))
+                except Exception:
+                    return
+                s = str(sym).upper()
+                if "." not in s and market:
+                    s = f"{s}.{str(market).upper()}"
+                pos_map[s] = pos_map.get(s, 0) + q
+
+            if isinstance(groups, list):
+                for g in groups:
+                    # 形态 A：分组对象里有 stock_info 列表
+                    stock_info = getattr(g, "stock_info", None)
+                    if stock_info is None and isinstance(g, dict):
+                        stock_info = g.get("stock_info")
+
+                    if stock_info is not None:
+                        for it in stock_info:
+                            sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
+                            qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
+                            mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
+                            push(sym, qty, mkt)
+                    else:
+                        # 形态 B：已经拍平的 Position 对象
+                        it = g
+                        sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
+                        qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
+                        mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
+                        push(sym, qty, mkt)
         except Exception:
+            # 拿不到就给空，调用侧会优雅降级
             pass
 
-        return float(cash), pos_map
+        return cash_usd, pos_map
 
     def lot_size(self, symbol: str) -> int:
         """查询最小交易单位，查不到就返回 1。"""
