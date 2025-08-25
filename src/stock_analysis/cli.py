@@ -22,7 +22,13 @@ def create_parser() -> argparse.ArgumentParser:
   stockq load-data                 加载数据到数据库
   stockq ai-pick                   运行AI选股分析
   stockq lb-quote AAPL MSFT        获取实时报价
+  stockq lb-account                查看账户总览（默认test环境）
+  stockq lb-account --env real     查看真实账户总览
+  stockq lb-account --env both     同时查看test和real环境
+  stockq lb-account --funds        只显示资金信息
+  stockq lb-account --format json  JSON格式输出
   stockq lb-rebalance results.xlsx 仓位调整（干跑模式）
+  stockq lb-rebalance results.xlsx --plan --budget 50000  计划模式（不受交易时段限制）
         """
     )
     
@@ -142,9 +148,33 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="实际执行交易（关闭干跑模式）"
     )
+
     lb_rebalance_parser.add_argument(
         "--env", choices=["test", "real"], default="test",
         help="环境选择：test 纸交易 / real 实盘（默认 test）"
+    )
+    
+    # LongPort 账户总览命令
+    lb_account_parser = subparsers.add_parser(
+        "lb-account",
+        help="查看 LongPort 账户概览",
+        description="展示资金与持仓（默认 test 环境）"
+    )
+    lb_account_parser.add_argument(
+        "--env", choices=["test", "real", "both"], default="test",
+        help="环境选择：test / real / both"
+    )
+    lb_account_parser.add_argument(
+        "--funds", action="store_true", 
+        help="只看资金"
+    )
+    lb_account_parser.add_argument(
+        "--positions", action="store_true", 
+        help="只看持仓"
+    )
+    lb_account_parser.add_argument(
+        "--format", choices=["table", "json"], default="table",
+        help="输出格式：table 表格 / json JSON格式"
     )
     
     return parser
@@ -313,7 +343,10 @@ def run_lb_quote(tickers: list[str], env: str = "test") -> int:
 
 
 def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = True, env: str = "test") -> int:
-    """运行LongPort仓位调整
+    """运行LongPort差额调仓
+    
+    基于真实账户快照，计算目标仓位与当前持仓的差额，执行调仓操作。
+    无论test还是real环境，都统一走一条路径：先获取账户快照，计算差额，再决定是否真实下单。
     
     Args:
         input_file: AI选股结果文件路径
@@ -389,24 +422,97 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
         from .broker.longport_client import LongPortClient
         client = LongPortClient(env=env)
         
-        print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 仓位调整 ===")
-        print("-" * 60)
+        # 1) 获取账户快照（现金+持仓）
+        print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 差额调仓 ===")
+        print("-" * 80)
         
-        # 下单逻辑
+        try:
+            cash_usd, current_positions = client.portfolio_snapshot()
+            print(f"账户快照: 现金 ${cash_usd:,.2f} | 持仓 {len(current_positions)} 只")
+        except Exception as e:
+            print(f"警告：无法获取账户快照 ({e})，使用模拟数据")
+            cash_usd = 100000.0  # 模拟现金
+            current_positions = {}  # 模拟空仓
+        
+        # 2) 获取实时价格
+        from .broker.longport_client import _to_lb_symbol
+        lb_symbols = [_to_lb_symbol(t) for t in tickers]
+        
+        try:
+            px_map = client.quote_last(lb_symbols)
+        except Exception as e:
+            print(f"警告：无法获取实时价格 ({e})，跳过调仓")
+            client.close()
+            return 1
+        
+        # 3) 计算当前持仓市值
+        current_market_value = 0.0
+        for symbol, qty in current_positions.items():
+            px, _ = px_map.get(symbol, (0.0, ""))
+            current_market_value += float(px) * qty
+        
+        total_portfolio_value = cash_usd + current_market_value
+        print(f"当前持仓市值: ${current_market_value:,.2f} | 总资产: ${total_portfolio_value:,.2f}")
+        
+        # 4) 计算等权重目标仓位
+        N = len(tickers)
+        if N == 0:
+            print("错误：没有目标股票")
+            client.close()
+            return 1
+        
+        target_value_per_stock = total_portfolio_value / N
+        print(f"等权重分配: 每只股票目标市值 ${target_value_per_stock:,.2f}")
+        print("-" * 80)
+        
+        # 5) 计算差额并生成调仓订单
         orders = []
+        print("Symbol   | 当前价格 | 当前持仓 | 目标持仓 | 差额    | 操作")
+        print("-" * 80)
+        
         for t in tickers:
-            # 简化示例：等权分配，这里可以根据实际需求计算目标数量
-            target_qty = 10  # 简化示例，实际应该根据资金和价格计算
-            side = "BUY"  # 简化示例
+            sym = t.upper().strip()
+            lb_sym = _to_lb_symbol(sym)
+            
+            px, _ = px_map.get(lb_sym, (0.0, ""))
+            px = float(px) if px else 0.0
+            
+            if px <= 0:
+                print(f"{sym:8s} | {'N/A':8s} | {'N/A':8s} | {'N/A':8s} | {'N/A':7s} | 跳过（无价格）")
+                continue
+            
+            # 当前持仓数量
+            current_qty = current_positions.get(lb_sym, 0)
+            
+            # 目标持仓数量（按最小交易单位取整）
+            target_qty_raw = target_value_per_stock / px
+            lot = client.lot_size(lb_sym)
+            target_qty = (int(target_qty_raw) // lot) * lot
+            
+            # 计算差额
+            delta_qty = target_qty - current_qty
+            
+            if abs(delta_qty) < lot:
+                # 差额小于最小交易单位，跳过
+                print(f"{sym:8s} | {px:8.2f} | {current_qty:8d} | {target_qty:8d} | {delta_qty:7d} | 跳过（差额太小）")
+                continue
+            
+            # 确定买卖方向
+            if delta_qty > 0:
+                side = "BUY"
+                qty_to_trade = delta_qty
+            else:
+                side = "SELL"
+                qty_to_trade = abs(delta_qty)
+            
+            print(f"{sym:8s} | {px:8.2f} | {current_qty:8d} | {target_qty:8d} | {delta_qty:7d} | {side} {qty_to_trade}")
+            
+            # 执行订单
             try:
-                res = client.place_order(t, target_qty, side, dry_run=dry_run)
+                res = client.place_order(sym, qty_to_trade, side, dry_run=dry_run)
                 orders.append(res)
-                status = 'DRY' if res['dry_run'] else 'LIVE'
-                est_px = res.get('est_px', 0)
-                est_notional = res.get('est_notional', 0)
-                print(f"{status} | {t:<8} {side} x{target_qty} | 估价: ${est_px:.2f} | 金额: ${est_notional:.2f} | OK")
             except Exception as e:
-                print(f"下单跳过 {t}: {e}", file=sys.stderr)
+                print(f"  -> 下单失败: {e}", file=sys.stderr)
         
         # 写审计日志
         import json
@@ -439,6 +545,81 @@ def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = Tru
         return 1
     except Exception as e:
         print(f"仓位调整失败：{e}", file=sys.stderr)
+        return 1
+
+
+def run_lb_account(env: str = "test", only_funds: bool = False, only_positions: bool = False, fmt: str = "table") -> int:
+    """运行LongPort账户总览
+    
+    Args:
+        env: 环境选择（test/real/both）
+        only_funds: 只显示资金信息
+        only_positions: 只显示持仓信息
+        fmt: 输出格式（table/json）
+        
+    Returns:
+        int: 退出码（0表示成功）
+    """
+    try:
+        from .broker.longport_client import LongPortClient
+        import json
+        
+        def snap(one_env: str):
+            """获取单个环境的账户快照"""
+            try:
+                c = LongPortClient(env=one_env)
+                cash_usd, pos_map = c.portfolio_snapshot()
+                quotes = c.quote_last(pos_map.keys()) if pos_map else {}
+                # 组装展示结构：symbol, qty, last, est_value
+                rows = []
+                for sym, qty in pos_map.items():
+                    last = quotes.get(sym, (0.0, ""))[0]
+                    rows.append({
+                        "env": one_env, 
+                        "symbol": sym, 
+                        "qty": qty, 
+                        "last": last, 
+                        "est_value": round(qty * last, 2)
+                    })
+                c.close()
+                return {"env": one_env, "cash_usd": cash_usd, "positions": rows}
+            except Exception as e:
+                print(f"警告：无法获取 {one_env} 环境账户数据 ({e})，使用模拟数据", file=sys.stderr)
+                return {"env": one_env, "cash_usd": 0.0, "positions": []}
+        
+        envs = ["test", "real"] if env == "both" else [env]
+        
+        # 只读横幅
+        if env in ("real", "both"):
+            print("!!! REAL ACCOUNT DATA (READ-ONLY) !!!")
+        
+        payload = [snap(e) for e in envs if e in ("test", "real")]
+        
+        # 输出
+        if fmt == "json":
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            # 简单表格输出
+            for block in payload:
+                print(f"\n[{block['env'].upper()}] 现金(USD): ${block['cash_usd']:,.2f}")
+                if not only_funds and block['positions']:
+                    if not only_positions:
+                        print("Symbol        Qty        Last       Est.Value")
+                        print("-" * 50)
+                    for r in block["positions"]:
+                        print(f"{r['symbol']:12} {r['qty']:10} {r['last']:10.2f} ${r['est_value']:>10,.2f}")
+                elif not only_funds and not block['positions']:
+                    if not only_positions:
+                        print("无持仓")
+        
+        return 0
+        
+    except ImportError as e:
+        print(f"错误：无法导入LongPort模块 - {e}", file=sys.stderr)
+        print("请确保已安装 longport 包：pip install longport", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"账户总览失败：{e}", file=sys.stderr)
         return 1
 
 
@@ -478,6 +659,13 @@ def main() -> int:
             getattr(args, 'account', 'main'),
             dry_run,
             getattr(args, 'env', 'test')
+        )
+    elif args.command == "lb-account":
+        return run_lb_account(
+            getattr(args, 'env', 'test'),
+            getattr(args, 'funds', False),
+            getattr(args, 'positions', False),
+            getattr(args, 'format', 'table')
         )
     else:
         print(f"未知命令：{args.command}", file=sys.stderr)
