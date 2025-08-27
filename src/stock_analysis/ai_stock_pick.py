@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from google import genai
 from pydantic import BaseModel, Field
 
@@ -20,13 +20,20 @@ INPUT_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xl
 OUTPUT_AI_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_all_sheets.xlsx"
 COMPANY_INFO_FILE = DATA_DIR / "us-companies.csv"
 
-# --- Gemini API 配置 ---
-load_dotenv(PROJECT_ROOT / ".env")
+# --- Gemini API 配置：仅本地文件读取，不注入全局环境 ---
+_local_env = {}
+try:
+    _local_env = dotenv_values(PROJECT_ROOT / ".env") or {}
+except Exception:
+    _local_env = {}
+
+def _pick(k, default=None):
+    return (_local_env.get(k) if _local_env else None) or os.getenv(k) or default
 
 # API限制配置
-MAX_QPM = int(os.getenv("MAX_QPM", "24"))  # 每分钟最大请求数
-MAX_RETRIES = int(os.getenv("MAX_RETRIES", "6"))  # 最大重试次数
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "120"))  # 请求超时时间（秒）
+MAX_QPM = int(_pick("MAX_QPM", "24"))  # 每分钟最大请求数
+MAX_RETRIES = int(_pick("MAX_RETRIES", "6"))  # 最大重试次数
+REQUEST_TIMEOUT = int(_pick("REQUEST_TIMEOUT", "120"))  # 请求超时时间（秒）
 
 # 线程锁用于保护Excel写入操作
 WRITE_LOCK = threading.Lock()
@@ -43,14 +50,16 @@ class AIStockPick(BaseModel):
 # --- 多API Key客户端管理 ---
 def get_clients_and_limiters():
     """获取多个API key对应的客户端和限速器"""
-    # 读取最多三个 key，缺哪个就跳过
-    keys = [os.getenv("GEMINI_API_KEY"),
-            os.getenv("GEMINI_API_KEY_2"),
-            os.getenv("GEMINI_API_KEY_3")]
+    # 先看本地文件里的 key，再回退到系统环境变量
+    keys = [
+        _pick("GEMINI_API_KEY"),
+        _pick("GEMINI_API_KEY_2"),
+        _pick("GEMINI_API_KEY_3"),
+    ]
     keys = [k for k in keys if k]
     
     if not keys:
-        raise ValueError("没有可用的 GEMINI_API_KEY*")
+        raise ValueError("没有可用的 Gemini API key。请在本地 .env 或系统环境变量里提供 GEMINI_API_KEY[_2|_3]。")
     
     print(f"发现 {len(keys)} 个可用的API Key")
     
@@ -316,16 +325,16 @@ def save_sheet_result(sheet_name, df_ai_picks, output_file):
 # --- 创建Key池 ---
 def create_key_pool():
     """创建并初始化API Key池"""
-    # 读取最多三个 key
+    # 先看本地文件里的 key，再回退到系统环境变量
     keys = [
-        os.getenv("GEMINI_API_KEY"),
-        os.getenv("GEMINI_API_KEY_2"), 
-        os.getenv("GEMINI_API_KEY_3")
+        _pick("GEMINI_API_KEY"),
+        _pick("GEMINI_API_KEY_2"), 
+        _pick("GEMINI_API_KEY_3")
     ]
     keys = [k for k in keys if k]
     
     if not keys:
-        raise ValueError("没有可用的 GEMINI_API_KEY*")
+        raise ValueError("没有可用的 Gemini API key。请在本地 .env 或系统环境变量里提供 GEMINI_API_KEY[_2|_3]。")
     
     print(f"发现 {len(keys)} 个可用的API Key")
     
