@@ -304,9 +304,9 @@
     LONGPORT_APP_KEY="your_app_key_here"
     LONGPORT_APP_SECRET="your_app_secret_here"
     
-    # 根据 --env test 或 --env real 参数，程序会自动读取对应的Token
+    # 根据 --env test 或 --env real 参数自动读取对应 Token
     LONGPORT_ACCESS_TOKEN_TEST="your_test_access_token_here"
-    LONGPORT_ACCESS_TOKEN_REAL="your_real_access_token_here"
+    LONGPORT_ACCESS_TOKEN="your_real_access_token_here"
     ```
 
 3. 配置回测参数:
