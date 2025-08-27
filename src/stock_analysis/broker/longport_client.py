@@ -121,7 +121,8 @@ class LongPortClient:
         self.app_key = getenv_both("LONGPORT_APP_KEY", "LONGBRIDGE_APP_KEY")
         self.app_secret = getenv_both("LONGPORT_APP_SECRET", "LONGBRIDGE_APP_SECRET")
         self.token_test = getenv_both("LONGPORT_ACCESS_TOKEN_TEST", "LONGBRIDGE_ACCESS_TOKEN_TEST")
-        self.token_real = getenv_both("LONGPORT_ACCESS_TOKEN_REAL", "LONGBRIDGE_ACCESS_TOKEN_REAL")
+        # 实盘只认统一名，不再支持 *_REAL
+        self.token_real = os.getenv("LONGPORT_ACCESS_TOKEN")
 
         # 先把必需项校验干净
         if not self.app_key or not self.app_secret:
@@ -134,7 +135,7 @@ class LongPortClient:
             access_token = self.token_test
         else:
             if not self.token_real:
-                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_REAL，请在 .env 配置实盘账户 token。")
+                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN，请在环境或 .env 配置实盘账户 token。")
             access_token = self.token_real
 
         # 别再打印"REAL 正在使用 fallback"之类的提示了，相关代码整块删除
