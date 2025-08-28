@@ -1,13 +1,10 @@
-# 这是项目的环境配置模板。
-# 复制此文件为 .envrc (cp .envrc.example .envrc)，然后填入你的个人密钥。
-# .envrc 文件已被 gitignore，不会被提交。
+# .envrc
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
 
-# --- 敏感信息 (在此填入你的个人值) ---
-export LONGPORT_APP_KEY="your_app_key_here"
-export LONGPORT_APP_SECRET="your_app_secret_here"
-export LONGPORT_ACCESS_TOKEN="your_access_token_here"
-export LONGPORT_ACCESS_TOKEN_TEST="your_test_account_access_token_here"
-
-# --- 项目通用配置 (非敏感) ---
-# 自动激活项目的 Python 虚拟环境
-layout python .venv
+dotenv .env
+[ -d .venv ] || uv sync
+source .venv/bin/activate
