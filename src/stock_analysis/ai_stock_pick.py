@@ -47,34 +47,8 @@ class AIStockPick(BaseModel):
     reasoning: str = Field(description="详细分析，无长度限制")
 
 
-# --- 多API Key客户端管理 ---
-def get_clients_and_limiters():
-    """获取多个API key对应的客户端和限速器"""
-    # 先看本地文件里的 key，再回退到系统环境变量
-    keys = [
-        _pick("GEMINI_API_KEY"),
-        _pick("GEMINI_API_KEY_2"),
-        _pick("GEMINI_API_KEY_3"),
-    ]
-    keys = [k for k in keys if k]
-    
-    if not keys:
-        raise ValueError("没有可用的 Gemini API key。请在本地 .env 或系统环境变量里提供 GEMINI_API_KEY[_2|_3]。")
-    
-    print(f"发现 {len(keys)} 个可用的API Key")
-    
-    # 给每个 key 分到自己的 QPM 份额
-    per_key_qpm = max(1, MAX_QPM // len(keys))
-    print(f"每个API Key分配QPM: {per_key_qpm}")
-    
-    clients = []
-    for i, k in enumerate(keys, 1):
-        c = genai.Client(api_key=k)
-        limiter = RateLimiter(per_key_qpm)
-        clients.append((c, limiter))
-        print(f"  API Key {i}: 已初始化 (QPM={per_key_qpm})")
-    
-    return clients  # list of (client, limiter)
+# （已移除）旧版多 Key 客户端生成函数 get_clients_and_limiters
+# 说明：现统一使用 KeyPool（见 create_key_pool）进行 Key 管理与限流。
 
 
 # --- 限速器类 ---
