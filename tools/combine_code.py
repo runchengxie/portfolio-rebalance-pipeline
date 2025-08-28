@@ -19,7 +19,7 @@ EXCLUDE_DIRS_EXACT: set[str] = {
     ".pytest_cache",
     ".ruff_cache",
     "cache",
-    "output",
+#     "outputs",
     ".vscode",
     ".idea",
     "venv",
@@ -68,7 +68,7 @@ EXCLUDE_EXTS: set[str] = {
 EXCLUDE_FILES: set[str] = {
     OUTPUT_FILENAME,
     "full_code_text.txt",   # Exclude the old file name just in case
-    "combine_code.py"       # Exclude this py file
+    "combine_code.py",      # Exclude this py file
     ".DS_Store",
     "Thumbs.db",
     ".env",
