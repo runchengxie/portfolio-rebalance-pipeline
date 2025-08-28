@@ -3,9 +3,10 @@
 # .envrc 文件已被 gitignore，不会被提交。
 
 # --- 敏感信息 (在此填入你的个人值) ---
-export OPENAI_API_KEY="sk-xxxxxxxxxxxxxxxxxxx"
-export ACCESS_TOKEN="at-xxxxxxxxxxxxxxxxxxx"
-export DATABASE_URL="postgresql://user:password@host:port/dbname"
+export LONGPORT_APP_KEY="your_app_key_here"
+export LONGPORT_APP_SECRET="your_app_secret_here"
+export LONGPORT_ACCESS_TOKEN="your_access_token_here"
+export LONGPORT_ACCESS_TOKEN_TEST="your_test_account_access_token_here"
 
 # --- 项目通用配置 (非敏感) ---
 # 自动激活项目的 Python 虚拟环境
