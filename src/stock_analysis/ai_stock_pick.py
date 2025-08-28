@@ -179,63 +179,6 @@ class KeyPool:
         print(f"  ⚠️ API Key {slot.name} 失败，进入退避状态")
 
 
-# --- 带重试的API调用函数 ---
-def call_with_retries(client, model, prompt, schema, sheet_name=""):
-    """带指数退避重试的API调用（保留用于兼容性）"""
-    backoff_base = 0.5
-    
-    for attempt in range(MAX_RETRIES):
-        try:
-            start_time = time.time()
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": schema,
-                },
-            )
-            elapsed_time = time.time() - start_time
-            
-            if attempt > 0:
-                print(f"  重试成功 (第{attempt+1}次尝试，耗时{elapsed_time:.2f}秒)")
-            else:
-                print(f"  API调用成功 (耗时{elapsed_time:.2f}秒)")
-            
-            return response
-            
-        except Exception as e:
-            # 尝试从异常中提取状态码和Retry-After头
-            status = getattr(e, "status_code", None)
-            resp = getattr(e, "response", None)
-            if not status and hasattr(resp, "status_code"):
-                status = resp.status_code
-            
-            retry_after = None
-            if hasattr(resp, "headers") and resp.headers:
-                retry_after = resp.headers.get("Retry-After")
-            
-            # 对于可重试的错误进行重试
-            if status in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES - 1:
-                if retry_after:
-                    sleep_for = float(retry_after)
-                    print(f"  服务端要求等待 {sleep_for} 秒 (状态码: {status})")
-                else:
-                    sleep_for = min(60, backoff_base * (2 ** attempt)) + random.uniform(0, 0.5)
-                    print(f"  第{attempt+1}次重试失败 (状态码: {status})，等待 {sleep_for:.2f} 秒后重试...")
-                
-                time.sleep(sleep_for)
-                continue
-            
-            # 其他错误或重试次数用尽，直接抛出
-            print(f"  ✗ API调用失败: {e}")
-            if attempt == MAX_RETRIES - 1:
-                raise RuntimeError(f"重试次数已用尽，最后错误: {e}")
-            raise
-    
-    raise RuntimeError("重试次数已用尽")
-
-
 # --- 使用Key池的API调用函数 ---
 def call_with_pool(keypool, do_call, max_retries=6):
     """使用Key池进行带重试的API调用"""
