@@ -21,6 +21,14 @@ except Exception:  # pragma: no cover
 from datetime import date, datetime
 
 
+def get_config():
+    """返回基于环境变量的 LongPort 配置。
+
+    兼容测试中的直接调用，等价于 Config.from_env()。
+    """
+    return Config.from_env()
+
+
 
 
 def getenv_both(name_new: str, name_old: str, default: str = None) -> str:
@@ -227,10 +235,12 @@ class LongPortClient:
 
             ret = pos_fn()
 
-            # 兼容三种形态：1) 对象有 .list；2) dict 有 'list'；3) 直接是 list
-            groups = getattr(ret, "list", None)
+            # 兼容多种形态：
+            # 1) 对象有 .list；2) 对象有 .channels（新版返回）；
+            # 3) dict 有同名键；4) 直接是 list
+            groups = getattr(ret, "list", None) or getattr(ret, "channels", None)
             if groups is None and isinstance(ret, dict):
-                groups = ret.get("list", None)
+                groups = ret.get("list", None) or ret.get("channels", None)
             if groups is None:
                 groups = ret  # 有些 SDK 直接返回拍平的 list
 
@@ -248,7 +258,7 @@ class LongPortClient:
 
             if isinstance(groups, list):
                 for g in groups:
-                    # 形态 A：分组对象里有 stock_info 列表
+                    # 形态 A（旧）：分组对象里有 stock_info 列表
                     stock_info = getattr(g, "stock_info", None)
                     if stock_info is None and isinstance(g, dict):
                         stock_info = g.get("stock_info")
@@ -260,12 +270,23 @@ class LongPortClient:
                             mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
                             push(sym, qty, mkt)
                     else:
-                        # 形态 B：已经拍平的 Position 对象
-                        it = g
-                        sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
-                        qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
-                        mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
-                        push(sym, qty, mkt)
+                        # 形态 B（新）：分组里有 positions 列表（如 ret.channels[].positions）
+                        positions = getattr(g, "positions", None)
+                        if positions is None and isinstance(g, dict):
+                            positions = g.get("positions")
+                        if positions is not None:
+                            for it in positions:
+                                sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
+                                qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
+                                mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
+                                push(sym, qty, mkt)
+                        else:
+                            # 形态 C：已经拍平的 Position 对象
+                            it = g
+                            sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
+                            qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
+                            mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
+                            push(sym, qty, mkt)
         except Exception:
             # 拿不到就给空，调用侧会优雅降级
             pass
