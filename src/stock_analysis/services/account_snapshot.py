@@ -53,13 +53,9 @@ def get_account_snapshot(env: str) -> AccountSnapshot:
         )
         
     except Exception as e:
-        logger.warning(f"无法获取 {env} 环境账户数据: {e}，使用模拟数据")
-        # 返回模拟数据
-        return AccountSnapshot(
-            env=env,
-            cash_usd=0.0 if env == "real" else 100000.0,
-            positions=[]
-        )
+        logger.error(f"无法获取 {env} 环境账户数据: {e}")
+        # 让调用方感受到真实的痛苦，而不是假快乐
+        raise RuntimeError(f"{env} 环境账户数据获取失败: {e}") from e
 
 
 def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
