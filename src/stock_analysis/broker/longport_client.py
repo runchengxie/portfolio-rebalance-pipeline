@@ -138,12 +138,20 @@ class LongPortClient:
                 raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN（或兼容 LONGPORT_ACCESS_TOKEN_REAL）。请通过系统环境变量注入。")
             access_token = self.token_real
 
-        # 别再打印"REAL 正在使用 fallback"之类的提示了，相关代码整块删除
-        self.config = Config(
-            app_key=self.app_key,
-            app_secret=self.app_secret,
-            access_token=access_token,
-        )
+        # 通过环境变量注入 token/region，再用 SDK 的 from_env 选择正确端点与默认配置
+        self._prev_env = {
+            "LONGPORT_APP_KEY": os.getenv("LONGPORT_APP_KEY"),
+            "LONGPORT_APP_SECRET": os.getenv("LONGPORT_APP_SECRET"),
+            "LONGPORT_ACCESS_TOKEN": os.getenv("LONGPORT_ACCESS_TOKEN"),
+            "LONGPORT_REGION": os.getenv("LONGPORT_REGION"),
+        }
+        os.environ["LONGPORT_APP_KEY"] = self.app_key
+        os.environ["LONGPORT_APP_SECRET"] = self.app_secret
+        os.environ["LONGPORT_ACCESS_TOKEN"] = access_token
+        if self.region:
+            os.environ["LONGPORT_REGION"] = self.region
+        # 统一走 SDK 推荐的 from_env，确保使用正确的区域与路由
+        self.config = Config.from_env()
 
         self.quote = QuoteContext(self.config)
         self.trade = TradeContext(self.config)
@@ -459,3 +467,13 @@ class LongPortClient:
             except Exception:
                 # 忽略关闭异常，避免影响主流程
                 pass
+        # 恢复环境变量，避免影响后续实例或进程中的其他用法
+        try:
+            for k, v in (getattr(self, "_prev_env", {}) or {}).items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        except Exception:
+            # 任何恢复失败都不应影响调用方
+            pass
