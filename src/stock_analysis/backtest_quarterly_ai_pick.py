@@ -46,7 +46,7 @@ def main():
 
     # 从配置文件获取统一的回测时间范围
     BACKTEST_START_DATE, BACKTEST_END_DATE = get_backtest_period(portfolios)
-    
+
     # 从配置文件获取初始资金
     initial_cash = get_initial_cash("ai")
 
@@ -82,7 +82,7 @@ def main():
         end_date=BACKTEST_END_DATE,
         use_logging=True,  # AI版本使用logging
         add_observers=True,  # AI版本添加观察器
-        add_annual_return=True  # AI版本添加年化收益分析器
+        add_annual_return=True,  # AI版本添加年化收益分析器
     )
 
     # 生成报告
@@ -91,10 +91,9 @@ def main():
         metrics=metrics,
         title="AI Quarterly Strategy Backtest Results",
         portfolio_value=portfolio_value,
-        output_png=output_png
+        output_png=output_png,
     )
 
 
 if __name__ == "__main__":
     main()
-    

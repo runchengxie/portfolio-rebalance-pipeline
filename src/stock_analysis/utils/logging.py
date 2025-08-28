@@ -27,9 +27,9 @@ def _ensure_outputs_dir() -> Path:
     return OUTPUTS_DIR
 
 
-def setup_logging(name: str,
-                  filename: str | None = None,
-                  level: int = logging.INFO) -> logging.Logger:
+def setup_logging(
+    name: str, filename: str | None = None, level: int = logging.INFO
+) -> logging.Logger:
     """
     创建/获取一个带控制台输出与可选文件输出的 logger。
     多次调用不会重复加 handler。
@@ -74,6 +74,7 @@ class StrategyLogger:
     """
     给回测策略用的小包装：可以走 logging，也可以退回 print。
     """
+
     def __init__(self, use_logging: bool = True, logger_name: str = "strategy"):
         self.use_logging = use_logging
         if use_logging:

@@ -315,7 +315,7 @@
     pip install -e .
 
     # 或者使用uv，开发环境下使用
-    uv sync
+    uv sync --extra dev
     # CI/发布环境
     uv sync --locked
     ```
