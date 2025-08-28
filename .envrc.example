@@ -1,0 +1,10 @@
+# .envrc
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
+dotenv .env
+[ -d .venv ] || uv sync
+source .venv/bin/activate

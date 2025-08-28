@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
-from dotenv import load_dotenv
+
 
 # 兼容性导入：优先使用 longport，回退到 longbridge
 try:
@@ -20,7 +20,15 @@ except Exception:  # pragma: no cover
 
 from datetime import date, datetime
 
-load_dotenv()
+
+def get_config():
+    """返回基于环境变量的 LongPort 配置。
+
+    兼容测试中的直接调用，等价于 Config.from_env()。
+    """
+    return Config.from_env()
+
+
 
 
 def getenv_both(name_new: str, name_old: str, default: str = None) -> str:
@@ -117,43 +125,49 @@ class LongPortClient:
         default_env = getenv_both("LONGPORT_DEFAULT_ENV", "LONGBRIDGE_DEFAULT_ENV", "test")
         self.env = Env((env or default_env).lower())
         self.region = getenv_both("LONGPORT_REGION", "LONGBRIDGE_REGION", "hk")
+
         self.app_key = getenv_both("LONGPORT_APP_KEY", "LONGBRIDGE_APP_KEY")
         self.app_secret = getenv_both("LONGPORT_APP_SECRET", "LONGBRIDGE_APP_SECRET")
         self.token_test = getenv_both("LONGPORT_ACCESS_TOKEN_TEST", "LONGBRIDGE_ACCESS_TOKEN_TEST")
-        self.token_real = getenv_both("LONGPORT_ACCESS_TOKEN_REAL", "LONGBRIDGE_ACCESS_TOKEN_REAL")
+        # 实盘优先 LONGPORT_ACCESS_TOKEN，兼容历史 LONGPORT_ACCESS_TOKEN_REAL
+        self.token_real = os.getenv("LONGPORT_ACCESS_TOKEN") or os.getenv("LONGPORT_ACCESS_TOKEN_REAL")
 
+        # 先把必需项校验干净
+        if not self.app_key or not self.app_secret:
+            raise RuntimeError("缺少 LONGPORT_APP_KEY/SECRET。请通过系统环境变量注入。")
+
+        # 彻底移除 fallback：哪个环境就必须有哪个 token
         if self.env == Env.TEST:
             if not self.token_test:
-                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_TEST，请在 .env 配置测试账户 token。")
+                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_TEST。请通过系统环境变量注入。")
             access_token = self.token_test
         else:
             if not self.token_real:
-                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN_REAL，请在 .env 配置实盘账户 token。")
+                raise RuntimeError("缺少 LONGPORT_ACCESS_TOKEN（或兼容 LONGPORT_ACCESS_TOKEN_REAL）。请通过系统环境变量注入。")
             access_token = self.token_real
 
-        if not all([self.app_key, self.app_secret, access_token]):
-            raise RuntimeError("LongPort 凭据不完整，请检查 .env")
-
-        # 添加 token 检查警告
-        if self.env == Env.REAL and not self.token_real and self.token_fallback:
-            print("⚠️ REAL 环境正在使用 LONGPORT_ACCESS_TOKEN 作为后备；如果 TEST 也用它，那你其实在看同一个账户。")
-
-        # Config 会根据 token 自动识别纸交易或实盘
-        self.config = Config(
-            app_key=self.app_key,
-            app_secret=self.app_secret,
-            access_token=access_token,
-        )
+        # 通过环境变量注入 token/region，再用 SDK 的 from_env 选择正确端点与默认配置
+        self._prev_env = {
+            "LONGPORT_APP_KEY": os.getenv("LONGPORT_APP_KEY"),
+            "LONGPORT_APP_SECRET": os.getenv("LONGPORT_APP_SECRET"),
+            "LONGPORT_ACCESS_TOKEN": os.getenv("LONGPORT_ACCESS_TOKEN"),
+            "LONGPORT_REGION": os.getenv("LONGPORT_REGION"),
+        }
+        os.environ["LONGPORT_APP_KEY"] = self.app_key
+        os.environ["LONGPORT_APP_SECRET"] = self.app_secret
+        os.environ["LONGPORT_ACCESS_TOKEN"] = access_token
+        if self.region:
+            os.environ["LONGPORT_REGION"] = self.region
+        # 统一走 SDK 推荐的 from_env，确保使用正确的区域与路由
+        self.config = Config.from_env()
 
         self.quote = QuoteContext(self.config)
         self.trade = TradeContext(self.config)
         self.limits = limits or BrokerLimits()
 
-        # 是否允许扩展时段（盘前/盘后/隔夜）
         enable_overnight = getenv_both("LONGPORT_ENABLE_OVERNIGHT", "LONGBRIDGE_ENABLE_OVERNIGHT", "false")
         self.allow_extended = str(enable_overnight).strip().lower() in {"1", "true", "yes", "y"}
 
-        # 缓存：交易日与当日交易时段（TTL: 10分钟）
         self._session_cache: dict[str, list[tuple[int, int, str]]] = {}
         self._session_cache_expire_at: float = 0.0
         self._is_trading_day_cache: dict[str, bool] = {}
@@ -221,10 +235,12 @@ class LongPortClient:
 
             ret = pos_fn()
 
-            # 兼容三种形态：1) 对象有 .list；2) dict 有 'list'；3) 直接是 list
-            groups = getattr(ret, "list", None)
+            # 兼容多种形态：
+            # 1) 对象有 .list；2) 对象有 .channels（新版返回）；
+            # 3) dict 有同名键；4) 直接是 list
+            groups = getattr(ret, "list", None) or getattr(ret, "channels", None)
             if groups is None and isinstance(ret, dict):
-                groups = ret.get("list", None)
+                groups = ret.get("list", None) or ret.get("channels", None)
             if groups is None:
                 groups = ret  # 有些 SDK 直接返回拍平的 list
 
@@ -242,7 +258,7 @@ class LongPortClient:
 
             if isinstance(groups, list):
                 for g in groups:
-                    # 形态 A：分组对象里有 stock_info 列表
+                    # 形态 A（旧）：分组对象里有 stock_info 列表
                     stock_info = getattr(g, "stock_info", None)
                     if stock_info is None and isinstance(g, dict):
                         stock_info = g.get("stock_info")
@@ -254,12 +270,23 @@ class LongPortClient:
                             mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
                             push(sym, qty, mkt)
                     else:
-                        # 形态 B：已经拍平的 Position 对象
-                        it = g
-                        sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
-                        qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
-                        mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
-                        push(sym, qty, mkt)
+                        # 形态 B（新）：分组里有 positions 列表（如 ret.channels[].positions）
+                        positions = getattr(g, "positions", None)
+                        if positions is None and isinstance(g, dict):
+                            positions = g.get("positions")
+                        if positions is not None:
+                            for it in positions:
+                                sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
+                                qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
+                                mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
+                                push(sym, qty, mkt)
+                        else:
+                            # 形态 C：已经拍平的 Position 对象
+                            it = g
+                            sym = getattr(it, "symbol", None) if not isinstance(it, dict) else it.get("symbol")
+                            qty = getattr(it, "quantity", None) if not isinstance(it, dict) else it.get("quantity")
+                            mkt = getattr(it, "market", None) if not isinstance(it, dict) else it.get("market")
+                            push(sym, qty, mkt)
         except Exception:
             # 拿不到就给空，调用侧会优雅降级
             pass
@@ -315,7 +342,7 @@ class LongPortClient:
         # 刷新“今天是否交易日”缓存（按市场）
         if now_ts >= self._day_cache_expire_at:
             try:
-                today = date.today()
+                date.today()
                 # 我们只在用到某个市场时再填充，先清空
                 self._is_trading_day_cache = {}
                 self._day_cache_expire_at = now_ts + self._cache_ttl_seconds
@@ -461,7 +488,13 @@ class LongPortClient:
             except Exception:
                 # 忽略关闭异常，避免影响主流程
                 pass
-
-
-# 兼容性别名，保持向后兼容
-LongBridgeClient = LongPortClient
+        # 恢复环境变量，避免影响后续实例或进程中的其他用法
+        try:
+            for k, v in (getattr(self, "_prev_env", {}) or {}).items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        except Exception:
+            # 任何恢复失败都不应影响调用方
+            pass

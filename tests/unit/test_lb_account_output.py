@@ -8,7 +8,6 @@
 """
 
 import json
-import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -291,26 +290,18 @@ class TestLBAccountErrorHandling:
         err = capsys.readouterr().err
         assert "账户总览失败" in err
     
-    def test_portfolio_snapshot_error_fallback(self, capsys):
-        """测试portfolio_snapshot错误时的fallback处理"""
+    def test_portfolio_snapshot_error_no_fallback(self, capsys):
+        """错误时应直接失败并返回非零退出码，不再使用模拟数据"""
         mock_client = Mock()
         mock_client.portfolio_snapshot.side_effect = Exception("API Error")
         mock_client.close.return_value = None
-        
+
         with patch("stock_analysis.cli.LongPortClient", return_value=mock_client):
             result = cli.run_lb_account(env="test", fmt="json")
-        
-        assert result == 0  # 应该成功，使用模拟数据
-        out = capsys.readouterr().out
-        err = capsys.readouterr().err
-        
-        # 应该有警告信息
-        assert "警告：无法获取 test 环境账户数据" in err
-        
-        # JSON输出应该包含模拟数据
-        data = json.loads(out)
-        assert data[0]["cash_usd"] == 0.0
-        assert data[0]["positions"] == []
+
+        assert result == 1  # 现在应直接失败
+        captured = capsys.readouterr()
+        assert "账户总览失败" in captured.err
 
 
 @pytest.mark.unit
