@@ -176,7 +176,7 @@
 
 此阶段利用财务数据快速筛选出一个具备良好基本面特征的股票池。
 
-1. 多因子模型: 结合多个财务指标来综合评估公司质量。本策略使用的因子及其权重在 src/stock_analysis/preliminary_selection.py 的 FACTOR_WEIGHTS 中定义：
+1. 多因子模型: 结合多个财务指标来综合评估公司质量。本策略使用的因子及其权重在 `src/stock_analysis/preliminary_selection.py` 的 `FACTOR_WEIGHTS` 中定义。
 
     * `cfo` (经营活动现金流): 正向因子，越高越好。
 
@@ -192,13 +192,13 @@
 
 2. 滚动窗口平滑: 采用 5 年滚动窗口计算因子得分的平均值，以获得更稳健的排名。
 
-3. 初步筛选: 在每个季度，选出滚动平均因子分排名前 20 的股票，作为 AI 分析的候选列表。
+3. 初步筛选: 在每个季度，选出滚动平均因子分排名前20的股票，作为 AI 分析的候选列表。
 
 ### 阶段二：Gemini AI 精选与分析
 
 此阶段利用大型语言模型对初选列表进行更深层次的定性与半定量分析。
 
-1. AI 分析框架: ai_stock_pick.py 脚本为每个季度的前 20 名候选股构建详细的提示（Prompt），要求 Gemini 模型扮演价值投资者的角色，从以下四个维度进行分析：
+1. AI 分析框架: `ai_stock_pick.py` 脚本为每个季度的前20名候选股构建详细的提示，要求Gemini模型扮演价值投资者的角色，从基本面、投资逻辑、行业地位和催化因素四个维度进行分析。
 
     * 基本面分析: 审视营收、利润率和现金流的健康状况。
 
@@ -208,7 +208,7 @@
 
     * 催化因素观察: 识别潜在的短期或中期催化剂。
 
-2. AI 决策: Gemini 模型根据上述框架，从 20 只候选股中筛选出它认为最具投资潜力的 10 只股票，并为每只股票提供一个置信度分数和详细的选股理由。
+2. AI 决策: Gemini 模型根据上述框架，从20只候选股中筛选出它认为最具投资潜力的10只股票，并为每只股票提供一个置信度分数和详细的选股理由。
 
 3. 结构化输出: AI 的选股结果被解析为结构化的 JSON 数据，便于后续分析和回测。
 
@@ -227,22 +227,31 @@
 │   └── stock_analysis/
 │       ├── __init__.py
 │       ├── ai_stock_pick.py      # AI选股与API管理核心逻辑
-│       ├── cli.py                  # 命令行接口实现
+│       ├── cli.py                  # 命令行接口定义
 │       ├── preliminary_selection.py  # 量化初筛逻辑
-│       ├── backtest/
+│       ├── backtest/               # 回测引擎与数据准备
+│       │   ├── engine.py
+│       │   └── prep.py
+│       ├── broker/                 # 券商API客户端
+│       │   └── longport_client.py
+│       ├── commands/               # 命令处理层 (胶水代码)
 │       │   ├── __init__.py
-│       │   ├── engine.py           # 回测策略类与运行器
-│       │   └── prep.py             # 投资组合加载与数据对齐
-│       ├── broker/
-│       │   ├── __init__.py
-│       │   └── longport_client.py  # LongPort API 客户端
-│       └── utils/
-│           ├── __init__.py
-│           ├── config.py           # 配置加载器
-│           ├── logging.py          # 日志配置
-│           └── paths.py            # 全局路径管理
-├── tests/
-│   └── ... (单元测试)
+│       │   ├── ai_pick.py
+│       │   ├── backtest.py
+│       │   ├── lb_account.py
+│       │   ├── lb_quote.py
+│       │   ├── lb_rebalance.py
+│       │   └── ...
+│       ├── services/               # 业务逻辑层
+│       │   ├── account_snapshot.py
+│       │   └── rebalancer.py
+│       ├── renderers/              # 输出渲染层
+│       │   ├── jsonout.py
+│       │   └── table.py
+│       └── utils/                  # 通用工具 (配置、日志、路径)
+│           ├── config.py
+│           ├── logging.py
+│           └── paths.py
 ├── .env
 ├── pyproject.toml
 └── README.md
@@ -264,6 +273,8 @@
 
 6. us-companies.csv: 公司基本信息，用于丰富报告。
 
+*本项目使用的原始数据可从SimFin获取。请确保下载的CSV文件格式与说明一致。*
+
 ## 如何运行
 
 这是一个多步骤的工作流。请严格按顺序执行以下命令。
@@ -280,6 +291,9 @@
     pip install --upgrade pip
     # 从项目根目录运行
     pip install -e .
+
+    # 或者使用uv
+    uv sync 
     ```
 
 2. 配置API密钥:
