@@ -278,6 +278,25 @@
 
 *本项目使用的原始数据可从SimFin获取。请确保下载的CSV文件格式与说明一致。*
 
+## 输出文件
+
+脚本执行成功后，会在`outputs/`目录下生成以下文件：
+
+* `point_in_time_backtest_quarterly_sp500_historical.xlsx`: [量化初筛结果] 每个季度筛选出的前 20 名候选股票。
+
+* `point_in_time_ai_stock_picks_all_sheets.xlsx`: [AI 精选结果] AI 从候选池中筛选出的 10 只股票，包含置信度和详细理由。
+
+* `ai_quarterly_strategy_returns.png`: [AI 策略回测图] 最终 AI 精选组合的累计收益曲线图。
+
+* `quarterly_strategy_returns.png`: [量化策略回测图] (可选) 未经 AI 筛选的量化组合的回测表现图。
+
+* `spy_benchmark_returns.png`: [SPY 基准回测图] (可选) SPY ETF 的同期表现图。
+
+* `ai_backtest.log`: AI 策略回测期间的详细日志。
+
+* `rebalancing_diagnostics_log.csv`: 回测诊断日志，记录模型选股与实际可交易股票的差异。
+
+
 ## 如何运行
 
 这是一个多步骤的工作流。请严格按顺序执行以下命令。
@@ -341,28 +360,6 @@
     end: 2025-07-02
     initial_cash: 1000000
     ```
-
-## 输出文件
-
-脚本执行成功后，会在 outputs/ 目录下生成以下文件：
-
-* point_in_time_backtest_quarterly_sp500_historical.xlsx: [量化初筛结果] 每个季度筛选出的前 20 名候选股票。
-
-* point_in_time_ai_stock_picks_all_sheets.xlsx: [AI 精选结果] AI 从候选池中筛选出的 10 只股票，包含置信度和详细理由。
-
-* ai_quarterly_strategy_returns.png: [AI 策略回测图] 最终 AI 精选组合的累计收益曲线图。
-
-* quarterly_strategy_returns.png: [量化策略回测图] (可选) 未经 AI 筛选的量化组合的回测表现图。
-
-* spy_benchmark_returns.png: [SPY 基准回测图] (可选) SPY ETF 的同期表现图。
-
-* ai_backtest.log: AI 策略回测期间的详细日志。
-
-* rebalancing_diagnostics_log.csv: 回测诊断日志，记录模型选股与实际可交易股票的差异。
-
-## 数据源
-
-本项目使用的原始数据可从SimFin获取。请确保下载的CSV文件格式与说明一致。
 
 ## 项目测试
 
