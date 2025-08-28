@@ -1,0 +1,12 @@
+# 这是项目的环境配置模板。
+# 复制此文件为 .envrc (cp .envrc.example .envrc)，然后填入你的个人密钥。
+# .envrc 文件已被 gitignore，不会被提交。
+
+# --- 敏感信息 (在此填入你的个人值) ---
+export OPENAI_API_KEY="sk-xxxxxxxxxxxxxxxxxxx"
+export ACCESS_TOKEN="at-xxxxxxxxxxxxxxxxxxx"
+export DATABASE_URL="postgresql://user:password@host:port/dbname"
+
+# --- 项目通用配置 (非敏感) ---
+# 自动激活项目的 Python 虚拟环境
+layout python .venv
