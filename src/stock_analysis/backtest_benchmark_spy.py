@@ -20,10 +20,10 @@ def main():
     start_date, end_date = get_backtest_period()
     start_datetime = datetime.datetime.combine(start_date, datetime.time())
     end_datetime = datetime.datetime.combine(end_date, datetime.time())
-    
+
     # 从配置文件获取初始资金
     initial_cash = get_initial_cash("spy")
-    
+
     print(f"Backtest period: {start_date} to {end_date}")
     print(f"Initial cash: ${initial_cash:,.2f}")
 
@@ -36,9 +36,7 @@ def main():
 
     # 运行基准回测
     portfolio_value, metrics = run_benchmark_backtest(
-        data=spy_data,
-        initial_cash=initial_cash,
-        ticker=SPY_TICKER
+        data=spy_data, initial_cash=initial_cash, ticker=SPY_TICKER
     )
 
     # 生成报告
@@ -47,7 +45,7 @@ def main():
         metrics=metrics,
         title="SPY Benchmark Results (Total Return)",
         portfolio_value=portfolio_value,
-        output_png=output_png
+        output_png=output_png,
     )
 
 

@@ -34,7 +34,7 @@ def main():
 
     # 从配置文件获取统一的回测时间范围
     BACKTEST_START_DATE, BACKTEST_END_DATE = get_backtest_period(portfolios)
-    
+
     # 从配置文件获取初始资金
     initial_cash = get_initial_cash("quant")
 
@@ -70,7 +70,7 @@ def main():
         end_date=BACKTEST_END_DATE,
         use_logging=False,  # 未精选版本使用print
         add_observers=False,  # 未精选版本不添加观察器
-        add_annual_return=False  # 未精选版本不添加年化收益分析器
+        add_annual_return=False,  # 未精选版本不添加年化收益分析器
     )
 
     # 生成报告
@@ -79,7 +79,7 @@ def main():
         metrics=metrics,
         title="Quarterly Point-in-Time Strategy Backtest Results",
         portfolio_value=portfolio_value,
-        output_png=output_png
+        output_png=output_png,
     )
 
 

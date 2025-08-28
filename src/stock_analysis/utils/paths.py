@@ -8,7 +8,7 @@ from pathlib import Path
 
 def get_project_root() -> Path:
     """获取项目根目录路径
-    
+
     Returns:
         Path: 项目根目录路径
     """
@@ -33,7 +33,9 @@ DB_PATH = DATA_DIR / "financial_data.db"
 
 # 默认的组合文件路径
 AI_PORTFOLIO_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_all_sheets.xlsx"
-QUANT_PORTFOLIO_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
+QUANT_PORTFOLIO_FILE = (
+    OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
+)
 
 # 回测配置常量
 DEFAULT_INITIAL_CASH = 1_000_000.0
