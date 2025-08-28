@@ -45,6 +45,9 @@ strategy_full_project_source.txt
 # Environment variables
 .env
 
+# Ignore direnv environment file
+.envrc
+
 # Unit test / coverage reports
 .coverage
 
