@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv",
     "google-genai",
     "longport>=0.2.77",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]
