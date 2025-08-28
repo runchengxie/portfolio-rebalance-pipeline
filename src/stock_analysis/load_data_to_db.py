@@ -57,7 +57,7 @@ def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) ->
             cmd.extend(["-cmd", command])
         cmd.append(".quit")
         
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
         print("    - SQLite CLI import completed successfully")
         return True
         
@@ -132,7 +132,7 @@ def main():
         print("Processing price data...")
         price_csv = DATA_DIR / "us-shareprices-daily.csv"
         # schema.sql位于项目根目录
-        schema_sql = DATA_DIR.parent / "schema.sql"
+        schema_sql = DATA_DIR.parent / "sql" / "schema.sql"
         
         if price_csv.exists():
             # 检查文件大小，大文件优先使用CLI导入

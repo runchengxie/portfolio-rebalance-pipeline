@@ -48,14 +48,14 @@ def test_cli_dispatch_lb_rebalance(monkeypatch):
     assert result == 0
     assert called["input_file"] == "test.xlsx"
     assert called["account"] == "main"
-    assert called["dry_run"] == True
+    assert called["dry_run"]
     
     # 测试自定义参数
     result = cli.run_lb_rebalance("test2.xlsx", "account2", False)
     assert result == 0
     assert called["input_file"] == "test2.xlsx"
     assert called["account"] == "account2"
-    assert called["dry_run"] == False
+    assert not called["dry_run"]
 
 
 @pytest.mark.unit

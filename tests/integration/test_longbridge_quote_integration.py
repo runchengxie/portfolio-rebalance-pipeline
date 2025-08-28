@@ -70,7 +70,7 @@ def test_quote_last_real_api():
             # 验证数据类型和合理性
             assert isinstance(symbol, str)
             assert symbol.endswith((".US", ".HK", ".SG"))
-            assert isinstance(price, (int, float))
+            assert isinstance(price, int | float)
             assert price > 0  # 股价应该为正数
             assert isinstance(timestamp, int)
             assert timestamp > 0  # 时间戳应该为正数

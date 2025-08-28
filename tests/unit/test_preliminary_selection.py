@@ -7,17 +7,16 @@
 - tie-break规则的稳定性
 """
 
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 import pytest
-from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 from stock_analysis.preliminary_selection import (
-    calculate_factors_point_in_time,
     calc_factor_scores,
-    FACTOR_WEIGHTS,
-    tidy_ticker
+    calculate_factors_point_in_time,
 )
 
 

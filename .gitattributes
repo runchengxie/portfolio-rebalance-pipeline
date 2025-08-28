@@ -1,2 +1,7 @@
-# Auto detect text files and perform LF normalization
+# 自动检测并执行LF转化
 * text=auto
+
+# 强制以下文件使用LF
+.env text eol=lf
+*.env text eol=lf
+*.sh  text eol=lf

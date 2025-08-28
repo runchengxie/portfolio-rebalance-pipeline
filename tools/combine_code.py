@@ -30,7 +30,7 @@ EXCLUDE_DIRS_EXACT: set[str] = {
     "logs",
     "renv",
     "docs_extra",
-    "tools",
+#     "tools",
     "tests",
 }
 
@@ -67,10 +67,15 @@ EXCLUDE_EXTS: set[str] = {
 
 EXCLUDE_FILES: set[str] = {
     OUTPUT_FILENAME,
-    "full_code_text.txt",  # Exclude the old file name just in case
+    "full_code_text.txt",   # Exclude the old file name just in case
+    "combine_code.py"       # Exclude this py file
     ".DS_Store",
     "Thumbs.db",
     ".env",
+    "uv.lock",
+    ".gitignore",
+    ".gitattributes",
+    ".pre-commit-config.yaml"
 }
 
 

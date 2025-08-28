@@ -9,14 +9,11 @@
 """
 
 import json
-import pytest
 from types import SimpleNamespace
-from unittest.mock import Mock
 
-from stock_analysis.ai_stock_pick import (
-    AIStockPick,
-    parse_response_robust
-)
+import pytest
+
+from stock_analysis.ai_stock_pick import AIStockPick, parse_response_robust
 
 
 @pytest.mark.unit

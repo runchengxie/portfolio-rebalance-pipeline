@@ -419,7 +419,7 @@ class TestCLIIntegration:
         
         if subparsers_actions:
             subparsers = subparsers_actions[0]
-            for choice, subparser in subparsers.choices.items():
+            for _choice, subparser in subparsers.choices.items():
                 assert subparser.description is not None
                 assert len(subparser.description) > 0
     

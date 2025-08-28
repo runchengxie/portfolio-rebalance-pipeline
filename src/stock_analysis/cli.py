@@ -1,3 +1,7 @@
+"""命令行接口模块
+
+只负责参数解析和命令分发，不包含业务逻辑。
+"""
 import argparse
 import sys
 
@@ -180,452 +184,8 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_backtest(strategy: str, config_path: str | None = None) -> int:
-    """运行回测分析
-    
-    Args:
-        strategy: 策略类型 ('ai', 'quant', 'spy')
-        config_path: 配置文件路径（可选）
-        
-    Returns:
-        int: 退出码（0表示成功）
-    """
-    try:
-        print(f"正在运行 {strategy.upper()} 策略回测...")
-        
-        if strategy == "ai":
-            from .backtest_quarterly_ai_pick import main as ai_main
-            ai_main()
-        elif strategy == "quant":
-            from .backtest_quarterly_unpicked import main as quant_main
-            quant_main()
-        elif strategy == "spy":
-            from .backtest_benchmark_spy import main as spy_main
-            spy_main()
-        
-        print(f"{strategy.upper()} 策略回测完成！")
-        return 0
-        
-    except ImportError as e:
-        print(f"错误：无法导入回测模块 - {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"回测执行失败：{e}", file=sys.stderr)
-        return 1
-
-
-def run_load_data(data_dir: str | None = None) -> int:
-    """运行数据加载
-    
-    Args:
-        data_dir: 数据目录路径（可选）
-        
-    Returns:
-        int: 退出码（0表示成功）
-    """
-    try:
-        print("正在加载数据到数据库...")
-        
-        if data_dir:
-            # 如果指定了数据目录，需要临时修改路径配置
-            print(f"使用指定数据目录：{data_dir}")
-            # 这里可以添加路径配置逻辑
-        
-        from .load_data_to_db import main as load_main
-        load_main()
-        
-        print("数据加载完成！")
-        return 0
-        
-    except ImportError as e:
-        print(f"错误：无法导入数据加载模块 - {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"数据加载失败：{e}", file=sys.stderr)
-        return 1
-
-
-def run_preliminary(output_dir: str | None = None) -> int:
-    """运行量化初筛选股
-    
-    Args:
-        output_dir: 输出目录路径（可选）
-        
-    Returns:
-        int: 退出码（0表示成功）
-    """
-    try:
-        print("正在运行量化初筛选股...")
-        
-        if output_dir:
-            print(f"输出目录：{output_dir}")
-            # 这里可以添加输出目录配置逻辑
-        
-        from .preliminary_selection import main as prelim_main
-        prelim_main()
-        
-        print("量化初筛选股完成！")
-        return 0
-        
-    except ImportError as e:
-        print(f"错误：无法导入量化初筛模块 - {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"量化初筛选股失败：{e}", file=sys.stderr)
-        return 1
-
-
-def run_ai_pick(quarter: str | None = None, output: str | None = None) -> int:
-    """运行AI选股分析
-    
-    Args:
-        quarter: 指定季度（可选）
-        output: 输出文件路径（可选）
-        
-    Returns:
-        int: 退出码（0表示成功）
-    """
-    try:
-        print("正在运行AI选股分析...")
-        
-        if quarter:
-            print(f"指定季度：{quarter}")
-        if output:
-            print(f"输出文件：{output}")
-        
-        from .ai_stock_pick import main as ai_pick_main
-        ai_pick_main()
-        
-        print("AI选股分析完成！")
-        return 0
-        
-    except ImportError as e:
-        print(f"错误：无法导入AI选股模块 - {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"AI选股分析失败：{e}", file=sys.stderr)
-        return 1
-
-
-def run_lb_quote(tickers: list[str], env: str = "test") -> int:
-    """运行LongPort实时报价查询
-    
-    Args:
-        tickers: 股票代码列表
-        env: 环境选择（test或real）
-        
-    Returns:
-        int: 退出码（0表示成功）
-    """
-    try:
-        print(f"正在获取 {', '.join(tickers)} 的实时报价...")
-        print(f"环境: {env.upper()}")
-        
-        from .broker.longport_client import LongPortClient
-        
-        client = LongPortClient(env=env)
-        quotes = client.quote_last(tickers)
-        
-        print("\n实时报价:")
-        print("-" * 50)
-        for symbol, (price, timestamp) in quotes.items():
-            print(f"{symbol:12} | 价格: {price:>10} | 时间: {timestamp}")
-        
-        return 0
-        
-    except ImportError as e:
-        print(f"错误：无法导入LongPort模块 - {e}", file=sys.stderr)
-        print("请确保已安装 longport 包：pip install longport", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"获取报价失败：{e}", file=sys.stderr)
-        return 1
-
-
-def run_lb_rebalance(input_file: str, account: str = "main", dry_run: bool = True, env: str = "test") -> int:
-    """运行LongPort差额调仓
-    
-    基于真实账户快照，计算目标仓位与当前持仓的差额，执行调仓操作。
-    无论test还是real环境，都统一走一条路径：先获取账户快照，计算差额，再决定是否真实下单。
-    
-    Args:
-        input_file: AI选股结果文件路径
-        account: 账户名称
-        dry_run: 是否为干跑模式
-        env: 环境选择（test或real）
-        
-    Returns:
-        int: 退出码（0表示成功）
-    """
-    try:
-        from pathlib import Path
-
-        import pandas as pd
-        
-        # 真环境必须显式 --env real 且 --execute
-        if env == "real" and dry_run:
-            print("拒绝执行：你选择了 real 环境但仍是干跑模式。请加 --execute 再来。", file=sys.stderr)
-            return 1
-        if env == "real" and not dry_run:
-            print("警告：将实际在 REAL 环境下下单。风险自负。")
-        
-        print(f"正在读取AI选股结果文件: {input_file}")
-        print(f"账户: {account}")
-        print(f"环境: {env.upper()}")
-        print(f"模式: {'干跑模式（只打印）' if dry_run else '实际执行模式'}")
-        
-        # 检查文件是否存在
-        file_path = Path(input_file)
-        if not file_path.exists():
-            print(f"错误：文件不存在 - {input_file}", file=sys.stderr)
-            return 1
-        
-        # 读取所有 sheet 并选择最新一季
-        import re
-        
-        try:
-            xls = pd.ExcelFile(file_path)
-            
-            def pick_latest_sheet(sheet_names):
-                candidates = []
-                for s in sheet_names:
-                    try:
-                        d = pd.to_datetime(s).date()
-                        candidates.append((d, s))
-                    except Exception:
-                        # 尝试匹配 yyyy-mm-dd
-                        m = re.search(r"\d{4}-\d{2}-\d{2}", s)
-                        if m:
-                            d = pd.to_datetime(m.group(0)).date()
-                            candidates.append((d, s))
-                if candidates:
-                    return max(candidates)[1]
-                return sheet_names[-1]  # 兜底
-            
-            sheet_to_use = pick_latest_sheet(xls.sheet_names)
-            df = pd.read_excel(xls, sheet_name=sheet_to_use)
-            print(f"成功读取文件，使用 sheet: {sheet_to_use}，包含 {len(df)} 条记录")
-            
-            # 识别 ticker 列
-            cols = {c.lower(): c for c in df.columns}
-            ticker_col = cols.get("ticker") or cols.get("symbol")
-            if not ticker_col:
-                raise ValueError("未找到 ticker/symbol 列")
-            
-            tickers = df[ticker_col].astype(str).str.upper().str.strip().tolist()
-            
-        except Exception as e:
-            print(f"读取Excel文件失败：{e}", file=sys.stderr)
-            return 1
-        
-        # 初始化LongPort客户端
-        from .broker.longport_client import LongPortClient
-        client = LongPortClient(env=env)
-        
-        # 1) 获取账户快照（现金+持仓）
-        print(f"\n=== {'干跑模式' if dry_run else '实际执行模式'} - {sheet_to_use} 差额调仓 ===")
-        print("-" * 80)
-        
-        try:
-            cash_usd, current_positions = client.portfolio_snapshot()
-            print(f"账户快照: 现金 ${cash_usd:,.2f} | 持仓 {len(current_positions)} 只")
-        except Exception as e:
-            print(f"警告：无法获取账户快照 ({e})，使用模拟数据")
-            cash_usd = 100000.0  # 模拟现金
-            current_positions = {}  # 模拟空仓
-        
-        # 2) 获取实时价格
-        from .broker.longport_client import _to_lb_symbol
-        lb_symbols = [_to_lb_symbol(t) for t in tickers]
-        
-        try:
-            px_map = client.quote_last(lb_symbols)
-        except Exception as e:
-            print(f"警告：无法获取实时价格 ({e})，跳过调仓")
-            client.close()
-            return 1
-        
-        # 3) 计算当前持仓市值
-        current_market_value = 0.0
-        for symbol, qty in current_positions.items():
-            px, _ = px_map.get(symbol, (0.0, ""))
-            current_market_value += float(px) * qty
-        
-        total_portfolio_value = cash_usd + current_market_value
-        print(f"当前持仓市值: ${current_market_value:,.2f} | 总资产: ${total_portfolio_value:,.2f}")
-        
-        # 4) 计算等权重目标仓位
-        N = len(tickers)
-        if N == 0:
-            print("错误：没有目标股票")
-            client.close()
-            return 1
-        
-        target_value_per_stock = total_portfolio_value / N
-        print(f"等权重分配: 每只股票目标市值 ${target_value_per_stock:,.2f}")
-        print("-" * 80)
-        
-        # 5) 计算差额并生成调仓订单
-        orders = []
-        print("Symbol   | 当前价格 | 当前持仓 | 目标持仓 | 差额    | 操作")
-        print("-" * 80)
-        
-        for t in tickers:
-            sym = t.upper().strip()
-            lb_sym = _to_lb_symbol(sym)
-            
-            px, _ = px_map.get(lb_sym, (0.0, ""))
-            px = float(px) if px else 0.0
-            
-            if px <= 0:
-                print(f"{sym:8s} | {'N/A':8s} | {'N/A':8s} | {'N/A':8s} | {'N/A':7s} | 跳过（无价格）")
-                continue
-            
-            # 当前持仓数量
-            current_qty = current_positions.get(lb_sym, 0)
-            
-            # 目标持仓数量（按最小交易单位取整）
-            target_qty_raw = target_value_per_stock / px
-            lot = client.lot_size(lb_sym)
-            target_qty = (int(target_qty_raw) // lot) * lot
-            
-            # 计算差额
-            delta_qty = target_qty - current_qty
-            
-            if abs(delta_qty) < lot:
-                # 差额小于最小交易单位，跳过
-                print(f"{sym:8s} | {px:8.2f} | {current_qty:8d} | {target_qty:8d} | {delta_qty:7d} | 跳过（差额太小）")
-                continue
-            
-            # 确定买卖方向
-            if delta_qty > 0:
-                side = "BUY"
-                qty_to_trade = delta_qty
-            else:
-                side = "SELL"
-                qty_to_trade = abs(delta_qty)
-            
-            print(f"{sym:8s} | {px:8.2f} | {current_qty:8d} | {target_qty:8d} | {delta_qty:7d} | {side} {qty_to_trade}")
-            
-            # 执行订单
-            try:
-                res = client.place_order(sym, qty_to_trade, side, dry_run=dry_run)
-                orders.append(res)
-            except Exception as e:
-                print(f"  -> 下单失败: {e}", file=sys.stderr)
-        
-        # 写审计日志
-        import datetime
-        import json
-        log_dir = Path("outputs/orders")
-        log_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        log_file = log_dir / f"{stamp}_{env}_{'dry' if dry_run else 'live'}.jsonl"
-        
-        with open(log_file, "w", encoding="utf-8") as f:
-            for o in orders:
-                f.write(json.dumps(o, ensure_ascii=False) + "\n")
-        
-        print(f"\n审计日志已保存到: {log_file}")
-        print(f"总计处理 {len(orders)} 个订单")
-        
-        if dry_run:
-            print("\n注意：这是干跑模式，未实际下单")
-            print("使用 --execute 参数可实际执行交易")
-        else:
-            print("\n警告：已实际下单，请检查券商账户确认执行情况")
-        
-        # 关闭客户端连接
-        client.close()
-        
-        return 0
-        
-    except ImportError as e:
-        print(f"错误：无法导入必要模块 - {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"仓位调整失败：{e}", file=sys.stderr)
-        return 1
-
-
-def run_lb_account(env: str = "test", only_funds: bool = False, only_positions: bool = False, fmt: str = "table") -> int:
-    """运行LongPort账户总览
-    
-    Args:
-        env: 环境选择（test/real/both）
-        only_funds: 只显示资金信息
-        only_positions: 只显示持仓信息
-        fmt: 输出格式（table/json）
-        
-    Returns:
-        int: 退出码（0表示成功）
-    """
-    try:
-        import json
-
-        from .broker.longport_client import LongPortClient
-        
-        def snap(one_env: str):
-            """获取单个环境的账户快照"""
-            try:
-                c = LongPortClient(env=one_env)
-                cash_usd, pos_map = c.portfolio_snapshot()
-                quotes = c.quote_last(pos_map.keys()) if pos_map else {}
-                # 组装展示结构：symbol, qty, last, est_value
-                rows = []
-                for sym, qty in pos_map.items():
-                    last = quotes.get(sym, (0.0, ""))[0]
-                    rows.append({
-                        "env": one_env, 
-                        "symbol": sym, 
-                        "qty": qty, 
-                        "last": last, 
-                        "est_value": round(qty * last, 2)
-                    })
-                c.close()
-                return {"env": one_env, "cash_usd": cash_usd, "positions": rows}
-            except Exception as e:
-                print(f"警告：无法获取 {one_env} 环境账户数据 ({e})，使用模拟数据", file=sys.stderr)
-                return {"env": one_env, "cash_usd": 0.0, "positions": []}
-        
-        envs = ["test", "real"] if env == "both" else [env]
-        
-        # 只读横幅
-        if env in ("real", "both"):
-            print("!!! REAL ACCOUNT DATA (READ-ONLY) !!!")
-        
-        payload = [snap(e) for e in envs if e in ("test", "real")]
-        
-        # 输出
-        if fmt == "json":
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-        else:
-            # 简单表格输出
-            for block in payload:
-                print(f"\n[{block['env'].upper()}] 现金(USD): ${block['cash_usd']:,.2f}")
-                if not only_funds:
-                    if block['positions']:
-                        if not only_positions:
-                            print("Symbol        Qty        Last       Est.Value")
-                            print("-" * 50)
-                        for r in block["positions"]:
-                            print(f"{r['symbol']:12} {r['qty']:10} {r['last']:10.2f} ${r['est_value']:>10,.2f}")
-                    else:
-                        print("无持仓")
-        
-        return 0
-        
-    except ImportError as e:
-        print(f"错误：无法导入LongPort模块 - {e}", file=sys.stderr)
-        print("请确保已安装 longport 包：pip install longport", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"账户总览失败：{e}", file=sys.stderr)
-        return 1
-
-
 def main() -> int:
-    """主入口函数
+    """主入口函数 - 只负责参数解析和命令分发
     
     Returns:
         int: 退出码（0表示成功）
@@ -638,38 +198,53 @@ def main() -> int:
         parser.print_help()
         return 0
     
-    # 根据命令执行相应的功能
-    if args.command == "backtest":
-        return run_backtest(args.strategy, getattr(args, 'config', None))
-    elif args.command == "load-data":
-        return run_load_data(getattr(args, 'data_dir', None))
-    elif args.command == "preliminary":
-        return run_preliminary(getattr(args, 'output_dir', None))
-    elif args.command == "ai-pick":
-        return run_ai_pick(
-            getattr(args, 'quarter', None),
-            getattr(args, 'output', None)
-        )
-    elif args.command == "lb-quote":
-        return run_lb_quote(args.tickers, getattr(args, 'env', 'test'))
-    elif args.command == "lb-rebalance":
-        # 如果指定了 --execute，则关闭干跑模式
-        dry_run = not getattr(args, 'execute', False)
-        return run_lb_rebalance(
-            args.input_file,
-            getattr(args, 'account', 'main'),
-            dry_run,
-            getattr(args, 'env', 'test')
-        )
-    elif args.command == "lb-account":
-        return run_lb_account(
-            getattr(args, 'env', 'test'),
-            getattr(args, 'funds', False),
-            getattr(args, 'positions', False),
-            getattr(args, 'format', 'table')
-        )
-    else:
-        print(f"未知命令：{args.command}", file=sys.stderr)
+    # 根据命令分发到对应的处理函数
+    try:
+        if args.command == "backtest":
+            from .commands.backtest import run_backtest
+            return run_backtest(args.strategy, getattr(args, 'config', None))
+        elif args.command == "load-data":
+            from .commands.load_data import run_load_data
+            return run_load_data(getattr(args, 'data_dir', None))
+        elif args.command == "preliminary":
+            from .commands.preliminary import run_preliminary
+            return run_preliminary(getattr(args, 'output_dir', None))
+        elif args.command == "ai-pick":
+            from .commands.ai_pick import run_ai_pick
+            return run_ai_pick(
+                getattr(args, 'quarter', None),
+                getattr(args, 'output', None)
+            )
+        elif args.command == "lb-quote":
+            from .commands.lb_quote import run_lb_quote
+            return run_lb_quote(args.tickers, getattr(args, 'env', 'test'))
+        elif args.command == "lb-rebalance":
+            from .commands.lb_rebalance import run_lb_rebalance
+            # 如果指定了 --execute，则关闭干跑模式
+            dry_run = not getattr(args, 'execute', False)
+            return run_lb_rebalance(
+                args.input_file,
+                getattr(args, 'account', 'main'),
+                dry_run,
+                getattr(args, 'env', 'test')
+            )
+        elif args.command == "lb-account":
+            from .commands.lb_account import run_lb_account
+            return run_lb_account(
+                getattr(args, 'env', 'test'),
+                getattr(args, 'funds', False),
+                getattr(args, 'positions', False),
+                getattr(args, 'format', 'table')
+            )
+        else:
+            from .utils.logging import get_logger
+            logger = get_logger(__name__)
+            logger.error(f"未知命令：{args.command}")
+            return 1
+    except ImportError as e:
+        from .utils.logging import get_logger
+        logger = get_logger(__name__)
+        logger.error(f"无法导入命令模块: {e}")
         return 1
 
 

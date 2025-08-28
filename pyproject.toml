@@ -9,7 +9,7 @@ dependencies = [
     "openpyxl",
     "scipy",
     "backtrader",
-    "dotenv",
+    "python-dotenv",
     "google-genai",
     "longport>=0.2.77",
 ]
@@ -32,6 +32,9 @@ include = ["stock_analysis*"]
 
 [project.scripts]
 stockq = "stock_analysis.cli:app"
+
+[tool.uv]
+package = true
 
 [tool.ruff]
 target-version = "py310"
