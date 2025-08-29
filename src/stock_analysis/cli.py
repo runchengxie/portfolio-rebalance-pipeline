@@ -32,8 +32,8 @@ def create_parser() -> argparse.ArgumentParser:
   stockq lb-account --env both     同时查看test和real环境
   stockq lb-account --funds        只显示资金信息
   stockq lb-account --format json  JSON格式输出
-  stockq lb-rebalance results.xlsx 仓位调整（干跑模式）
-  stockq lb-rebalance results.xlsx --plan --budget 50000  计划模式（不受交易时段限制）
+  stockq lb-rebalance results.xlsx --env test 在测试(test)环境进行模拟调仓 (Dry-Run)
+  stockq lb-rebalance results.xlsx --env real --execute  在真实(real)环境执行真实交易 (需要 --execute 标志)
         """,
     )
 
