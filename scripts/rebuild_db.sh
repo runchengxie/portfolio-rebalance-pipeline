@@ -22,7 +22,7 @@ PRAGMA journal_mode=OFF;
 PRAGMA synchronous=OFF;
 PRAGMA temp_store=MEMORY;
 PRAGMA cache_size=-800000;
-.read sql/schema.sql
+.read sql/schema_prices.sql
 SQL
 
 echo "Importing CSVs using sqlite3 .import (price data)..."
@@ -33,18 +33,18 @@ sqlite3 "$DB_PATH" \
   ".separator ;" \
   ".import --skip 1 $CSV_DIR/us-shareprices-daily.csv share_prices"
 
-# Index and optimize
+# Index and optimize (centralized definitions)
 sqlite3 "$DB_PATH" \
-  "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);" \
-  "CREATE INDEX IF NOT EXISTS idx_prices_date ON share_prices(Date);" \
+  ".read sql/indexes_prices.sql" \
   "ANALYZE;" \
   "VACUUM;"
 
-echo "Importing financial statements via Python loader (with cleanup/renames)..."
-# Use the existing Python import for financial tables (handles renames and types)
-# Skip prices to avoid duplicate work
-SKIP_PRICES=1 "$ROOT_DIR/.venv/bin/python" -c "from stock_analysis.load_data_to_db import main; main()" 2>/dev/null \
-  || SKIP_PRICES=1 stockq load-data
+echo "Importing financial statements via project CLI (with cleanup/renames)..."
+# Prefer CLI with explicit flag; fall back to module exec if CLI not available
+if command -v stockq >/dev/null 2>&1; then
+  stockq load-data --skip-prices
+else
+  SKIP_PRICES=1 "$ROOT_DIR/.venv/bin/python" -c "from stock_analysis.load_data_to_db import main; main()"
+fi
 
 echo "Done. Database rebuilt at: $DB_PATH"
-
