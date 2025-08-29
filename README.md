@@ -16,27 +16,29 @@
 
 ### 阶段一：数据准备与量化初筛
 
-1. 步骤 1: 创建数据库
+1. 步骤 1: 创建数据库（WSL/Linux 全量重建）
 
-    此脚本将所有原始CSV数据加载到`data/financial_data.db`文件中，并创建索引以加速后续查询。此步骤仅在初次运行时需要执行。
+    推荐使用一键全量重建脚本，跨平台、可重复并且更快：
+
+    ```bash
+    bash scripts/rebuild_db.sh
+    ```
+
+    该脚本将：
+    - 用 `sqlite3 .import` 高速导入价格数据（`data/us-shareprices-daily.csv`）。
+    - 调整并导入财报数据到 `balance_sheet`/`cash_flow`/`income`（通过现有 Python 逻辑完成字段重命名与清洗）。
+    - 建立必要索引并优化数据库。
+
+    如需最简方式也可执行：
 
     ```bash
     stockq load-data
     ```
 
-    为了更高效率推荐使用`sqlite3`，Windows用户可通过Powershell在项目根目录执行以下指令：
+    可选参数：
 
-    ```bash
-    sqlite3 "data\financial_data.db" ".read sql\schema.sql" ".separator ;" ".import --skip 1 data\us-shareprices-daily.csv share_prices" "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);"
-    ```
-
-    执行成功后，会在 `data/` 目录下生成 `financial_data.db` 文件。
-
-    后续的股价数据更新
-
-    ```bash
-    sqlite3 "data\financial_data.db" ".read sql\rebuild_share_prices.sql"
-    ```
+    - 仅导入价格：`stockq load-data --only-prices`
+    - 跳过价格（仅导入财报）：`stockq load-data --skip-prices`
 
 2. 步骤 2: 运行量化初筛策略
 

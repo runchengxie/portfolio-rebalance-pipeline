@@ -1,4 +1,4 @@
--- 只干一件事：表结构
+-- Price table schema (DDL only). PRAGMA is managed by callers.
 DROP TABLE IF EXISTS share_prices;
 
 CREATE TABLE share_prices (
@@ -14,3 +14,4 @@ CREATE TABLE share_prices (
   Dividend REAL,
   "Shares Outstanding" INTEGER
 );
+
