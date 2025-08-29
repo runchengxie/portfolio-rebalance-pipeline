@@ -8,7 +8,9 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def run_load_data(data_dir: str | None = None) -> int:
+def run_load_data(
+    data_dir: str | None = None, skip_prices: bool = False, only_prices: bool = False
+) -> int:
     """运行数据加载
 
     Args:
@@ -27,7 +29,8 @@ def run_load_data(data_dir: str | None = None) -> int:
 
         from ..load_data_to_db import main as load_main
 
-        load_main()
+        # 执行加载（支持只导入价格或跳过价格）
+        load_main(skip_prices=skip_prices, only_prices=only_prices)
 
         logger.info("数据加载完成！")
         return 0
