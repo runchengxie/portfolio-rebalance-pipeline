@@ -44,16 +44,19 @@ def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) ->
         print("    - Using SQLite CLI for fast import...")
 
         # 构建SQLite命令
+        indexes_path = schema_path.parent / "indexes_prices.sql"
         commands = [
             f".read {schema_path.as_posix()}",
             ".separator ;",
             ".mode ascii",
             f".import --skip 1 {csv_path.as_posix()} share_prices",
-            "CREATE INDEX IF NOT EXISTS idx_prices_date ON share_prices(Date);",
-            "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);",
+        ]
+        if indexes_path.exists():
+            commands.append(f".read {indexes_path.as_posix()}")
+        commands.extend([
             "PRAGMA journal_mode=WAL;",
             "PRAGMA synchronous=NORMAL;",
-        ]
+        ])
 
         # 执行SQLite命令
         cmd = ["sqlite3", str(db_path)]
@@ -157,8 +160,11 @@ def main(*, skip_prices: bool = False, only_prices: bool = False):
         else:
             print("Processing price data...")
             price_csv = DATA_DIR / "us-shareprices-daily.csv"
-            # schema.sql位于项目根目录
-            schema_sql = DATA_DIR.parent / "sql" / "schema.sql"
+            # schema文件（优先使用 schema_prices.sql，兼容旧 schema.sql）位于项目根目录
+            sql_dir = DATA_DIR.parent / "sql"
+            preferred = sql_dir / "schema_prices.sql"
+            fallback = sql_dir / "schema.sql"
+            schema_sql = preferred if preferred.exists() else fallback
 
             if price_csv.exists():
                 # 检查文件大小，大文件优先使用CLI导入
