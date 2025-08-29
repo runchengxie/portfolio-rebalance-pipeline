@@ -24,25 +24,41 @@ def get_account_snapshot(env: str) -> AccountSnapshot:
     """
     try:
         client = LongPortClient(env=env)
-        cash_usd, position_map = client.portfolio_snapshot()
+        cash_usd, stock_position_map = client.portfolio_snapshot()
 
-        # 获取持仓报价
-        quotes = {}
-        if position_map:
-            quotes = client.quote_last(list(position_map.keys()))
+        # 股票持仓报价
+        stock_quotes = {}
+        if stock_position_map:
+            stock_quotes = client.quote_last(list(stock_position_map.keys()))
 
-        # 构建持仓列表
-        positions = []
-        for symbol, quantity in position_map.items():
-            price, _ = quotes.get(symbol, (0.0, ""))
-            position = Position(
-                symbol=symbol,
-                quantity=quantity,
-                last_price=float(price),
-                estimated_value=quantity * float(price),
-                env=env,
+        positions: list[Position] = []
+
+        # 股票持仓 -> Position
+        for symbol, quantity in stock_position_map.items():
+            price, _ = stock_quotes.get(symbol, (0.0, ""))
+            positions.append(
+                Position(
+                    symbol=symbol,
+                    quantity=int(quantity),
+                    last_price=float(price),
+                    estimated_value=int(quantity) * float(price),
+                    env=env,
+                )
             )
-            positions.append(position)
+
+        # 基金持仓 -> Position（使用净值作为价格）
+        fund_map = client.fund_positions()
+        for fsymbol, (units, nav, _ccy) in fund_map.items():
+            qty_int = int(units)  # Position.quantity 为 int；如需更精确可扩展为 float
+            positions.append(
+                Position(
+                    symbol=fsymbol,
+                    quantity=qty_int,
+                    last_price=float(nav),
+                    estimated_value=units * float(nav),
+                    env=env,
+                )
+            )
 
         client.close()
 

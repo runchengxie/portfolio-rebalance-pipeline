@@ -32,12 +32,9 @@ def run_lb_rebalance(
         int: 退出码（0表示成功）
     """
     try:
-        # 真环境必须显式 --env real 且 --execute
+        # 允许 Real 环境干跑：读取真实账户快照，但不下单
         if env == "real" and dry_run:
-            logger.error(
-                "拒绝执行：你选择了 real 环境但仍是干跑模式。请加 --execute 再来。"
-            )
-            return 1
+            logger.warning("Real 环境干跑：只读取真实账户快照，不会下单。")
         if env == "real" and not dry_run:
             logger.warning("警告：将实际在 REAL 环境下下单。风险自负。")
 

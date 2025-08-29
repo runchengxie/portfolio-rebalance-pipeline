@@ -236,10 +236,8 @@ class LongPortClient:
                     if not ccy:
                         continue
                     totals[ccy] = totals.get(ccy, 0.0) + amt
-                cash_usd = totals.get("USD", 0.0) if totals else 0.0
-                # 2) 没有 USD，就把所有币种粗略相加当展示值
-                if cash_usd == 0.0 and totals:
-                    cash_usd = sum(totals.values())
+                # 统一粗略相加（暂不做 FX 折算），避免忽略非 USD 余额
+                cash_usd = sum(totals.values()) if totals else 0.0
                 # 3) 再不行就兜底找常见字段
                 if cash_usd == 0.0:
                     for name in ("cash", "available_cash", "total_cash"):
@@ -354,8 +352,64 @@ class LongPortClient:
 
         return cash_usd, pos_map
 
+    def fund_positions(self) -> dict[str, tuple[float, float, str]]:
+        """
+        返回基金持仓映射：{ symbol => (holding_units, current_nav, currency) }。
+
+        - symbol: LongPort 返回的基金代码/ISIN
+        - holding_units: 持有份额（float）
+        - current_nav: 当前净值（float）
+        - currency: 货币代码
+        """
+        result: dict[str, tuple[float, float, str]] = {}
+        try:
+            fn = getattr(self.trade, "fund_positions", None)
+            if not fn:
+                return result
+            resp = fn()
+            # 形态：resp.list[account].fund_info[*]
+            accounts = getattr(resp, "list", None) or []
+            for acc in accounts:
+                fund_info = getattr(acc, "fund_info", None) or []
+                for it in fund_info:
+                    sym = (
+                        getattr(it, "symbol", None)
+                        if not isinstance(it, dict)
+                        else it.get("symbol")
+                    )
+                    units = (
+                        getattr(it, "holding_units", None)
+                        if not isinstance(it, dict)
+                        else it.get("holding_units")
+                    )
+                    nav = (
+                        getattr(it, "current_net_asset_value", None)
+                        if not isinstance(it, dict)
+                        else it.get("current_net_asset_value")
+                    )
+                    ccy = (
+                        getattr(it, "currency", None)
+                        if not isinstance(it, dict)
+                        else it.get("currency")
+                    )
+                    if sym is None or units is None or nav is None:
+                        continue
+                    try:
+                        u = float(units)
+                        p = float(nav)
+                    except Exception:
+                        continue
+                    result[str(sym)] = (u, p, str(ccy or ""))
+        except Exception:
+            # 获取失败不影响主流程
+            pass
+        return result
+
     def lot_size(self, symbol: str) -> int:
         """查询最小交易单位，查不到就返回 1。"""
+        # 快路径：美股默认 1，避免静态信息查询造成多余的权限输出
+        if _market_of(symbol) == "US":
+            return 1
         try:
             info = self.quote.static_info([_to_lb_symbol(symbol)])
             if info and info[0].lot_size:
