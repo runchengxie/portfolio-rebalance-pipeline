@@ -1,3 +1,4 @@
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -116,87 +117,97 @@ def _load_csv_in_chunks(
     return rows
 
 
-def main():
-    """主函数：优化版数据库加载"""
+def main(*, skip_prices: bool = False, only_prices: bool = False):
+    """主函数：优化版数据库加载
+
+    Args:
+        skip_prices: 跳过股价数据导入（仅导入财报类表）
+        only_prices: 仅导入股价数据（跳过财报类表）
+    """
     print(f"Creating SQLite database at: {DB_PATH}")
     with sqlite3.connect(DB_PATH) as con:
         _fast_pragmas(con, fast=True)
 
         # 财报数据
-        print("Processing financial statements...")
-        files = {
-            "balance_sheet": DATA_DIR / "us-balance-ttm.csv",
-            "cash_flow": DATA_DIR / "us-cashflow-ttm.csv",
-            "income": DATA_DIR / "us-income-ttm.csv",
-        }
+        if not only_prices:
+            print("Processing financial statements...")
+            files = {
+                "balance_sheet": DATA_DIR / "us-balance-ttm.csv",
+                "cash_flow": DATA_DIR / "us-cashflow-ttm.csv",
+                "income": DATA_DIR / "us-income-ttm.csv",
+            }
 
-        # 定义数据类型以减少SQLite类型推断开销
-        financial_dtype = {
-            "Ticker": "string",
-            "Fiscal Year": "Int64",
-        }
+            # 定义数据类型以减少SQLite类型推断开销
+            financial_dtype = {
+                "Ticker": "string",
+                "Fiscal Year": "Int64",
+            }
 
-        for table, path in files.items():
-            if path.exists():
-                print(f"  Loading {path.name} -> {table}")
-                rows = _load_csv_in_chunks(path, table, con, dtype=financial_dtype)
-                print(f"    - Loaded {rows} rows into {table}")
-            else:
-                print(f"  [WARNING] File not found: {path}")
+            for table, path in files.items():
+                if path.exists():
+                    print(f"  Loading {path.name} -> {table}")
+                    rows = _load_csv_in_chunks(path, table, con, dtype=financial_dtype)
+                    print(f"    - Loaded {rows} rows into {table}")
+                else:
+                    print(f"  [WARNING] File not found: {path}")
 
-        # 价格数据 - 优先使用SQLite CLI导入（更快）
-        print("Processing price data...")
-        price_csv = DATA_DIR / "us-shareprices-daily.csv"
-        # schema.sql位于项目根目录
-        schema_sql = DATA_DIR.parent / "sql" / "schema.sql"
-
-        if price_csv.exists():
-            # 检查文件大小，大文件优先使用CLI导入
-            file_size_mb = price_csv.stat().st_size / (1024 * 1024)
-            print(f"    - Price data file size: {file_size_mb:.1f} MB")
-
-            cli_success = False
-            if _check_sqlite3_cli() and schema_sql.exists():
-                print("    - SQLite CLI available, attempting fast import...")
-                cli_success = _import_prices_with_cli(price_csv, DB_PATH, schema_sql)
-
-            if not cli_success:
-                print("    - Falling back to pandas chunked import...")
-                price_dtype = {
-                    "Ticker": "string",
-                }
-                rows = _load_csv_in_chunks(
-                    price_csv,
-                    "share_prices",
-                    con,
-                    parse_dates=["Date"],
-                    dtype=price_dtype,
-                )
-                print(f"    - Loaded {rows} rows into share_prices")
-
-                # 为pandas导入创建索引
-                print("    - Creating indexes for pandas import...")
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_prices_date ON share_prices(Date);"
-                )
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);"
-                )
-            else:
-                print("    - SQLite CLI import completed with indexes")
+        # 价格数据 - 可选跳过（用于外部脚本先行导入）
+        if os.getenv("SKIP_PRICES") or skip_prices:
+            print("Skipping price data import due to SKIP_PRICES=1")
         else:
-            print(f"  [WARNING] File not found: {price_csv}")
-            if not schema_sql.exists():
-                print(f"  [WARNING] Schema file not found: {schema_sql}")
+            print("Processing price data...")
+            price_csv = DATA_DIR / "us-shareprices-daily.csv"
+            # schema.sql位于项目根目录
+            schema_sql = DATA_DIR.parent / "sql" / "schema.sql"
+
+            if price_csv.exists():
+                # 检查文件大小，大文件优先使用CLI导入
+                file_size_mb = price_csv.stat().st_size / (1024 * 1024)
+                print(f"    - Price data file size: {file_size_mb:.1f} MB")
+
+                cli_success = False
+                if _check_sqlite3_cli() and schema_sql.exists():
+                    print("    - SQLite CLI available, attempting fast import...")
+                    cli_success = _import_prices_with_cli(price_csv, DB_PATH, schema_sql)
+
+                if not cli_success:
+                    print("    - Falling back to pandas chunked import...")
+                    price_dtype = {
+                        "Ticker": "string",
+                    }
+                    rows = _load_csv_in_chunks(
+                        price_csv,
+                        "share_prices",
+                        con,
+                        parse_dates=["Date"],
+                        dtype=price_dtype,
+                    )
+                    print(f"    - Loaded {rows} rows into share_prices")
+
+                    # 为pandas导入创建索引
+                    print("    - Creating indexes for pandas import...")
+                    con.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_prices_date ON share_prices(Date);"
+                    )
+                    con.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON share_prices(Ticker, Date);"
+                    )
+                else:
+                    print("    - SQLite CLI import completed with indexes")
+            else:
+                print(f"  [WARNING] File not found: {price_csv}")
+                if not schema_sql.exists():
+                    print(f"  [WARNING] Schema file not found: {schema_sql}")
 
         # 财报表索引：一次性创建，且与查询对齐
-        print("Creating optimized indexes for financial data...")
-        con.executescript("""
-        -- 财报表：按 Ticker, year 分组按 date_known 取最新
-        CREATE INDEX IF NOT EXISTS idx_bs_ty_date  ON balance_sheet (Ticker, year, date_known DESC);
-        CREATE INDEX IF NOT EXISTS idx_cf_ty_date  ON cash_flow     (Ticker, year, date_known DESC);
-        CREATE INDEX IF NOT EXISTS idx_in_ty_date  ON income        (Ticker, year, date_known DESC);
-        """)
+        if not only_prices:
+            print("Creating optimized indexes for financial data...")
+            con.executescript("""
+            -- 财报表：按 Ticker, year 分组按 date_known 取最新
+            CREATE INDEX IF NOT EXISTS idx_bs_ty_date  ON balance_sheet (Ticker, year, date_known DESC);
+            CREATE INDEX IF NOT EXISTS idx_cf_ty_date  ON cash_flow     (Ticker, year, date_known DESC);
+            CREATE INDEX IF NOT EXISTS idx_in_ty_date  ON income        (Ticker, year, date_known DESC);
+            """)
 
         _fast_pragmas(con, fast=False)
 

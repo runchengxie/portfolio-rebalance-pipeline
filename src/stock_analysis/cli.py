@@ -65,6 +65,17 @@ def create_parser() -> argparse.ArgumentParser:
     load_parser.add_argument(
         "--data-dir", type=str, help="数据目录路径（可选，默认使用项目data目录）"
     )
+    group = load_parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--skip-prices",
+        action="store_true",
+        help="跳过股价数据导入（仅导入财报类表）",
+    )
+    group.add_argument(
+        "--only-prices",
+        action="store_true",
+        help="仅导入股价数据（跳过财报类表）",
+    )
 
     # 量化初筛命令
     prelim_parser = subparsers.add_parser(
@@ -179,7 +190,11 @@ def main() -> int:
         elif args.command == "load-data":
             from .commands.load_data import run_load_data
 
-            return run_load_data(getattr(args, "data_dir", None))
+            return run_load_data(
+                getattr(args, "data_dir", None),
+                getattr(args, "skip_prices", False),
+                getattr(args, "only_prices", False),
+            )
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
 
