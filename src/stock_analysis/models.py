@@ -1,6 +1,6 @@
-"""数据模型定义
+"""Data model definitions.
 
-定义系统中使用的核心数据结构。
+Defines core data structures used in the system.
 """
 
 from dataclasses import dataclass
@@ -9,21 +9,21 @@ from datetime import datetime
 
 @dataclass
 class Quote:
-    """股票报价数据"""
+    """Stock quote data."""
 
     symbol: str
     price: float
     timestamp: str
 
     def __post_init__(self):
-        """数据验证"""
+        """Data validation."""
         if self.price < 0:
             raise ValueError(f"价格不能为负数: {self.price}")
 
 
 @dataclass
 class Position:
-    """持仓数据"""
+    """Position data."""
 
     symbol: str
     quantity: int
@@ -32,12 +32,12 @@ class Position:
     env: str = "test"
 
     def __post_init__(self):
-        """数据验证和计算"""
+        """Data validation and calculation."""
         if self.quantity < 0:
             raise ValueError(f"持仓数量不能为负数: {self.quantity}")
         if self.last_price < 0:
             raise ValueError(f"价格不能为负数: {self.last_price}")
-        # 如果没有提供估值，自动计算
+        # Auto-calculate if no estimated value is provided
         if self.estimated_value == 0:
             self.estimated_value = self.quantity * self.last_price
 

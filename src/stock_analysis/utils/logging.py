@@ -1,4 +1,8 @@
 # src/stock_analysis/utils/logging.py
+"""Logging configuration module.
+
+Provides unified logging configuration functionality.
+"""
 from __future__ import annotations
 
 import logging
@@ -30,9 +34,15 @@ def _ensure_outputs_dir() -> Path:
 def setup_logging(
     name: str, filename: str | None = None, level: int = logging.INFO
 ) -> logging.Logger:
-    """
-    创建/获取一个带控制台输出与可选文件输出的 logger。
-    多次调用不会重复加 handler。
+    """Set up logging configuration.
+
+    Args:
+        name: Logger name
+        filename: Optional log file name
+        level: Log level, defaults to logging.INFO
+    
+    Returns:
+        Configured logger instance
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -43,13 +53,13 @@ def setup_logging(
 
     formatter = logging.Formatter(_DEFAULT_FMT, datefmt=_DEFAULT_DATEFMT)
 
-    # 控制台
+    # Create console handler
     sh = logging.StreamHandler(stream=sys.stdout)
     sh.setLevel(level)
     sh.setFormatter(formatter)
     logger.addHandler(sh)
 
-    # 文件
+    # Create file handler
     if filename:
         out_dir = _ensure_outputs_dir()
         fh_path = out_dir / filename
@@ -63,9 +73,16 @@ def setup_logging(
 
 
 def get_logger(name: str) -> logging.Logger:
-    """
-    兼容老代码的获取函数。不给文件名的话，只配控制台。
-    需要落盘的地方自己先调一次 setup_logging(name, 'xxx.log')。
+    """Get logger for backward compatibility.
+    
+    Only configures console output if no filename provided.
+    For file output, call setup_logging(name, 'xxx.log') first.
+    
+    Args:
+        name: Logger name
+        
+    Returns:
+        Logger instance
     """
     return setup_logging(name, filename=None)
 

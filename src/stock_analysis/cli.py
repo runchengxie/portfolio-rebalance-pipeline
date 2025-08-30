@@ -1,6 +1,6 @@
-"""命令行接口模块
+"""Command line interface module.
 
-只负责参数解析和命令分发，不包含业务逻辑。
+Responsible only for argument parsing and command dispatching, without business logic.
 """
 
 import argparse
@@ -16,10 +16,10 @@ from .commands.lb_account import run_lb_account  # noqa: F401
 
 
 def create_parser() -> argparse.ArgumentParser:
-    """创建命令行参数解析器
+    """Create command line argument parser.
 
     Returns:
-        argparse.ArgumentParser: 配置好的参数解析器
+        argparse.ArgumentParser: Configured argument parser
     """
     parser = argparse.ArgumentParser(
         prog="stockq",
@@ -43,15 +43,15 @@ def create_parser() -> argparse.ArgumentParser:
         """,
     )
 
-    # 添加版本信息
+    # Add version information
     parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
 
-    # 创建子命令
+    # Create subcommands
     subparsers = parser.add_subparsers(
         dest="command", help="可用的命令", metavar="COMMAND"
     )
 
-    # 回测命令
+    # Backtest command
     backtest_parser = subparsers.add_parser(
         "backtest", help="运行回测分析", description="运行不同策略的回测分析"
     )
@@ -62,7 +62,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     backtest_parser.add_argument("--config", type=str, help="配置文件路径（可选）")
 
-    # 数据加载命令
+    # Data loading command
     load_parser = subparsers.add_parser(
         "load-data",
         help="加载数据到数据库",
@@ -83,7 +83,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="仅导入股价数据（跳过财报类表）",
     )
 
-    # 量化初筛命令
+    # Preliminary screening command
     prelim_parser = subparsers.add_parser(
         "preliminary",
         help="运行量化初筛选股",
@@ -93,7 +93,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--output-dir", type=str, help="输出目录路径（可选，默认使用项目outputs目录）"
     )
 
-    # AI选股命令
+    # AI stock picking command
     ai_parser = subparsers.add_parser(
         "ai-pick", help="运行AI选股分析", description="使用AI模型进行股票筛选和分析"
     )
@@ -102,7 +102,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     ai_parser.add_argument("--output", type=str, help="输出文件路径（可选）")
 
-    # LongPort 报价命令
+    # LongPort quote command
     lb_quote_parser = subparsers.add_parser(
         "lb-quote",
         help="获取LongPort实时报价",
@@ -112,7 +112,7 @@ def create_parser() -> argparse.ArgumentParser:
         "tickers", nargs="+", help="股票代码列表（如 AAPL MSFT 700.HK）"
     )
 
-    # LongPort 仓位调整命令
+    # LongPort rebalance command
     lb_rebalance_parser = subparsers.add_parser(
         "lb-rebalance",
         help="根据AI选股结果调整仓位",
@@ -136,9 +136,9 @@ def create_parser() -> argparse.ArgumentParser:
         "--execute", action="store_true", help="实际执行交易（关闭干跑模式）"
     )
 
-    # 不再暴露 env，默认 real；--execute 控制是否真实下单
+    # No longer expose env, default to real; --execute controls actual order execution
 
-    # LongPort 账户总览命令
+    # LongPort account overview command
     lb_account_parser = subparsers.add_parser(
         "lb-account",
         help="查看 LongPort 真实账户概览",
@@ -157,20 +157,20 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    """主入口函数 - 只负责参数解析和命令分发
+    """Main entry function - responsible only for argument parsing and command dispatching.
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     parser = create_parser()
     args = parser.parse_args()
 
-    # 如果没有提供命令，显示帮助信息
+    # Show help if no command is provided
     if not args.command:
         parser.print_help()
         return 0
 
-    # 根据命令分发到对应的处理函数
+    # Dispatch to corresponding handler function based on command
     try:
         if args.command == "backtest":
             from .commands.backtest import run_backtest
@@ -200,7 +200,7 @@ def main() -> int:
         elif args.command == "lb-rebalance":
             from .commands.lb_rebalance import run_lb_rebalance
 
-            # 如果指定了 --execute，则关闭干跑模式
+            # If --execute is specified, disable dry-run mode
             dry_run = not getattr(args, "execute", False)
             return run_lb_rebalance(
                 args.input_file,
@@ -230,9 +230,9 @@ def main() -> int:
 
 
 def app() -> None:
-    """应用入口点（用于pyproject.toml中的scripts配置）
+    """Application entry point (for scripts configuration in pyproject.toml).
 
-    这个函数是pyproject.toml中stockq命令的实际入口点。
+    This function is the actual entry point for the stockq command in pyproject.toml.
     """
     sys.exit(main())
 
