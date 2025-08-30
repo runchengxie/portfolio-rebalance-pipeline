@@ -15,12 +15,12 @@ dependencies = [
     "pyyaml",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "pytest",
-    "ruff",
-    "mypy",
+    "pytest>=8",
     "pytest-cov",
+    "ruff>=0.5",
+    "mypy>=1.10",
     "pre-commit",
 ]
 
