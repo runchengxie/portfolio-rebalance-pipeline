@@ -42,7 +42,6 @@ def getenv_both(name_new: str, name_old: str, default: str = None) -> str:
 
 
 class Env(str, Enum):
-    TEST = "test"
     REAL = "real"
 
 
@@ -118,10 +117,8 @@ class LongPortClient:
             env: Environment (test/real). If None, uses LONGPORT_DEFAULT_ENV or defaults to test.
             limits: Risk control limits. If None, uses default limits.
         """
-        default_env = getenv_both(
-            "LONGPORT_DEFAULT_ENV", "LONGBRIDGE_DEFAULT_ENV", "test"
-        )
-        self.env = Env((env or default_env).lower())
+        # 强制使用 REAL 环境
+        self.env = Env.REAL
         self.region = getenv_both("LONGPORT_REGION", "LONGBRIDGE_REGION", "hk")
 
         self.app_key = getenv_both("LONGPORT_APP_KEY", "LONGBRIDGE_APP_KEY")
@@ -138,19 +135,12 @@ class LongPortClient:
         if not self.app_key or not self.app_secret:
             raise RuntimeError("缺少 LONGPORT_APP_KEY/SECRET。请通过系统环境变量注入。")
 
-        # 彻底移除 fallback：哪个环境就必须有哪个 token
-        if self.env == Env.TEST:
-            if not self.token_test:
-                raise RuntimeError(
-                    "缺少 LONGPORT_ACCESS_TOKEN_TEST。请通过系统环境变量注入。"
-                )
-            access_token = self.token_test
-        else:
-            if not self.token_real:
-                raise RuntimeError(
-                    "缺少 LONGPORT_ACCESS_TOKEN（或兼容 LONGPORT_ACCESS_TOKEN_REAL）。请通过系统环境变量注入。"
-                )
-            access_token = self.token_real
+        # 只支持 REAL 环境
+        if not self.token_real:
+            raise RuntimeError(
+                "缺少 LONGPORT_ACCESS_TOKEN（或兼容 LONGPORT_ACCESS_TOKEN_REAL）。请通过系统环境变量注入。"
+            )
+        access_token = self.token_real
 
         # 通过环境变量注入 token/region，再用 SDK 的 from_env 选择正确端点与默认配置
         self._prev_env = {
@@ -592,7 +582,7 @@ class LongPortClient:
         symbol_formatted = _to_lb_symbol(symbol)
 
         # 干跑或 TEST：跳过时间窗检查，但保留 lot 与金额估算
-        if dry_run or self.env == Env.TEST:
+        if dry_run:
             lot = self.lot_size(symbol_formatted)
             if qty % lot != 0:
                 raise RuntimeError(
