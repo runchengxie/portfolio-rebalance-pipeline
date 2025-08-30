@@ -1,6 +1,6 @@
-"""数据模型定义
+"""Data model definitions.
 
-定义系统中使用的核心数据结构。
+Defines core data structures used in the system.
 """
 
 from dataclasses import dataclass
@@ -9,21 +9,21 @@ from datetime import datetime
 
 @dataclass
 class Quote:
-    """股票报价数据"""
+    """Stock quote data."""
 
     symbol: str
     price: float
     timestamp: str
 
     def __post_init__(self):
-        """数据验证"""
+        """Data validation."""
         if self.price < 0:
-            raise ValueError(f"价格不能为负数: {self.price}")
+            raise ValueError(f"Price cannot be negative: {self.price}")
 
 
 @dataclass
 class Position:
-    """持仓数据"""
+    """Position data."""
 
     symbol: str
     quantity: int
@@ -32,19 +32,19 @@ class Position:
     env: str = "test"
 
     def __post_init__(self):
-        """数据验证和计算"""
+        """Data validation and calculation."""
         if self.quantity < 0:
-            raise ValueError(f"持仓数量不能为负数: {self.quantity}")
+            raise ValueError(f"Position quantity cannot be negative: {self.quantity}")
         if self.last_price < 0:
-            raise ValueError(f"价格不能为负数: {self.last_price}")
-        # 如果没有提供估值，自动计算
+            raise ValueError(f"Price cannot be negative: {self.last_price}")
+        # Auto-calculate if no estimated value is provided
         if self.estimated_value == 0:
             self.estimated_value = self.quantity * self.last_price
 
 
 @dataclass
 class Order:
-    """订单数据"""
+    """Order data"""
 
     symbol: str
     quantity: int
@@ -63,20 +63,20 @@ class Order:
     est_frac_hint: float | None = None
 
     def __post_init__(self):
-        """数据验证"""
+        """Data validation"""
         if self.quantity <= 0:
-            raise ValueError(f"订单数量必须大于0: {self.quantity}")
+            raise ValueError(f"Order quantity must be greater than 0: {self.quantity}")
         if self.side not in ["BUY", "SELL"]:
-            raise ValueError(f"订单方向必须是 BUY 或 SELL: {self.side}")
+            raise ValueError(f"Order side must be BUY or SELL: {self.side}")
         if self.price is not None and self.price <= 0:
-            raise ValueError(f"价格必须大于0: {self.price}")
+            raise ValueError(f"Price must be greater than 0: {self.price}")
         if not self.timestamp:
             self.timestamp = datetime.now()
 
 
 @dataclass
 class AccountSnapshot:
-    """账户快照数据"""
+    """Account snapshot data"""
 
     env: str
     cash_usd: float
@@ -86,7 +86,7 @@ class AccountSnapshot:
     base_currency: str | None = None
 
     def __post_init__(self):
-        """计算总值：若调用方提供了总资产，则优先使用。"""
+        """Calculate total value: if caller provides total assets, use that preferentially."""
         self.total_market_value = sum(pos.estimated_value for pos in self.positions)
         if not self.total_portfolio_value:
             self.total_portfolio_value = self.cash_usd + self.total_market_value
@@ -94,7 +94,7 @@ class AccountSnapshot:
 
 @dataclass
 class RebalanceResult:
-    """调仓结果数据"""
+    """Rebalancing result data"""
 
     target_positions: list[Position]
     current_positions: list[Position]
@@ -107,15 +107,15 @@ class RebalanceResult:
 
     @property
     def order_count(self) -> int:
-        """订单数量"""
+        """Number of orders"""
         return len(self.orders)
 
     @property
     def successful_orders(self) -> list[Order]:
-        """成功的订单"""
+        """Successful orders"""
         return [order for order in self.orders if order.status == "SUCCESS"]
 
     @property
     def failed_orders(self) -> list[Order]:
-        """失败的订单"""
+        """Failed orders"""
         return [order for order in self.orders if order.status == "FAILED"]

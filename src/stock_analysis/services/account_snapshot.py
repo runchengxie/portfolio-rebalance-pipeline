@@ -1,6 +1,6 @@
-"""账户快照服务
+"""Account snapshot service
 
-提供账户快照相关的业务逻辑，返回结构化数据。
+Provides business logic for account snapshots, returning structured data.
 """
 
 from ..broker.longport_client import LongPortClient
@@ -17,16 +17,16 @@ def get_account_snapshot(
     pre_quotes: dict[str, tuple[float, str]] | None = None,
     client: LongPortClient | None = None,
 ) -> AccountSnapshot:
-    """获取账户快照
+    """Get account snapshot
 
     Args:
-        env: 环境选择（仅 real 支持，参数保留为兼容）
+        env: Environment selection (only 'real' is supported, parameter kept for compatibility)
 
     Returns:
-        AccountSnapshot: 账户快照数据
+        AccountSnapshot: Account snapshot data
 
     Raises:
-        Exception: 当无法获取账户数据时
+        Exception: When unable to retrieve account data
     """
     try:
         created_here = False
@@ -35,7 +35,7 @@ def get_account_snapshot(
             created_here = True
         cash_usd, stock_position_map, net_assets, base_ccy = client.portfolio_snapshot()
 
-        # 股票持仓报价：可以选择不取，或使用外部提供的缓存
+        # Stock position quotes: can choose not to fetch, or use externally provided cache
         stock_quotes: dict[str, tuple[float, str]] = {}
         if include_quotes and not pre_quotes:
             if stock_position_map:
@@ -45,7 +45,7 @@ def get_account_snapshot(
 
         positions: list[Position] = []
 
-        # 股票持仓 -> Position
+        # Stock positions -> Position
         for symbol, quantity in stock_position_map.items():
             price, _ = stock_quotes.get(symbol, (0.0, ""))
             positions.append(
@@ -58,10 +58,10 @@ def get_account_snapshot(
                 )
             )
 
-        # 基金持仓 -> Position（使用净值作为价格）
+        # Fund positions -> Position (using NAV as price)
         fund_map = client.fund_positions()
         for fsymbol, (units, nav, _ccy) in fund_map.items():
-            qty_int = int(units)  # Position.quantity 为 int；如需更精确可扩展为 float
+            qty_int = int(units)  # Position.quantity is int; can be extended to float for more precision
             positions.append(
                 Position(
                     symbol=fsymbol,
@@ -75,9 +75,9 @@ def get_account_snapshot(
         if created_here:
             client.close()
 
-        # 透传总资产：
-        # - 若净资产为 USD，直接使用
-        # - 若非 USD，尝试用 FX 转为 USD；失败则返回 0 以触发上层重算
+        # Pass through total assets:
+        # - If net assets are in USD, use directly
+        # - If not USD, try to convert to USD using FX; return 0 on failure to trigger upper-level recalculation
         tpv = 0.0
         if net_assets:
             if str(base_ccy).upper() == "USD":
@@ -95,29 +95,28 @@ def get_account_snapshot(
 
     except Exception as e:
         logger.error(f"无法获取账户数据: {e}")
-        # 让调用方感受到真实的痛苦，而不是假快乐
         raise RuntimeError(f"账户数据获取失败: {e}") from e
 
 
 def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
-    """兼容旧接口：总是返回真实账户快照。"""
+    """Compatibility with old interface: always returns real account snapshot."""
     return [get_account_snapshot(env="real")]
 
 
 def get_quotes(
     symbols: list[str], client: LongPortClient | None = None
 ) -> dict[str, Quote]:
-    """获取股票报价
+    """Get stock quotes
 
     Args:
-        symbols: 股票代码列表
-        env: 环境选择
+        symbols: List of stock symbols
+        env: Environment selection
 
     Returns:
-        Dict[str, Quote]: 股票代码到报价的映射
+        Dict[str, Quote]: Mapping from stock symbols to quotes
 
     Raises:
-        Exception: 当无法获取报价时
+        Exception: When unable to retrieve quotes
     """
     try:
         created_here = False

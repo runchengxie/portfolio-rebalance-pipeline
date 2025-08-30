@@ -45,15 +45,15 @@ target-version = "py310"
 line-length = 88
 
 [tool.ruff.lint]
-# 选择要启用的规则集。
-# "E", "F" 对应 Flake8 的原生规则。
-# "I" 对应 isort。
-# "UP" 对应 pyupgrade。
-select = ["E", "F", "I", "UP", "B"] # B 是 flake8-bugbear
+# Select rule sets to enable.
+# "E", "F" correspond to Flake8's native rules.
+# "I" corresponds to isort.
+# "UP" corresponds to pyupgrade.
+select = ["E", "F", "I", "UP", "B"] # B is flake8-bugbear
 
-# 或者，启用所有规则，然后忽略掉你不需要的
+# Or, enable all rules and then ignore the ones you don't need
 # select = ["ALL"]
-# ignore = ["D100", "D101"] # 忽略特定规则
+# ignore = ["D100", "D101"] # Ignore specific rules
 
 [tool.ruff.format]
 quote-style = "double"
