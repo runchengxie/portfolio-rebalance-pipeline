@@ -1,44 +1,44 @@
-# 回测配置模板文件
-# 复制此文件为 config.yaml 并根据需要修改配置
-# 注意：config.yaml 不会被提交到版本库中
+# Backtest configuration template
+# Copy this file to config.yaml and adjust as needed
+# Note: config.yaml is not committed to version control
 
 backtest:
-  # 时间区间模式
-  # fixed: 使用固定的开始和结束日期
-  # dynamic: 根据投资组合数据动态确定时间范围
+  # Time range mode
+  # fixed: use fixed start and end dates
+  # dynamic: determine the time range from portfolio data
   period_mode: fixed
   
-  # 回测时间区间（仅在 period_mode: fixed 时生效）
-  start: 2021-04-02  # 回测开始日期 (YYYY-MM-DD)
-  end: 2025-07-02    # 回测结束日期 (YYYY-MM-DD)
+  # Backtest time range (only valid when period_mode: fixed)
+  start: 2021-04-02  # Backtest start date (YYYY-MM-DD)
+  end: 2025-07-02    # Backtest end date (YYYY-MM-DD)
   
-  # 时间缓冲设置（仅在 period_mode: dynamic 时生效）
-  # 用于在最后一个调仓日期后添加额外的持有期
+  # Time buffer settings (only valid when period_mode: dynamic)
+  # Adds an extra holding period after the last rebalance date
   buffer:
-    months: 3  # 额外月数
-    days: 10   # 额外天数
+    months: 3  # Additional months
+    days: 10   # Additional days
   
-  # 初始资金配置
-  # 方式1：统一资金（推荐）- 所有策略使用相同的初始资金
-  initial_cash: 1000000  # 统一初始资金：100万美元
+  # Initial capital configuration
+  # Option 1: unified capital (recommended) - all strategies use the same initial cash
+  initial_cash: 1000000  # Unified initial cash: USD 1,000,000
   
-  # 方式2：分策略配置（可选）- 如需要不同策略使用不同资金，可使用以下格式：
+  # Option 2: per-strategy configuration (optional) - specify different capital per strategy
   # initial_cash:
-  #   ai: 1000000      # AI选股策略
-  #   quant: 1000000   # 量化初选策略  
-  #   spy: 1000000     # SPY基准策略
+  #   ai: 1000000      # AI stock picking strategy
+  #   quant: 1000000   # Quantitative preliminary selection strategy
+  #   spy: 1000000     # SPY benchmark strategy
   
-# 配置说明：
-# 1. 统一资金的优势：
-#    - 便于直观比较不同策略的绝对收益曲线
-#    - 简化配置管理
-#    - 百分比指标（收益率、年化收益、最大回撤）不受资金规模影响
+# Configuration notes:
+# 1. Benefits of unified capital:
+#    - Allows direct comparison of absolute return curves across strategies
+#    - Simplifies configuration management
+#    - Percentage metrics (return, annualized return, max drawdown) are independent of capital size
 #
-# 2. 时间区间统一的重要性：
-#    - 确保所有策略在相同时间窗口内进行比较
-#    - 避免"用不同尺子量同一张桌子"的问题
-#    - 提高回测结果的可比性和可信度
+# 2. Importance of a unified time range:
+#    - Ensures all strategies are compared within the same window
+#    - Avoids the problem of measuring the same table with different rulers
+#    - Improves comparability and credibility of backtest results
 #
-# 3. 使用建议：
-#    - 生产环境建议使用 period_mode: fixed 确保结果可复现
-#    - 开发测试时可使用 period_mode: dynamic 自动适应数据范围
+# 3. Usage recommendations:
+#    - For production, use period_mode: fixed to ensure reproducibility
+#    - For development/testing, period_mode: dynamic can automatically adapt to data range
