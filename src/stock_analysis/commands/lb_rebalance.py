@@ -6,6 +6,7 @@
 from pathlib import Path
 
 from ..renderers.table import render_rebalance_plan
+from ..renderers.diff import render_rebalance_diff
 from ..services.account_snapshot import get_account_snapshot, get_quotes
 from ..services.rebalancer import RebalanceService
 from ..utils.excel import read_latest_sheet_tickers
@@ -96,9 +97,9 @@ def run_lb_rebalance(
             # 保存审计日志
             log_file = rebalance_service.save_audit_log(rebalance_result, dry_run)
 
-            # 渲染输出
-            output = render_rebalance_plan(rebalance_result)
-            print(output)
+            # 渲染输出：优先展示 Diff 视图，更直观地体现“调仓前后对比 + 订单”
+            diff_view = render_rebalance_diff(rebalance_result, account_snapshot)
+            print(diff_view)
 
             logger.info(f"审计日志已保存到: {log_file}")
 
