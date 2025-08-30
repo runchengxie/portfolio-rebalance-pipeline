@@ -6,6 +6,7 @@
 from pathlib import Path
 
 from ..renderers.table import render_rebalance_plan
+from ..renderers.diff import render_rebalance_diff
 from ..services.account_snapshot import get_account_snapshot, get_quotes
 from ..services.rebalancer import RebalanceService
 from ..utils.excel import read_latest_sheet_tickers
@@ -76,6 +77,19 @@ def run_lb_rebalance(
         else:
             quote_map = {}
 
+        # 用统一报价回填账户快照的持仓估值，避免 Before 为 0
+        if quote_map and account_snapshot.positions:
+            for pos in account_snapshot.positions:
+                px = float(quote_map.get(pos.symbol, pos.last_price or 0.0) or 0.0)
+                if px > 0:
+                    pos.last_price = px
+                    pos.estimated_value = float(px) * float(pos.quantity)
+            # 同步更新快照合计，若总资产之前为 0，则回退为现金+持仓估值
+            total_mv = sum(float(p.estimated_value) for p in account_snapshot.positions)
+            account_snapshot.total_market_value = total_mv
+            if not account_snapshot.total_portfolio_value:
+                account_snapshot.total_portfolio_value = float(account_snapshot.cash_usd) + total_mv
+
         # 初始化调仓服务
         rebalance_service = RebalanceService(env=env, client=client)
 
@@ -96,9 +110,9 @@ def run_lb_rebalance(
             # 保存审计日志
             log_file = rebalance_service.save_audit_log(rebalance_result, dry_run)
 
-            # 渲染输出
-            output = render_rebalance_plan(rebalance_result)
-            print(output)
+            # 渲染输出：优先展示 Diff 视图，更直观地体现“调仓前后对比 + 订单”
+            diff_view = render_rebalance_diff(rebalance_result, account_snapshot)
+            print(diff_view)
 
             logger.info(f"审计日志已保存到: {log_file}")
 

@@ -28,6 +28,19 @@ backtest:
   #   quant: 1000000   # Quantitative preliminary selection strategy
   #   spy: 1000000     # SPY benchmark strategy
   
+# Broker fees and fractional preview (Phase 1)
+fees:
+  domicile: HK
+  commission: 0.0
+  platform_per_share: 0.005
+  fractional_pct_lt1: 0.012
+  fractional_cap_lt1: 0.99
+  sell_reg_fees_bps: 0.0
+
+fractional_preview:
+  enable: true
+  default_step: 0.001
+  
 # Configuration notes:
 # 1. Benefits of unified capital:
 #    - Allows direct comparison of absolute return curves across strategies
