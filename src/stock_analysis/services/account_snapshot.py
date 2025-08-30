@@ -14,6 +14,7 @@ def get_account_snapshot(
     env: str = "test",
     include_quotes: bool = True,
     pre_quotes: dict[str, tuple[float, str]] | None = None,
+    client: LongPortClient | None = None,
 ) -> AccountSnapshot:
     """获取账户快照
 
@@ -27,7 +28,10 @@ def get_account_snapshot(
         Exception: 当无法获取账户数据时
     """
     try:
-        client = LongPortClient(env=env)
+        created_here = False
+        if client is None:
+            client = LongPortClient(env=env)
+            created_here = True
         cash_usd, stock_position_map, net_assets, base_ccy = client.portfolio_snapshot()
 
         # 股票持仓报价：可以选择不取，或使用外部提供的缓存
@@ -67,14 +71,16 @@ def get_account_snapshot(
                 )
             )
 
-        client.close()
+        if created_here:
+            client.close()
 
-        # 若券商提供 net_assets，则将其作为总资产透传，避免本地“现金+持仓估值”误差
+        # 仅当净资产口径为 USD 时才透传；否则交由上层用 USD 报价重算
+        tpv = float(net_assets) if (net_assets and str(base_ccy).upper() == "USD") else 0.0
         return AccountSnapshot(
             env=env,
             cash_usd=cash_usd,
             positions=positions,
-            total_portfolio_value=float(net_assets) if net_assets else 0.0,
+            total_portfolio_value=tpv,
         )
 
     except Exception as e:
@@ -100,7 +106,9 @@ def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
     return snapshots
 
 
-def get_quotes(symbols: list[str], env: str = "test") -> dict[str, Quote]:
+def get_quotes(
+    symbols: list[str], env: str = "test", client: LongPortClient | None = None
+) -> dict[str, Quote]:
     """获取股票报价
 
     Args:
@@ -114,9 +122,13 @@ def get_quotes(symbols: list[str], env: str = "test") -> dict[str, Quote]:
         Exception: 当无法获取报价时
     """
     try:
-        client = LongPortClient(env=env)
+        created_here = False
+        if client is None:
+            client = LongPortClient(env=env)
+            created_here = True
         quote_data = client.quote_last(symbols)
-        client.close()
+        if created_here:
+            client.close()
 
         quotes = {}
         for symbol, (price, timestamp) in quote_data.items():

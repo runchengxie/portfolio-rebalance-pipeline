@@ -18,9 +18,9 @@ logger = get_logger(__name__)
 class RebalanceService:
     """调仓服务类"""
 
-    def __init__(self, env: str = "test"):
+    def __init__(self, env: str = "test", client: LongPortClient | None = None):
         self.env = env
-        self.client = None
+        self.client = client
 
     def _get_client(self) -> LongPortClient:
         """获取客户端实例"""
@@ -66,9 +66,25 @@ class RebalanceService:
                 logger.error(f"获取报价失败: {e}")
                 raise
 
-        # 计算等权重目标仓位
+        # 计算等权重目标仓位（带兜底：若总资产为 0 或缺失，则以 USD 现金 + 报价估值重算）
         n_stocks = len(target_tickers)
-        target_value_per_stock = account_snapshot.total_portfolio_value / n_stocks
+        if account_snapshot.total_portfolio_value and account_snapshot.total_portfolio_value > 0:
+            effective_total = float(account_snapshot.total_portfolio_value)
+        else:
+            total_pos_value = 0.0
+            if quotes is None:
+                lb_symbols = [
+                    _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
+                ]
+                quote_objs = get_quotes(lb_symbols, self.env)
+                quotes = {sym: q.price for sym, q in quote_objs.items()}
+            # 用 quotes 给当前持仓估值
+            current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
+            for sym, pos in current_positions_map.items():
+                px = float((quotes or {}).get(sym, pos.last_price or 0.0))
+                total_pos_value += px * float(pos.quantity)
+            effective_total = float(account_snapshot.cash_usd) + float(total_pos_value)
+        target_value_per_stock = effective_total / n_stocks
 
         # 构建当前持仓映射
         current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
@@ -146,7 +162,7 @@ class RebalanceService:
             target_positions=target_positions,
             current_positions=account_snapshot.positions,
             orders=orders,
-            total_portfolio_value=account_snapshot.total_portfolio_value,
+            total_portfolio_value=effective_total,
             target_value_per_stock=target_value_per_stock,
             env=self.env,
         )
