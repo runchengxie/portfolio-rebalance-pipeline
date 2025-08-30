@@ -9,11 +9,11 @@ import logging
 import sys
 from pathlib import Path
 
-# 这个模块其他地方已经在用
+# This module is already being used elsewhere
 try:
     from .paths import OUTPUTS_DIR
 except Exception:
-    # 兜底，别因为路径模块问题再炸一次
+    # Fallback, don't crash again due to path module issues
     OUTPUTS_DIR = Path.cwd() / "outputs"
 
 __all__ = ["setup_logging", "get_logger", "StrategyLogger"]
@@ -26,7 +26,7 @@ def _ensure_outputs_dir() -> Path:
     try:
         OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
-        # 最坏情况回到当前目录
+        # Worst case fallback to current directory
         return Path.cwd()
     return OUTPUTS_DIR
 
@@ -47,7 +47,7 @@ def setup_logging(
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    # 已经配置过就直接用，避免重复 handler
+    # Use directly if already configured, avoid duplicate handlers
     if getattr(logger, "_configured", False):
         return logger
 
@@ -89,13 +89,13 @@ def get_logger(name: str) -> logging.Logger:
 
 class StrategyLogger:
     """
-    给回测策略用的小包装：可以走 logging，也可以退回 print。
+    Small wrapper for backtest strategies: can use logging or fallback to print.
     """
 
     def __init__(self, use_logging: bool = True, logger_name: str = "strategy"):
         self.use_logging = use_logging
         if use_logging:
-            # 确保至少有控制台输出；文件输出让上层自行决定
+            # Ensure at least console output; let upper layer decide file output
             self.logger = setup_logging(logger_name)
         else:
             self.logger = None

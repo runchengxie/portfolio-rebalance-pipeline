@@ -180,7 +180,7 @@ def calc_factor_scores(
     if known_data_with_factors.empty:
         return pd.DataFrame()
 
-    # 筛选回测窗口内的数据
+    # Filter data within the backtest window
     window_start_date = as_of_date - relativedelta(years=window_years)
     historical_window_scores = known_data_with_factors[
         known_data_with_factors["date_known"] >= window_start_date
@@ -195,7 +195,7 @@ def calc_factor_scores(
         columns={"mean": "avg_factor_score", "count": "num_reports"}, inplace=True
     )
 
-    # 按报告数量筛选
+    # Filter by number of reports
     df_agg_scores = df_agg_scores[df_agg_scores["num_reports"] >= min_reports_required]
 
     return df_agg_scores
@@ -203,23 +203,23 @@ def calc_factor_scores(
 
 def main():
     """
-    主执行函数 (使用本地历史CSV进行季度调仓 + 动态S&P 500过滤 + 图表输出)
+    Main execution function (using local historical CSV for quarterly rebalancing + dynamic S&P 500 filtering + chart output)
     """
     print("--- 正在运行股票选择脚本 (历史动态S&P 500过滤模式) ---")
 
-    # 步骤 1: 加载历史成分股数据
+    # Step 1: Load historical constituent data
     df_constituents = load_sp500_constituents(DATA_DIR)
     if df_constituents is None:
         print("无法加载S&P 500成分股数据，程序终止。")
         return
 
-    # 步骤 2: 加载所有公司的财务数据 (一次性)
+    # Step 2: Load financial data for all companies (one-time)
     df_all_financials = load_and_merge_financial_data(DATA_DIR)
     if df_all_financials.empty:
         print("无法加载财务数据，程序退出。")
         return
 
-    # 步骤 3: 确定回测的时间范围
+    # Step 3: Determine backtest time range
     min_date = df_all_financials["date_known"].min()
     max_date = df_all_financials["date_known"].max()
 
@@ -227,7 +227,7 @@ def main():
         print("\n[错误] 数据中未找到有效的财报日期，无法确定回测范围。")
         return
 
-    # 步骤 4: 生成调仓日期序列
+    # Step 4: Generate rebalancing date sequence
     rebalance_dates = pd.date_range(
         start=min_date, end=max_date, freq=BACKTEST_FREQUENCY
     )
@@ -241,25 +241,25 @@ def main():
     all_period_portfolios = {}
     screening_stats = []
 
-    # 用于控制选股是否开始的标志
+    # Flag to control whether stock selection has started
     selection_started = False
 
-    # 步骤 5: 遍历每个调仓日进行动态选股
+    # Step 5: Iterate through each rebalancing date for dynamic stock selection
     for trade_date in trade_dates:
         as_of_date = trade_date.normalize()
 
-        # 5.1 获取当期有效的S&P 500股票列表
+        # 5.1 Get current valid S&P 500 stock list
         current_sp500_list = get_universe_for_date(trade_date, df_constituents)
         if not current_sp500_list:
             print(f"  - 调仓日 {trade_date.date()}: S&P 500在当日无成分股数据，跳过。")
             continue
 
-        # 5.2 从所有财务数据中，筛选出当期S&P 500成分股的数据
+        # 5.2 Filter financial data for current S&P 500 constituents
         df_period_financials = df_all_financials[
             df_all_financials["Ticker"].isin(current_sp500_list)
         ]
 
-        # 5.3 在当期的股票池上计算因子分数
+        # 5.3 Calculate factor scores on current stock universe
         df_agg_scores = calc_factor_scores(
             df_period_financials,
             as_of_date=as_of_date,
@@ -272,28 +272,28 @@ def main():
             {"date": trade_date.date(), "count": num_eligible_stocks}
         )
 
-        # 检查是否达到开始选股的条件
-        # 如果选股还未开始，则检查本次符合条件的股票数是否大于250
+        # Check if conditions for starting stock selection are met
+        # If selection hasn't started, check if eligible stocks exceed 250
         if not selection_started and num_eligible_stocks > 250:
             print(
                 f"  - 调仓日 {trade_date.date()}: 符合条件的股票数量 ({num_eligible_stocks}) 首次超过250，从现在开始进行选股。"
             )
-            selection_started = True  # 将标志位置为True，以后将一直选股
+            selection_started = True  # Set flag to True, will continue stock selection from now on
 
-        # 如果 df_agg_scores 为空，或者选股标志尚未开启，则打印信息并跳过本轮
+        # If df_agg_scores is empty or selection flag not enabled, print info and skip
         if df_agg_scores.empty or not selection_started:
-            # 根据选股是否已开始，打印不同的提示信息
+            # Print different messages based on whether selection has started
             if not selection_started:
                 print(
                     f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，未达到启动阈值(>250)。"
                 )
-            else:  # 这种情况理论上不会发生，因为selection_started为True时，num_eligible_stocks必然>0
+            else:  # This case shouldn't occur theoretically, as num_eligible_stocks must be >0 when selection_started is True
                 print(
                     f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，无符合条件的股票。"
                 )
             continue
 
-        # 只有在 selection_started 为 True 时才执行以下选股逻辑
+        # Only execute stock selection logic when selection_started is True
         print(
             f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，正在排名..."
         )
@@ -304,7 +304,7 @@ def main():
 
         all_period_portfolios[trade_date.date()] = top_stocks.reset_index()
 
-    # 步骤 6: 保存结果到文件
+    # Step 6: Save results to files
     if all_period_portfolios:
         output_excel_file = OUTPUT_FILE_BASE.with_suffix(".xlsx")
         output_txt_file = OUTPUT_FILE_BASE.with_suffix(".txt")
@@ -329,7 +329,7 @@ def main():
     else:
         print("\n没有生成任何投资组合。")
 
-    # 步骤 7: 生成并保存统计图表
+    # Step 7: Generate and save statistical charts
     if screening_stats:
         print("\n正在生成合格股票数量的统计图表...")
         df_stats = pd.DataFrame(screening_stats)
@@ -345,7 +345,7 @@ def main():
             label=f"Stocks with >= {MIN_REPORTS_IN_WINDOW} reports in last {ROLLING_WINDOW_YEARS} years",
         )
 
-        # 在图表上增加一条阈值线
+        # Add a threshold line to the chart
         ax.axhline(
             y=250, color="r", linestyle="--", label="Selection Threshold (250 stocks)"
         )
@@ -361,7 +361,7 @@ def main():
         ax.grid(True)
         ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
-        y_max = max(260, df_stats["count"].max() * 1.1)  # 确保阈值线可见
+        y_max = max(260, df_stats["count"].max() * 1.1)  # Ensure threshold line is visible
         ax.set_ylim(bottom=0, top=y_max)
         fig.tight_layout()
         chart_output_file = OUTPUT_FILE_BASE.with_suffix(".png")

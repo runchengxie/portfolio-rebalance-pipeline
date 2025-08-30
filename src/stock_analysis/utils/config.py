@@ -1,6 +1,6 @@
-"""配置文件读取模块
+"""Configuration file loading module.
 
-统一管理回测配置，确保三个回测脚本使用相同的时间区间和参数。
+Provides unified configuration file loading functionality.
 """
 
 import datetime
@@ -16,17 +16,17 @@ from dateutil.relativedelta import relativedelta
 
 
 def load_cfg() -> dict[str, Any]:
-    """加载配置文件
+    """Load configuration file.
 
     优先读取 config/config.yaml，其次项目根的 config.yaml
 
     Returns:
-        Dict[str, Any]: 配置字典
+        Dict[str, Any]: Configuration dictionary
     """
     # 项目根目录
     root = Path(__file__).resolve().parents[3]
 
-    # 配置文件候选路径（按优先级排序）
+    # Try to load config file from multiple locations
     candidates = [
         root / "config" / "config.yaml",  # 优先：config/config.yaml
         root / "config.yaml",  # 备选：项目根的config.yaml
@@ -71,13 +71,13 @@ def load_cfg() -> dict[str, Any]:
 
 
 def get_backtest_period(portfolios: dict = None) -> tuple[datetime.date, datetime.date]:
-    """获取回测时间区间
+    """Get backtest time period.
 
     Args:
         portfolios: 投资组合字典，仅在dynamic模式下使用
 
     Returns:
-        Tuple[datetime.date, datetime.date]: (开始日期, 结束日期)
+        Tuple[datetime.date, datetime.date]: (start_date, end_date)
     """
     config = load_cfg()
     backtest_config = config.get("backtest", {})
@@ -125,7 +125,7 @@ def get_backtest_period(portfolios: dict = None) -> tuple[datetime.date, datetim
 
 
 def get_initial_cash(strategy: str) -> float:
-    """获取指定策略的初始资金
+    """Get initial cash amount.
 
     支持两种配置格式：
     1. 统一资金：initial_cash: 1000000
@@ -135,7 +135,7 @@ def get_initial_cash(strategy: str) -> float:
         strategy: 策略名称 ('ai', 'quant', 'spy')
 
     Returns:
-        float: 初始资金金额
+        float: Initial cash amount
     """
     config = load_cfg()
     backtest_config = config.get("backtest", {})

@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pandas as pd
 
-# 统一用项目内的路径配置
+# Use unified path configuration within the project
 from .utils.paths import DATA_DIR, DB_PATH  # ← 用已有模块，别重复造轮子
 
 
 def tidy_ticker(col: pd.Series) -> pd.Series:
-    """数据清洗函数：标准化股票代码"""
+    """Data cleaning function: standardize stock symbols"""
     return (
         col.astype("string")
         .str.upper()
@@ -22,7 +22,7 @@ def tidy_ticker(col: pd.Series) -> pd.Series:
 
 
 def _fast_pragmas(con: sqlite3.Connection, fast: bool = True) -> None:
-    """设置SQLite性能优化参数"""
+    """Set SQLite performance optimization parameters"""
     if fast:
         con.execute("PRAGMA journal_mode=WAL;")
         con.execute("PRAGMA synchronous=NORMAL;")
@@ -30,20 +30,20 @@ def _fast_pragmas(con: sqlite3.Connection, fast: bool = True) -> None:
         con.execute("PRAGMA journal_mode=WAL;")
         con.execute("PRAGMA synchronous=NORMAL;")
     con.execute("PRAGMA temp_store=MEMORY;")
-    con.execute("PRAGMA cache_size=-200000;")  # 约200MB
+    con.execute("PRAGMA cache_size=-200000;")  # Approximately 200MB
 
 
 def _check_sqlite3_cli() -> bool:
-    """检查是否有sqlite3命令行工具可用"""
+    """Check if sqlite3 command line tool is available"""
     return shutil.which("sqlite3") is not None
 
 
 def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) -> bool:
-    """使用SQLite CLI导入价格数据（最快方式）"""
+    """Import price data using SQLite CLI (fastest method)"""
     try:
         print("    - Using SQLite CLI for fast import...")
 
-        # 构建SQLite命令
+        # Build SQLite commands
         indexes_path = schema_path.parent / "indexes_prices.sql"
         commands = [
             f".read {schema_path.as_posix()}",
@@ -58,7 +58,7 @@ def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) ->
             "PRAGMA synchronous=NORMAL;",
         ])
 
-        # 执行SQLite命令
+        # Execute SQLite commands
         cmd = ["sqlite3", str(db_path)]
         for command in commands:
             cmd.extend(["-cmd", command])
@@ -86,7 +86,7 @@ def _load_csv_in_chunks(
     dtype=None,
     chunk=200_000,
 ) -> int:
-    """分块加载CSV文件到数据库"""
+    """Load CSV file to database in chunks"""
     rows = 0
     first = True
     for df in pd.read_csv(
@@ -101,7 +101,7 @@ def _load_csv_in_chunks(
             df["Ticker"] = tidy_ticker(df["Ticker"])
             df = df.dropna(subset=["Ticker"])
 
-        # 财报字段改名逻辑
+        # Financial statement field renaming logic
         if table in {"balance_sheet", "cash_flow", "income"}:
             if "Publish Date" in df.columns:
                 df.rename(columns={"Publish Date": "date_known"}, inplace=True)
@@ -110,7 +110,7 @@ def _load_csv_in_chunks(
             if "date_known" in df.columns:
                 df["date_known"] = pd.to_datetime(df["date_known"], errors="coerce")
 
-        # 价格数据去重
+        # Remove duplicates from price data
         if table == "share_prices":
             df = df.drop_duplicates(subset=["Ticker", "Date"], keep="last")
 
@@ -121,17 +121,17 @@ def _load_csv_in_chunks(
 
 
 def main(*, skip_prices: bool = False, only_prices: bool = False):
-    """主函数：优化版数据库加载
+    """Main function: optimized database loading
 
     Args:
-        skip_prices: 跳过股价数据导入（仅导入财报类表）
-        only_prices: 仅导入股价数据（跳过财报类表）
+        skip_prices: Skip stock price data import (only import financial statement tables)
+        only_prices: Only import stock price data (skip financial statement tables)
     """
     print(f"Creating SQLite database at: {DB_PATH}")
     with sqlite3.connect(DB_PATH) as con:
         _fast_pragmas(con, fast=True)
 
-        # 财报数据
+        # Financial statement data
         if not only_prices:
             print("Processing financial statements...")
             files = {
@@ -140,7 +140,7 @@ def main(*, skip_prices: bool = False, only_prices: bool = False):
                 "income": DATA_DIR / "us-income-ttm.csv",
             }
 
-            # 定义数据类型以减少SQLite类型推断开销
+            # Define data types to reduce SQLite type inference overhead
             financial_dtype = {
                 "Ticker": "string",
                 "Fiscal Year": "Int64",
@@ -154,20 +154,20 @@ def main(*, skip_prices: bool = False, only_prices: bool = False):
                 else:
                     print(f"  [WARNING] File not found: {path}")
 
-        # 价格数据 - 可选跳过（用于外部脚本先行导入）
+        # Price data - optional skip (for external script pre-import)
         if os.getenv("SKIP_PRICES") or skip_prices:
             print("Skipping price data import due to SKIP_PRICES=1")
         else:
             print("Processing price data...")
             price_csv = DATA_DIR / "us-shareprices-daily.csv"
-            # schema文件（优先使用 schema_prices.sql，兼容旧 schema.sql）位于项目根目录
+            # Schema file (prefer schema_prices.sql, compatible with old schema.sql) located in project root
             sql_dir = DATA_DIR.parent / "sql"
             preferred = sql_dir / "schema_prices.sql"
             fallback = sql_dir / "schema.sql"
             schema_sql = preferred if preferred.exists() else fallback
 
             if price_csv.exists():
-                # 检查文件大小，大文件优先使用CLI导入
+                # Check file size, prioritize CLI import for large files
                 file_size_mb = price_csv.stat().st_size / (1024 * 1024)
                 print(f"    - Price data file size: {file_size_mb:.1f} MB")
 
@@ -190,7 +190,7 @@ def main(*, skip_prices: bool = False, only_prices: bool = False):
                     )
                     print(f"    - Loaded {rows} rows into share_prices")
 
-                    # 为pandas导入创建索引
+                    # Create indexes for pandas import
                     print("    - Creating indexes for pandas import...")
                     con.execute(
                         "CREATE INDEX IF NOT EXISTS idx_prices_date ON share_prices(Date);"
@@ -205,11 +205,11 @@ def main(*, skip_prices: bool = False, only_prices: bool = False):
                 if not schema_sql.exists():
                     print(f"  [WARNING] Schema file not found: {schema_sql}")
 
-        # 财报表索引：一次性创建，且与查询对齐
+        # Financial statement indexes: create once and align with queries
         if not only_prices:
             print("Creating optimized indexes for financial data...")
             con.executescript("""
-            -- 财报表：按 Ticker, year 分组按 date_known 取最新
+            -- Financial statements: group by Ticker, year and take latest by date_known
             CREATE INDEX IF NOT EXISTS idx_bs_ty_date  ON balance_sheet (Ticker, year, date_known DESC);
             CREATE INDEX IF NOT EXISTS idx_cf_ty_date  ON cash_flow     (Ticker, year, date_known DESC);
             CREATE INDEX IF NOT EXISTS idx_in_ty_date  ON income        (Ticker, year, date_known DESC);
