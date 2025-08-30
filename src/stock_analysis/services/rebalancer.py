@@ -176,6 +176,35 @@ class RebalanceService:
             )
             orders.append(order)
 
+        # 处理非目标列表中的现有持仓：清仓（target 视为 0）
+        target_set = { _to_lb_symbol(t.upper().strip()) for t in target_tickers }
+        for sym, cur in current_positions_map.items():
+            if sym in target_set:
+                continue
+            current_qty = int(cur.quantity)
+            if current_qty <= 0:
+                continue
+            lot_size = client.lot_size(sym)
+            # 取整至 lot
+            qty_to_sell = (current_qty // lot_size) * lot_size
+            if qty_to_sell <= 0:
+                continue
+            # 使用已有报价
+            px = float((quotes or {}).get(sym, cur.last_price or 0.0))
+            # 目标持仓加入 0 行，便于 diff 视图
+            target_positions.append(
+                Position(symbol=sym, quantity=0, last_price=px, estimated_value=0.0, env=self.env)
+            )
+            orders.append(
+                Order(
+                    symbol=sym,
+                    quantity=qty_to_sell,
+                    side="SELL",
+                    price=px if px > 0 else None,
+                    order_type="MARKET",
+                )
+            )
+
         return RebalanceResult(
             target_positions=target_positions,
             current_positions=account_snapshot.positions,
