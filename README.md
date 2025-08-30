@@ -70,26 +70,14 @@
 
 5. 查看当下账户情况
 
-    在执行任何交易操作前，先验证 API 连接和账户状态。
-
-    * 默认 `--env test`。
-
-    * `--env real` 允许“只读展示”，但打印一个巨醒目的横幅，告诉你现在是在看真实账户数据。
-
-    * `--env both` 时，除非显式允许 real，否则降级为只展示 test 并给出提示。
+    在执行任何交易操作前，先验证 API 连接和账户状态（默认连接真实账户，预览不下单）。
 
     ```bash
     # 验证API凭据和实时报价功能是否正常
     stockq lb-quote AAPL MSFT
 
-    # 只看测试账户（默认）
+    # 查看真实账户
     stockq lb-account
-
-    # 明确查看真实账户（只读）
-    stockq lb-account --env real
-
-    # 同时查看两个账户，并并排输出
-    stockq lb-account --env both
 
     # 只看资金或只看持仓
     stockq lb-account --funds
@@ -99,23 +87,22 @@
     stockq lb-account --format json
    ```
 
-6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance`命令内置了一套严格的安全执行机制。该机制的核心原则是默认安全：让无风险的操作（如测试和模拟）变得简单，而让有风险的真实交易需要用户进行明确、多重确认。
+6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance`命令默认使用真实账户进行干跑预览，只有添加 `--execute` 时才会真实下单。
 
     请在执行前务必理解以下**行为矩阵**：
 
     | 命令组合 | 行为描述 |
     | :--- | :--- |
-    | `stockq lb-rebalance ... --env test` | 安全模拟: 无论是否添加 `--execute`，此命令都只会在测试环境中进行模拟操作。它用于验证 API 凭据、网络连接和调仓逻辑，绝不会触及您的真实资金。 |
-    | `stockq lb-rebalance ... --env real` | 拒绝执行: 为了防止用户误操作（例如，以为自己执行了真实交易但实际上只是模拟），系统会明确拒绝此组合，并提示您必须添加 `--execute` 标志才能在真实环境下运行。这是一个关键的防呆设计。 |
-    | `stockq lb-rebalance ... --env real --execute` | 真实交易: 这是唯一会触发真实下单的命令组合。执行此命令前，请务必确认您的调仓计划。所有在代码中定义的风控措施（如单笔最大金额、交易时间窗口）将在此模式下生效。 |
+    | `stockq lb-rebalance ...` | 真实账户干跑：读取真实账户、统一抓取行情、生成等额调仓计划，但不下单。 |
+    | `stockq lb-rebalance ... --execute` | 真实交易：在真实账户下按计划下单；所有风控（交易时段/最小单位/单笔上限）生效。 |
 
     推荐的执行流程：
 
     * 测试环境模拟（Dry-Run）:
 
         ```bash
-        # 在一个完全隔离的环境中，检查调仓计划是否符合预期
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env test
+        # 预览真实账户调仓计划（不下单）
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
         ```
 
     3. 仔细检查输出: 审查上一步打印的交易计划，包括股票代码、数量和方向。
@@ -124,7 +111,7 @@
 
         ```bash
         # 确认所有信息无误后，才执行真实下单
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env real --execute
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
         ```
 
 ## 可选步骤
@@ -313,13 +300,22 @@
     ```bash
     # 确保pip是最新版本
     pip install --upgrade pip
+    
     # 从项目根目录运行
     pip install -e .
 
-    # 或者使用uv，开发环境下使用
-    uv sync --extra dev
+
+    # --- 或者使用uv ---
+    # 开发环境下使用
+    uv sync
+    
     # CI/发布环境
-    uv sync --locked
+    uv sync --no-dev
+
+    # 仅安装开发的依赖
+    uv sync --only-dev
+
+
     ```
 
 2. 配置API密钥:
@@ -344,8 +340,7 @@
     LONGPORT_APP_KEY="your_app_key_here"
     LONGPORT_APP_SECRET="your_app_secret_here"
     
-    # 根据 --env test 或 --env real 参数自动读取对应 Token
-    LONGPORT_ACCESS_TOKEN_TEST="your_test_access_token_here"
+    # 使用真实账户 Token 即可
     LONGPORT_ACCESS_TOKEN="your_real_access_token_here"
     ```
 
@@ -369,4 +364,261 @@
 
 ```bash
 pytest
+```
+
+### 测试分类
+
+#### 单元测试 (Unit Tests)
+
+- 标记: `@pytest.mark.unit`
+
+- 特点: 快速、独立、不依赖外部资源
+
+- 包含: 函数逻辑测试、数据处理测试、算法验证等
+
+- 运行时间: 通常 < 1秒
+
+#### 集成测试 (Integration Tests)
+
+- 标记: `@pytest.mark.integration`
+
+- 特点: 较慢、可能依赖外部API或数据库
+
+- 包含: API调用测试、数据库操作测试、文件I/O测试
+
+- 运行时间: 可能需要几秒到几分钟
+
+- 注意: 默认情况下被跳过，需要显式运行
+
+#### 端到端测试 (E2E Tests)
+
+- 标记: `@pytest.mark.e2e`
+
+- 特点: 测试完整的工作流程
+
+- 包含: CLI命令测试、完整流程测试
+
+- 运行时间: 可能需要较长时间
+
+#### 其他标记
+
+- `@pytest.mark.slow`: 运行时间较长的测试
+
+- `@pytest.mark.requires_api`: 需要外部API访问的测试
+
+- `@pytest.mark.requires_db`: 需要数据库访问的测试
+
+### 运行测试
+
+#### 默认运行（仅单元测试）
+
+```bash
+# 运行所有单元测试，跳过integration测试
+pytest
+
+# 或者显式指定
+pytest -m "not integration"
+```
+
+#### 运行所有测试
+
+```bash
+# 运行包括integration测试在内的所有测试
+pytest -m ""
+
+# 或者
+pytest --no-cov -m ""
+```
+
+#### 运行特定类型的测试
+
+```bash
+# 仅运行单元测试
+pytest -m "unit"
+
+# 仅运行集成测试
+pytest -m "integration"
+
+# 仅运行端到端测试
+pytest -m "e2e"
+
+# 运行快速测试（排除慢测试）
+pytest -m "not slow"
+
+# 运行不需要API的测试
+pytest -m "not requires_api"
+```
+
+#### 运行特定目录的测试
+
+```bash
+# 仅运行单元测试目录
+pytest tests/unit/
+
+# 仅运行集成测试目录
+pytest tests/integration/
+
+# 仅运行端到端测试目录
+pytest tests/e2e/
+```
+
+#### 覆盖率报告
+
+```bash
+# 生成详细的覆盖率报告
+pytest --cov=stock_analysis --cov-report=html
+
+# 查看未覆盖的行
+pytest --cov=stock_analysis --cov-report=term-missing
+
+# 设置覆盖率阈值
+pytest --cov=stock_analysis --cov-fail-under=80
+```
+
+### CI/CD 配置
+
+#### 默认行为
+
+- CI默认只运行单元测试（快速反馈）
+
+- 覆盖率要求达到75%
+
+- 集成测试被跳过以避免外部依赖问题
+
+#### 完整测试
+
+在需要完整测试时（如发布前），可以运行：
+
+```bash
+pytest -m "" --cov=stock_analysis --cov-report=term-missing
+```
+
+### 测试编写指南
+
+#### 标记测试
+
+```python
+import pytest
+
+@pytest.mark.unit
+def test_fast_function():
+    """快速的单元测试"""
+    assert True
+
+@pytest.mark.integration
+@pytest.mark.requires_api
+def test_api_call():
+    """需要API访问的集成测试"""
+    # 测试代码
+    pass
+
+@pytest.mark.integration
+@pytest.mark.requires_db
+def test_database_operation():
+    """需要数据库的集成测试"""
+    # 测试代码
+    pass
+
+@pytest.mark.slow
+def test_long_running_process():
+    """运行时间较长的测试"""
+    # 测试代码
+    pass
+```
+
+#### 跳过条件
+
+```python
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not os.getenv("API_KEY"),
+    reason="API密钥未配置，跳过集成测试"
+)
+def test_with_api_key():
+    """需要API密钥的测试"""
+    pass
+```
+
+#### 参数化测试
+
+```python
+@pytest.mark.unit
+@pytest.mark.parametrize("input,expected", [
+    ("test", "TEST"),
+    ("hello", "HELLO"),
+])
+def test_uppercase(input, expected):
+    assert input.upper() == expected
+```
+
+### 故障排除
+
+#### 常见问题
+
+1. 集成测试失败
+
+   - 检查API密钥是否配置
+
+   - 检查网络连接
+
+   - 检查外部服务状态
+
+2. 覆盖率不足
+
+   - 运行 `pytest --cov=stock_analysis --cov-report=html` 查看详细报告
+
+   - 添加缺失的测试用例
+
+3. 测试运行缓慢
+
+   - 使用 `pytest -m "not slow"` 跳过慢测试
+
+   - 检查是否有未标记的慢测试
+
+#### 调试测试
+
+```bash
+# 显示详细输出
+pytest -v
+
+# 显示print语句
+pytest -s
+
+# 在第一个失败时停止
+pytest -x
+
+# 显示最慢的10个测试
+pytest --durations=10
+```
+
+### 最佳实践
+
+1. 测试隔离: 每个测试应该独立，不依赖其他测试的状态
+
+2. 快速反馈: 单元测试应该快速运行，提供即时反馈
+
+3. 合理标记: 正确标记测试类型，确保CI效率
+
+4. 模拟外部依赖: 在单元测试中使用mock避免外部依赖
+
+5. 清晰命名: 测试名称应该清楚描述测试的内容和预期
+
+6. 适当覆盖: 关注关键路径和边界情况的测试覆盖
+
+### 示例测试结构
+
+```
+tests/
+├── unit/                    # 单元测试
+│   ├── test_tidy_ticker.py
+│   ├── test_preliminary_selection.py
+│   └── test_ai_result_parsing.py
+├── integration/             # 集成测试
+│   ├── test_db_io.py
+│   ├── test_longbridge_quote_integration.py
+│   └── test_price_data_completeness.py
+├── e2e/                     # 端到端测试
+│   ├── test_cli_smoke.py
+│   └── test_cli_lb_e2e.py
+└── README.md               # 本文件
 ```

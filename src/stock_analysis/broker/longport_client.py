@@ -42,7 +42,6 @@ def getenv_both(name_new: str, name_old: str, default: str = None) -> str:
 
 
 class Env(str, Enum):
-    TEST = "test"
     REAL = "real"
 
 
@@ -118,10 +117,8 @@ class LongPortClient:
             env: Environment (test/real). If None, uses LONGPORT_DEFAULT_ENV or defaults to test.
             limits: Risk control limits. If None, uses default limits.
         """
-        default_env = getenv_both(
-            "LONGPORT_DEFAULT_ENV", "LONGBRIDGE_DEFAULT_ENV", "test"
-        )
-        self.env = Env((env or default_env).lower())
+        # 强制使用 REAL 环境
+        self.env = Env.REAL
         self.region = getenv_both("LONGPORT_REGION", "LONGBRIDGE_REGION", "hk")
 
         self.app_key = getenv_both("LONGPORT_APP_KEY", "LONGBRIDGE_APP_KEY")
@@ -138,19 +135,12 @@ class LongPortClient:
         if not self.app_key or not self.app_secret:
             raise RuntimeError("缺少 LONGPORT_APP_KEY/SECRET。请通过系统环境变量注入。")
 
-        # 彻底移除 fallback：哪个环境就必须有哪个 token
-        if self.env == Env.TEST:
-            if not self.token_test:
-                raise RuntimeError(
-                    "缺少 LONGPORT_ACCESS_TOKEN_TEST。请通过系统环境变量注入。"
-                )
-            access_token = self.token_test
-        else:
-            if not self.token_real:
-                raise RuntimeError(
-                    "缺少 LONGPORT_ACCESS_TOKEN（或兼容 LONGPORT_ACCESS_TOKEN_REAL）。请通过系统环境变量注入。"
-                )
-            access_token = self.token_real
+        # 只支持 REAL 环境
+        if not self.token_real:
+            raise RuntimeError(
+                "缺少 LONGPORT_ACCESS_TOKEN（或兼容 LONGPORT_ACCESS_TOKEN_REAL）。请通过系统环境变量注入。"
+            )
+        access_token = self.token_real
 
         # 通过环境变量注入 token/region，再用 SDK 的 from_env 选择正确端点与默认配置
         self._prev_env = {
@@ -204,13 +194,21 @@ class LongPortClient:
             bars[i.symbol] = (i.last_done or 0.0, i.timestamp or "")
         return bars
 
-    def portfolio_snapshot(self) -> tuple[float, dict[str, int]]:
+    def portfolio_snapshot(self) -> tuple[float, dict[str, int], float | None, str | None]:
         """
-        返回 (现金USD估算, 持仓映射{ 'AAPL.US': 100, ... })。
+        返回 (cash_usd, stock_position_map, net_assets, base_currency)。
+
+        - cash_usd: 仅 USD 可用现金（不做 FX 折算）
+        - stock_position_map: {'AAPL.US': 100, ...}
+        - net_assets: 券商口径总资产（含多币种/持仓），若可得
+        - base_currency: 该 net_assets 的口径币种（如 'HKD'）
+
         兼容不同 SDK 版本的 asset/balance 与 stock_positions/position_list 返回形态。
         """
         cash_usd = 0.0
         pos_map: dict[str, int] = {}
+        net_assets: float | None = None
+        base_ccy: str | None = None
 
         # ---------- 现金 ----------
         try:
@@ -236,10 +234,16 @@ class LongPortClient:
                     if not ccy:
                         continue
                     totals[ccy] = totals.get(ccy, 0.0) + amt
-                cash_usd = totals.get("USD", 0.0) if totals else 0.0
-                # 2) 没有 USD，就把所有币种粗略相加当展示值
-                if cash_usd == 0.0 and totals:
-                    cash_usd = sum(totals.values())
+                # 仅使用 USD 现金作为 cash_usd，避免错误的多币种相加
+                cash_usd = totals.get("USD", 0.0)
+                # 券商口径总资产及其币种
+                na = getattr(asset, "net_assets", None)
+                if na is not None:
+                    try:
+                        net_assets = float(na)
+                    except Exception:
+                        net_assets = None
+                base_ccy = str(getattr(asset, "currency", "") or "").upper() or None
                 # 3) 再不行就兜底找常见字段
                 if cash_usd == 0.0:
                     for name in ("cash", "available_cash", "total_cash"):
@@ -256,7 +260,7 @@ class LongPortClient:
                 self.trade, "position_list", None
             )
             if not pos_fn:
-                return cash_usd, pos_map
+                return cash_usd, pos_map, net_assets, base_ccy
 
             ret = pos_fn()
 
@@ -352,10 +356,66 @@ class LongPortClient:
             # 拿不到就给空，调用侧会优雅降级
             pass
 
-        return cash_usd, pos_map
+        return cash_usd, pos_map, net_assets, base_ccy
+
+    def fund_positions(self) -> dict[str, tuple[float, float, str]]:
+        """
+        返回基金持仓映射：{ symbol => (holding_units, current_nav, currency) }。
+
+        - symbol: LongPort 返回的基金代码/ISIN
+        - holding_units: 持有份额（float）
+        - current_nav: 当前净值（float）
+        - currency: 货币代码
+        """
+        result: dict[str, tuple[float, float, str]] = {}
+        try:
+            fn = getattr(self.trade, "fund_positions", None)
+            if not fn:
+                return result
+            resp = fn()
+            # 形态：resp.list[account].fund_info[*]
+            accounts = getattr(resp, "list", None) or []
+            for acc in accounts:
+                fund_info = getattr(acc, "fund_info", None) or []
+                for it in fund_info:
+                    sym = (
+                        getattr(it, "symbol", None)
+                        if not isinstance(it, dict)
+                        else it.get("symbol")
+                    )
+                    units = (
+                        getattr(it, "holding_units", None)
+                        if not isinstance(it, dict)
+                        else it.get("holding_units")
+                    )
+                    nav = (
+                        getattr(it, "current_net_asset_value", None)
+                        if not isinstance(it, dict)
+                        else it.get("current_net_asset_value")
+                    )
+                    ccy = (
+                        getattr(it, "currency", None)
+                        if not isinstance(it, dict)
+                        else it.get("currency")
+                    )
+                    if sym is None or units is None or nav is None:
+                        continue
+                    try:
+                        u = float(units)
+                        p = float(nav)
+                    except Exception:
+                        continue
+                    result[str(sym)] = (u, p, str(ccy or ""))
+        except Exception:
+            # 获取失败不影响主流程
+            pass
+        return result
 
     def lot_size(self, symbol: str) -> int:
         """查询最小交易单位，查不到就返回 1。"""
+        # 快路径：美股默认 1，避免静态信息查询造成多余的权限输出
+        if _market_of(symbol) == "US":
+            return 1
         try:
             info = self.quote.static_info([_to_lb_symbol(symbol)])
             if info and info[0].lot_size:
@@ -498,7 +558,12 @@ class LongPortClient:
 
     # ---------- 下单（市价等权示例） ----------
     def place_order(
-        self, symbol: str, qty: int, side: str, dry_run: bool = True
+        self,
+        symbol: str,
+        qty: int,
+        side: str,
+        dry_run: bool = True,
+        est_px: float | None = None,
     ) -> dict:
         """Place order with risk controls.
 
@@ -517,13 +582,13 @@ class LongPortClient:
         symbol_formatted = _to_lb_symbol(symbol)
 
         # 干跑或 TEST：跳过时间窗检查，但保留 lot 与金额估算
-        if dry_run or self.env == Env.TEST:
+        if dry_run:
             lot = self.lot_size(symbol_formatted)
             if qty % lot != 0:
                 raise RuntimeError(
                     f"{symbol_formatted} 数量需为最小交易单位 {lot} 的整数倍"
                 )
-            px, _ = self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))
+            px = float(est_px) if est_px is not None else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
             notional = px * qty
             if notional > self.limits.max_notional_per_order:
                 raise RuntimeError(
@@ -545,7 +610,7 @@ class LongPortClient:
         self._check_lot(symbol_formatted, qty)
         if qty > self.limits.max_qty_per_order:
             raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
-        px, _ = self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))
+        px = float(est_px) if est_px is not None else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
         notional = px * qty
         if notional > self.limits.max_notional_per_order:
             raise RuntimeError(

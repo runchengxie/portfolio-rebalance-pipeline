@@ -18,9 +18,9 @@ logger = get_logger(__name__)
 class RebalanceService:
     """调仓服务类"""
 
-    def __init__(self, env: str = "test"):
+    def __init__(self, env: str = "real", client: LongPortClient | None = None):
         self.env = env
-        self.client = None
+        self.client = client
 
     def _get_client(self) -> LongPortClient:
         """获取客户端实例"""
@@ -35,7 +35,11 @@ class RebalanceService:
             self.client = None
 
     def plan_rebalance(
-        self, target_tickers: list[str], account_snapshot: AccountSnapshot
+        self,
+        target_tickers: list[str],
+        account_snapshot: AccountSnapshot,
+        quotes: dict[str, float] | None = None,
+        allow_fractional: bool = False,
     ) -> RebalanceResult:
         """制定调仓计划
 
@@ -49,19 +53,56 @@ class RebalanceService:
         if not target_tickers:
             raise ValueError("目标股票列表不能为空")
 
-        # 获取实时报价
-        lb_symbols = [
-            _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
-        ]
-        try:
-            quotes = get_quotes(lb_symbols, self.env)
-        except Exception as e:
-            logger.error(f"获取报价失败: {e}")
-            raise
+        # 获取实时报价（未提供则内部拉取一次）
+        if quotes is None:
+            lb_symbols = [
+                _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
+            ]
+            try:
+                quote_objs = get_quotes(lb_symbols, client=self._get_client())
+                # 转为简单价格映射
+                quotes = {sym: q.price for sym, q in quote_objs.items()}
+            except Exception as e:
+                logger.error(f"获取报价失败: {e}")
+                raise
 
-        # 计算等权重目标仓位
+        # 计算等权重目标仓位（带兜底：若总资产为 0 或缺失，则以 USD 现金 + 报价估值重算）
         n_stocks = len(target_tickers)
-        target_value_per_stock = account_snapshot.total_portfolio_value / n_stocks
+        if account_snapshot.total_portfolio_value and account_snapshot.total_portfolio_value > 0:
+            effective_total = float(account_snapshot.total_portfolio_value)
+        else:
+            total_pos_value = 0.0
+            if quotes is None:
+                lb_symbols = [
+                    _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
+                ]
+                quote_objs = get_quotes(lb_symbols, client=self._get_client())
+                quotes = {sym: q.price for sym, q in quote_objs.items()}
+            # 用 quotes 给当前持仓估值
+            current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
+            for sym, pos in current_positions_map.items():
+                px = float((quotes or {}).get(sym, pos.last_price or 0.0))
+                total_pos_value += px * float(pos.quantity)
+            effective_total = float(account_snapshot.cash_usd) + float(total_pos_value)
+            if effective_total <= 0:
+                # 进一步提示：如果券商返回了非 USD 的净资产，但无法估值现有持仓，则需要 FX 或切换到 real 环境
+                try:
+                    from ..utils.logging import get_logger as _get_logger
+
+                    _lg = _get_logger(__name__)
+                    if account_snapshot.base_currency and account_snapshot.base_currency != "USD":
+                        _lg.warning(
+                            "总资产为 0：当前环境持仓/现金按 USD 计为 0，券商净资产为非USD(%s)。"
+                            " 可使用 real 环境干跑，或提供 FX 汇率进行折算。",
+                            account_snapshot.base_currency,
+                        )
+                    else:
+                        _lg.warning(
+                            "总资产为 0：未获取到 USD 现金与可估值持仓，建议切换 real 环境或检查账户余额。"
+                        )
+                except Exception:
+                    pass
+        target_value_per_stock = effective_total / n_stocks
 
         # 构建当前持仓映射
         current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
@@ -77,21 +118,27 @@ class RebalanceService:
             lb_symbol = _to_lb_symbol(symbol)
 
             # 获取价格
-            quote = quotes.get(lb_symbol)
-            if not quote or quote.price <= 0:
+            px = (quotes or {}).get(lb_symbol)
+            if not px or px <= 0:
                 logger.warning(f"跳过 {symbol}：无有效价格")
                 continue
 
-            price = quote.price
+            price = float(px)
 
             # 当前持仓
             current_position = current_positions_map.get(lb_symbol)
             current_qty = current_position.quantity if current_position else 0
 
-            # 计算目标持仓（按最小交易单位取整）
+            # 计算目标持仓
             target_qty_raw = target_value_per_stock / price
-            lot_size = client.lot_size(lb_symbol)
-            target_qty = (int(target_qty_raw) // lot_size) * lot_size
+            if allow_fractional:
+                # 计划层允许小数，但下单层仍以最小交易单位执行
+                # 由于 Order/Position 目前的 quantity 为 int，这里保持向下取整到 lot
+                lot_size = client.lot_size(lb_symbol)
+                target_qty = (int(target_qty_raw) // lot_size) * lot_size
+            else:
+                lot_size = client.lot_size(lb_symbol)
+                target_qty = (int(target_qty_raw) // lot_size) * lot_size
 
             # 创建目标持仓
             target_position = Position(
@@ -133,7 +180,7 @@ class RebalanceService:
             target_positions=target_positions,
             current_positions=account_snapshot.positions,
             orders=orders,
-            total_portfolio_value=account_snapshot.total_portfolio_value,
+            total_portfolio_value=effective_total,
             target_value_per_stock=target_value_per_stock,
             env=self.env,
         )
@@ -157,7 +204,11 @@ class RebalanceService:
         for order in orders:
             try:
                 result = client.place_order(
-                    order.symbol, order.quantity, order.side, dry_run=dry_run
+                    order.symbol,
+                    order.quantity,
+                    order.side,
+                    dry_run=dry_run,
+                    est_px=order.price if order.price else None,
                 )
 
                 # 更新订单状态
