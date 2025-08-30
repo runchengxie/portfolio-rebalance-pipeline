@@ -6,7 +6,7 @@
 from pathlib import Path
 
 from ..renderers.table import render_rebalance_plan
-from ..services.account_snapshot import get_account_snapshot
+from ..services.account_snapshot import get_account_snapshot, get_quotes
 from ..services.rebalancer import RebalanceService
 from ..utils.excel import read_latest_sheet_tickers
 from ..utils.logging import get_logger
@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 def run_lb_rebalance(
-    input_file: str, account: str = "main", dry_run: bool = True, env: str = "test"
+    input_file: str, account: str = "main", dry_run: bool = True, env: str = "real"
 ) -> int:
     """运行LongPort差额调仓
 
@@ -32,19 +32,16 @@ def run_lb_rebalance(
         int: 退出码（0表示成功）
     """
     try:
-        # 真环境必须显式 --env real 且 --execute
-        if env == "real" and dry_run:
-            logger.error(
-                "拒绝执行：你选择了 real 环境但仍是干跑模式。请加 --execute 再来。"
-            )
-            return 1
-        if env == "real" and not dry_run:
-            logger.warning("警告：将实际在 REAL 环境下下单。风险自负。")
+        # 强制使用 REAL 环境；不带 --execute 则为干跑预览
+        env = "real"
+        if dry_run:
+            logger.info("模式: 干跑模式（真实账户快照，预览不下单）")
+        else:
+            logger.warning("模式: 实盘执行（真实下单，谨慎操作）")
 
         logger.info(f"正在读取AI选股结果文件: {input_file}")
         logger.info(f"账户: {account}")
         logger.info(f"环境: {env.upper()}")
-        logger.info(f"模式: {'干跑模式（只打印）' if dry_run else '实际执行模式'}")
 
         # 检查文件是否存在
         file_path = Path(input_file)
@@ -62,16 +59,30 @@ def run_lb_rebalance(
             logger.error(f"读取Excel文件失败：{e}")
             return 1
 
-        # 获取账户快照
-        account_snapshot = get_account_snapshot(env)
+        # 构建单一客户端，贯穿全流程，避免重复初始化导致权限表打印多次
+        from ..broker.longport_client import LongPortClient
+
+        client = LongPortClient(env=env)
+        # 获取账户快照（不取报价，稍后统一一次性取）
+        account_snapshot = get_account_snapshot(env=env, include_quotes=False, client=client)
+
+        # 统一一次性取行情：目标股票 + 现有持仓
+        target_syms = {t.strip().upper() for t in tickers}
+        held_syms = {p.symbol for p in account_snapshot.positions}
+        all_syms = target_syms | held_syms
+        if all_syms:
+            quote_objs = get_quotes(list(all_syms), client=client)
+            quote_map = {k: v.price for k, v in quote_objs.items()}
+        else:
+            quote_map = {}
 
         # 初始化调仓服务
-        rebalance_service = RebalanceService(env=env)
+        rebalance_service = RebalanceService(env=env, client=client)
 
         try:
             # 制定调仓计划
             rebalance_result = rebalance_service.plan_rebalance(
-                tickers, account_snapshot
+                tickers, account_snapshot, quotes=quote_map
             )
             rebalance_result.dry_run = dry_run
             rebalance_result.sheet_name = sheet_name
