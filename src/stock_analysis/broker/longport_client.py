@@ -107,7 +107,7 @@ class LongPortClient:
     Provides a unified interface to access LongPort's trading and quote functionality.
     """
 
-    def __init__(self, config=None):
+    def __init__(self, env: str | None = None, limits: BrokerLimits | None = None, config=None):
         """Initialize LongPort client.
 
         Args:
