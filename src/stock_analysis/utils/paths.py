@@ -1,42 +1,42 @@
-"""统一路径配置模块
+"""Unified path configuration module.
 
-提供项目中所有路径的统一配置，消除重复的路径设置代码。
+Provides unified configuration for all paths in the project, eliminating duplicate path setup code.
 """
 
 from pathlib import Path
 
 
 def get_project_root() -> Path:
-    """获取项目根目录路径
+    """Get project root directory path.
 
     Returns:
-        Path: 项目根目录路径
+        Path: Project root directory path
     """
     try:
-        # 假设脚本位于根目录的 'src/stock_analysis/' 文件夹下
+        # Assume script is located in 'src/stock_analysis/' folder under root directory
         return Path(__file__).resolve().parent.parent.parent.parent
     except NameError:
-        # 如果在交互式环境（如Jupyter）中运行，则使用当前工作目录
+        # Use current working directory if running in interactive environment (like Jupyter)
         return Path.cwd()
 
 
-# 全局路径配置
+# Global path configuration
 PROJECT_ROOT = get_project_root()
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
-# 确保输出目录存在
+# Ensure output directory exists
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# 数据库路径
+# Database path
 DB_PATH = DATA_DIR / "financial_data.db"
 
-# 默认的组合文件路径
+# Default portfolio file paths
 AI_PORTFOLIO_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_all_sheets.xlsx"
 QUANT_PORTFOLIO_FILE = (
     OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
 )
 
-# 回测配置常量
+# Backtest configuration constants
 DEFAULT_INITIAL_CASH = 1_000_000.0
 SPY_INITIAL_CASH = 100_000.0
