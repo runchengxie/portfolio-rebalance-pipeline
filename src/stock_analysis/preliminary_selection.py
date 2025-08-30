@@ -8,7 +8,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 from scipy.stats import zscore
 
-# --- 路径配置 ---
+# --- Path Configuration ---
 try:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 except NameError:
@@ -18,27 +18,27 @@ DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# --- 策略配置 ---
+# --- Strategy Configuration ---
 BACKTEST_FREQUENCY = "QE"
 ROLLING_WINDOW_YEARS = 5
 MIN_REPORTS_IN_WINDOW = 5
 OUTPUT_FILE_BASE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical"
 
-# --- 因子配置 ---
+# --- Factor Configuration ---
 FACTOR_WEIGHTS = {"cfo": 1, "ceq": 1, "txt": 1, "d_txt": 1, "d_at": -1, "d_rect": -1}
 
 
-# 从本地CSV加载S&P 500历史成分股数据
+# Load S&P 500 historical constituents data from local CSV
 def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
     """
-    从本地CSV文件加载S&P 500历史成分股数据。
-    文件应包含 'ticker', 'start_date', 'end_date' 列。
+    Load S&P 500 historical constituents data from local CSV file.
+    The file should contain 'ticker', 'start_date', 'end_date' columns.
     """
     print("正在从本地CSV文件加载S&P 500历史成分股数据...")
     csv_path = data_dir / "sp500_historical_constituents.csv"
     try:
         df_constituents = pd.read_csv(csv_path)
-        # 将日期列转换为datetime对象，对于空值（仍在指数中）会变为NaT
+        # Convert date columns to datetime objects, empty values (still in index) will become NaT
         df_constituents["start_date"] = pd.to_datetime(
             df_constituents["start_date"], errors="coerce"
         )
@@ -46,7 +46,7 @@ def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
             df_constituents["end_date"], errors="coerce"
         )
 
-        # 清理股票代码格式以匹配财务数据
+        # Clean ticker format to match financial data
         df_constituents["ticker"] = df_constituents["ticker"].str.upper().str.strip()
 
         print(f"成功加载 {len(df_constituents)} 条历史成分股记录。")
@@ -56,18 +56,18 @@ def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
         return None
 
 
-# 根据日期获取当时的S&P 500股票池
+# Get S&P 500 stock universe for a specific date
 def get_universe_for_date(
     target_date: pd.Timestamp, df_constituents: pd.DataFrame
 ) -> list:
     """
-    根据给定的日期，从历史成分股DataFrame中筛选出当时有效的股票列表。
+    Filter the list of valid stocks at a given date from the historical constituents DataFrame.
     """
-    target_date = target_date.normalize()  # 确保日期没有时间部分
+    target_date = target_date.normalize()  # Ensure date has no time component
 
-    # 筛选条件：
-    # 1. 股票的起始日期必须在目标日期之前（或当天）
-    # 2. 股票的结束日期必须是空的(NaT)，或者在目标日期之后
+    # Filter conditions:
+    # 1. Stock's start date must be before (or on) the target date
+    # 2. Stock's end date must be empty (NaT) or after the target date
     is_active = (df_constituents["start_date"] <= target_date) & (
         pd.isna(df_constituents["end_date"])
         | (df_constituents["end_date"] > target_date)
@@ -76,7 +76,7 @@ def get_universe_for_date(
     return df_constituents[is_active]["ticker"].tolist()
 
 
-# --- Helper Functions (保持不变) ---
+# --- Helper Functions ---
 def tidy_ticker(col: pd.Series) -> pd.Series:
     return (
         col.astype("string")
@@ -130,7 +130,7 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
 
     if df_final.empty:
         return df_final
-    # 在这里清理 Ticker 格式
+    # Clean Ticker format here
     df_final["Ticker"] = tidy_ticker(df_final["Ticker"])
     df_final = df_final.sort_values(["Ticker", "year", "date_known"]).drop_duplicates(
         subset=["Ticker", "year"], keep="last"

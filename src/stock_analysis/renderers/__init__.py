@@ -1,5 +1,5 @@
-"""渲染器模块
+"""Renderer Module
 
-这个包包含所有输出渲染器，负责将结构化数据格式化为不同的输出格式。
-支持表格、JSON 等多种输出格式。
+This package contains all output renderers, responsible for formatting structured data into different output formats.
+Supports multiple output formats including tables, JSON, etc.
 """

@@ -1,6 +1,6 @@
-"""调仓服务
+"""Rebalancing service
 
-提供调仓相关的业务逻辑，包括计划生成和执行。
+Provides rebalancing-related business logic, including plan generation and execution.
 """
 
 import json
@@ -19,20 +19,20 @@ logger = get_logger(__name__)
 
 
 class RebalanceService:
-    """调仓服务类"""
+    """Rebalancing service class"""
 
     def __init__(self, env: str = "real", client: LongPortClient | None = None):
         self.env = env
         self.client = client
 
     def _get_client(self) -> LongPortClient:
-        """获取客户端实例"""
+        """Get client instance"""
         if not self.client:
             self.client = LongPortClient(env=self.env)
         return self.client
 
     def close(self):
-        """关闭客户端连接"""
+        """Close client connection"""
         if self.client:
             self.client.close()
             self.client = None
@@ -44,19 +44,19 @@ class RebalanceService:
         quotes: dict[str, float] | None = None,
         allow_fractional: bool = False,
     ) -> RebalanceResult:
-        """制定调仓计划
+        """Create rebalancing plan
 
         Args:
-            target_tickers: 目标股票列表
-            account_snapshot: 当前账户快照
+            target_tickers: Target stock list
+            account_snapshot: Current account snapshot
 
         Returns:
-            RebalanceResult: 调仓计划结果
+            RebalanceResult: Rebalancing plan result
         """
         if not target_tickers:
             raise ValueError("目标股票列表不能为空")
 
-        # 获取实时报价（未提供则内部拉取一次）
+        # Get real-time quotes (fetch internally if not provided)
         if quotes is None:
             lb_symbols = [
                 _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
@@ -69,7 +69,7 @@ class RebalanceService:
                 logger.error(f"获取报价失败: {e}")
                 raise
 
-        # 计算等权重目标仓位（带兜底：若总资产为 0 或缺失，则以 USD 现金 + 报价估值重算）
+        # Calculate equal-weight target positions (with fallback: if total assets are 0 or missing, recalculate with USD cash + quote valuation)
         n_stocks = len(target_tickers)
         if account_snapshot.total_portfolio_value and account_snapshot.total_portfolio_value > 0:
             effective_total = float(account_snapshot.total_portfolio_value)
@@ -81,14 +81,14 @@ class RebalanceService:
                 ]
                 quote_objs = get_quotes(lb_symbols, client=self._get_client())
                 quotes = {sym: q.price for sym, q in quote_objs.items()}
-            # 用 quotes 给当前持仓估值
+            # Use quotes to value current positions
             current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
             for sym, pos in current_positions_map.items():
                 px = float((quotes or {}).get(sym, pos.last_price or 0.0))
                 total_pos_value += px * float(pos.quantity)
             effective_total = float(account_snapshot.cash_usd) + float(total_pos_value)
             if effective_total <= 0:
-                # 进一步提示：如果券商返回了非 USD 的净资产，但无法估值现有持仓，则需要 FX 或切换到 real 环境
+                # Further hint: if broker returns non-USD net assets but cannot value existing positions, need FX or switch to real environment
                 try:
                     from ..utils.logging import get_logger as _get_logger
 
@@ -107,10 +107,10 @@ class RebalanceService:
                     pass
         target_value_per_stock = effective_total / n_stocks
 
-        # 构建当前持仓映射
+        # Build current position mapping
         current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
 
-        # 生成调仓订单
+        # Generate rebalancing orders
         orders = []
         target_positions = []
 
@@ -132,7 +132,7 @@ class RebalanceService:
             symbol = ticker.upper().strip()
             lb_symbol = _to_lb_symbol(symbol)
 
-            # 获取价格
+            # Get price
             px = (quotes or {}).get(lb_symbol)
             if not px or px <= 0:
                 logger.warning(f"跳过 {symbol}：无有效价格")
@@ -140,22 +140,22 @@ class RebalanceService:
 
             price = float(px)
 
-            # 当前持仓
+            # Current position
             current_position = current_positions_map.get(lb_symbol)
             current_qty = current_position.quantity if current_position else 0
 
-            # 计算目标持仓
+            # Calculate target position
             target_qty_raw = target_value_per_stock / price
             if allow_fractional:
-                # 计划层允许小数，但下单层仍以最小交易单位执行
-                # 由于 Order/Position 目前的 quantity 为 int，这里保持向下取整到 lot
+                # Planning layer allows fractional, but order layer still executes in minimum trading units
+                # Since Order/Position currently have quantity as int, keep rounding down to lot
                 lot_size = client.lot_size(lb_symbol)
                 target_qty = (int(target_qty_raw) // lot_size) * lot_size
             else:
                 lot_size = client.lot_size(lb_symbol)
                 target_qty = (int(target_qty_raw) // lot_size) * lot_size
 
-            # 创建目标持仓（保守执行：整数股/lot），但计算展示用的目标小数股
+            # Create target position (conservative execution: integer shares/lot), but calculate target fractional shares for display
             target_qty_frac = Decimal(0)
             if price > 0 and frac_enable:
                 target_qty_frac = (Decimal(target_value_per_stock) / Decimal(price)).quantize(
@@ -170,7 +170,7 @@ class RebalanceService:
             )
             target_positions.append(target_position)
 
-            # 计算差额
+            # Calculate difference
             delta_qty = target_qty - current_qty
 
             if abs(delta_qty) < lot_size:
@@ -179,7 +179,7 @@ class RebalanceService:
                 )
                 continue
 
-            # 生成订单
+            # Generate order
             if delta_qty > 0:
                 side = "BUY"
                 qty_to_trade = delta_qty
@@ -194,7 +194,7 @@ class RebalanceService:
                 price=price,
                 order_type="MARKET",
             )
-            # 费用估算（以整数执行量计费）；若目标小数股<1，提供碎股提示
+            # Fee estimation (charged based on integer execution quantity); provide fractional share hint if target fractional shares < 1
             est_fee, frac_hint = estimate_fees(
                 side=side,
                 qty_int=qty_to_trade,
@@ -210,7 +210,7 @@ class RebalanceService:
                 order.rounding_loss = float(target_qty_frac - Decimal(int(target_qty)))
             orders.append(order)
 
-        # 处理非目标列表中的现有持仓：清仓（target 视为 0）
+        # Handle existing positions not in target list: liquidate (treat target as 0)
         target_set = { _to_lb_symbol(t.upper().strip()) for t in target_tickers }
         for sym, cur in current_positions_map.items():
             if sym in target_set:
@@ -219,13 +219,13 @@ class RebalanceService:
             if current_qty <= 0:
                 continue
             lot_size = client.lot_size(sym)
-            # 取整至 lot
+            # Round to lot
             qty_to_sell = (current_qty // lot_size) * lot_size
             if qty_to_sell <= 0:
                 continue
-            # 使用已有报价
+            # Use existing quotes
             px = float((quotes or {}).get(sym, cur.last_price or 0.0))
-            # 目标持仓加入 0 行，便于 diff 视图
+            # Add 0 row to target positions for diff view
             target_positions.append(
                 Position(symbol=sym, quantity=0, last_price=px, estimated_value=0.0, env=self.env)
             )
@@ -257,14 +257,14 @@ class RebalanceService:
         )
 
     def execute_orders(self, orders: list[Order], dry_run: bool = True) -> list[Order]:
-        """执行订单列表
+        """Execute order list
 
         Args:
-            orders: 订单列表
-            dry_run: 是否为干跑模式
+            orders: Order list
+            dry_run: Whether in dry run mode
 
         Returns:
-            List[Order]: 执行结果更新后的订单列表
+            List[Order]: Order list updated with execution results
         """
         if not orders:
             return []
@@ -282,7 +282,7 @@ class RebalanceService:
                     est_px=order.price if order.price else None,
                 )
 
-                # 更新订单状态
+                # Update order status
                 if dry_run:
                     order.status = "DRY_RUN"
                     order.order_id = (
@@ -311,14 +311,14 @@ class RebalanceService:
     def save_audit_log(
         self, rebalance_result: RebalanceResult, dry_run: bool = True
     ) -> Path:
-        """保存审计日志
+        """Save audit log
 
         Args:
-            rebalance_result: 调仓结果
-            dry_run: 是否为干跑模式
+            rebalance_result: Rebalancing result
+            dry_run: Whether in dry run mode
 
         Returns:
-            Path: 日志文件路径
+            Path: Log file path
         """
         log_dir = Path("outputs/orders")
         log_dir.mkdir(parents=True, exist_ok=True)
