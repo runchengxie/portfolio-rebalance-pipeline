@@ -77,6 +77,19 @@ def run_lb_rebalance(
         else:
             quote_map = {}
 
+        # 用统一报价回填账户快照的持仓估值，避免 Before 为 0
+        if quote_map and account_snapshot.positions:
+            for pos in account_snapshot.positions:
+                px = float(quote_map.get(pos.symbol, pos.last_price or 0.0) or 0.0)
+                if px > 0:
+                    pos.last_price = px
+                    pos.estimated_value = float(px) * float(pos.quantity)
+            # 同步更新快照合计，若总资产之前为 0，则回退为现金+持仓估值
+            total_mv = sum(float(p.estimated_value) for p in account_snapshot.positions)
+            account_snapshot.total_market_value = total_mv
+            if not account_snapshot.total_portfolio_value:
+                account_snapshot.total_portfolio_value = float(account_snapshot.cash_usd) + total_mv
+
         # 初始化调仓服务
         rebalance_service = RebalanceService(env=env, client=client)
 

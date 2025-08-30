@@ -191,7 +191,16 @@ class LongPortClient:
         symbol_list = [_to_lb_symbol(x) for x in symbols]
         ret = self.quote.quote(symbol_list)
         for i in ret:
-            bars[i.symbol] = (i.last_done or 0.0, i.timestamp or "")
+            # Prefer last_done, fallback to prev_close if missing/zero
+            px = float((getattr(i, "last_done", 0) or 0) or 0)
+            if px <= 0:
+                prev = getattr(i, "prev_close", None)
+                if prev not in (None, 0):
+                    try:
+                        px = float(prev)
+                    except Exception:
+                        px = 0.0
+            bars[i.symbol] = (px, getattr(i, "timestamp", "") or "")
         return bars
 
     def portfolio_snapshot(self) -> tuple[float, dict[str, int], float | None, str | None]:
