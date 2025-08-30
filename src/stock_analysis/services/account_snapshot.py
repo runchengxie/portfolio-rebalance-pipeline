@@ -6,6 +6,7 @@
 from ..broker.longport_client import LongPortClient
 from ..models import AccountSnapshot, Position, Quote
 from ..utils.logging import get_logger
+from ..utils.fx import to_usd
 
 logger = get_logger(__name__)
 
@@ -74,13 +75,22 @@ def get_account_snapshot(
         if created_here:
             client.close()
 
-        # 仅当净资产口径为 USD 时才透传；否则交由上层用 USD 报价重算
-        tpv = float(net_assets) if (net_assets and str(base_ccy).upper() == "USD") else 0.0
+        # 透传总资产：
+        # - 若净资产为 USD，直接使用
+        # - 若非 USD，尝试用 FX 转为 USD；失败则返回 0 以触发上层重算
+        tpv = 0.0
+        if net_assets:
+            if str(base_ccy).upper() == "USD":
+                tpv = float(net_assets)
+            else:
+                converted = to_usd(float(net_assets), str(base_ccy))
+                tpv = float(converted) if converted is not None else 0.0
         return AccountSnapshot(
             env=env,
             cash_usd=cash_usd,
             positions=positions,
             total_portfolio_value=tpv,
+            base_currency=str(base_ccy).upper() if base_ccy else None,
         )
 
     except Exception as e:

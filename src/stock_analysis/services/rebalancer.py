@@ -84,6 +84,24 @@ class RebalanceService:
                 px = float((quotes or {}).get(sym, pos.last_price or 0.0))
                 total_pos_value += px * float(pos.quantity)
             effective_total = float(account_snapshot.cash_usd) + float(total_pos_value)
+            if effective_total <= 0:
+                # 进一步提示：如果券商返回了非 USD 的净资产，但无法估值现有持仓，则需要 FX 或切换到 real 环境
+                try:
+                    from ..utils.logging import get_logger as _get_logger
+
+                    _lg = _get_logger(__name__)
+                    if account_snapshot.base_currency and account_snapshot.base_currency != "USD":
+                        _lg.warning(
+                            "总资产为 0：当前环境持仓/现金按 USD 计为 0，券商净资产为非USD(%s)。"
+                            " 可使用 real 环境干跑，或提供 FX 汇率进行折算。",
+                            account_snapshot.base_currency,
+                        )
+                    else:
+                        _lg.warning(
+                            "总资产为 0：未获取到 USD 现金与可估值持仓，建议切换 real 环境或检查账户余额。"
+                        )
+                except Exception:
+                    pass
         target_value_per_stock = effective_total / n_stocks
 
         # 构建当前持仓映射

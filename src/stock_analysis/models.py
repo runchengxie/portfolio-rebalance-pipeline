@@ -77,6 +77,7 @@ class AccountSnapshot:
     positions: list[Position]
     total_market_value: float = 0.0
     total_portfolio_value: float = 0.0
+    base_currency: str | None = None
 
     def __post_init__(self):
         """计算总值：若调用方提供了总资产，则优先使用。"""
