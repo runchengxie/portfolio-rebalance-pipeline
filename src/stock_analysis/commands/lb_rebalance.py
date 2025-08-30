@@ -6,7 +6,7 @@
 from pathlib import Path
 
 from ..renderers.table import render_rebalance_plan
-from ..services.account_snapshot import get_account_snapshot
+from ..services.account_snapshot import get_account_snapshot, get_quotes
 from ..services.rebalancer import RebalanceService
 from ..utils.excel import read_latest_sheet_tickers
 from ..utils.logging import get_logger
@@ -59,8 +59,18 @@ def run_lb_rebalance(
             logger.error(f"读取Excel文件失败：{e}")
             return 1
 
-        # 获取账户快照
-        account_snapshot = get_account_snapshot(env)
+        # 获取账户快照（不取行情，避免重复打点）
+        account_snapshot = get_account_snapshot(env=env, include_quotes=False)
+
+        # 统一一次性取行情：目标股票 + 现有持仓
+        target_syms = {t.strip().upper() for t in tickers}
+        held_syms = {p.symbol for p in account_snapshot.positions}
+        all_syms = target_syms | held_syms
+        if all_syms:
+            quote_objs = get_quotes(list(all_syms), env)
+            quote_map = {k: v.price for k, v in quote_objs.items()}
+        else:
+            quote_map = {}
 
         # 初始化调仓服务
         rebalance_service = RebalanceService(env=env)
@@ -68,7 +78,7 @@ def run_lb_rebalance(
         try:
             # 制定调仓计划
             rebalance_result = rebalance_service.plan_rebalance(
-                tickers, account_snapshot
+                tickers, account_snapshot, quotes=quote_map
             )
             rebalance_result.dry_run = dry_run
             rebalance_result.sheet_name = sheet_name
