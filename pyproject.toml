@@ -24,6 +24,9 @@ dev = [
     "pre-commit",
 ]
 
+[project.optional-dependencies]
+cli = ["rich"]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
