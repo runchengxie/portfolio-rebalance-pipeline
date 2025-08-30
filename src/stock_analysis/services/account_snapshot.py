@@ -95,7 +95,6 @@ def get_account_snapshot(
 
     except Exception as e:
         logger.error(f"无法获取账户数据: {e}")
-        # 让调用方感受到真实的痛苦，而不是假快乐
         raise RuntimeError(f"账户数据获取失败: {e}") from e
 
 
