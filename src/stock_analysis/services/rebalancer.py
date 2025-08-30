@@ -11,6 +11,9 @@ from ..broker.longport_client import LongPortClient, _to_lb_symbol
 from ..models import AccountSnapshot, Order, Position, RebalanceResult
 from ..utils.logging import get_logger
 from .account_snapshot import get_quotes
+from ..utils.config import load_cfg
+from ..fees import FeeSchedule, estimate_fees
+from decimal import Decimal, ROUND_HALF_UP
 
 logger = get_logger(__name__)
 
@@ -112,6 +115,18 @@ class RebalanceService:
         target_positions = []
 
         client = self._get_client()
+        cfg = load_cfg() or {}
+        fees_cfg = (cfg.get("fees") or {}) if isinstance(cfg, dict) else {}
+        fs = FeeSchedule(
+            commission=float(fees_cfg.get("commission", 0.0) or 0.0),
+            platform_per_share=float(fees_cfg.get("platform_per_share", 0.005) or 0.0),
+            fractional_pct_lt1=float(fees_cfg.get("fractional_pct_lt1", 0.012) or 0.0),
+            fractional_cap_lt1=float(fees_cfg.get("fractional_cap_lt1", 0.99) or 0.0),
+            sell_reg_fees_bps=float(fees_cfg.get("sell_reg_fees_bps", 0.0) or 0.0),
+        )
+        frac_cfg = (cfg.get("fractional_preview") or {}) if isinstance(cfg, dict) else {}
+        frac_enable = bool(frac_cfg.get("enable", True))
+        frac_step = Decimal(str(frac_cfg.get("default_step", 0.001)))
 
         for ticker in target_tickers:
             symbol = ticker.upper().strip()
@@ -140,7 +155,12 @@ class RebalanceService:
                 lot_size = client.lot_size(lb_symbol)
                 target_qty = (int(target_qty_raw) // lot_size) * lot_size
 
-            # 创建目标持仓
+            # 创建目标持仓（保守执行：整数股/lot），但计算展示用的目标小数股
+            target_qty_frac = Decimal(0)
+            if price > 0 and frac_enable:
+                target_qty_frac = (Decimal(target_value_per_stock) / Decimal(price)).quantize(
+                    frac_step, rounding=ROUND_HALF_UP
+                )
             target_position = Position(
                 symbol=lb_symbol,
                 quantity=target_qty,
@@ -174,6 +194,20 @@ class RebalanceService:
                 price=price,
                 order_type="MARKET",
             )
+            # 费用估算（以整数执行量计费）；若目标小数股<1，提供碎股提示
+            est_fee, frac_hint = estimate_fees(
+                side=side,
+                qty_int=qty_to_trade,
+                price=price,
+                any_fractional_lt1=(target_qty_frac > 0 and target_qty_frac < 1),
+                fs=fs,
+            )
+            order.est_fees = est_fee
+            order.est_frac_hint = frac_hint
+            if frac_enable:
+                order.target_qty_frac = float(target_qty_frac)
+                order.rounded_target_qty = int(target_qty)
+                order.rounding_loss = float(target_qty_frac - Decimal(int(target_qty)))
             orders.append(order)
 
         # 处理非目标列表中的现有持仓：清仓（target 视为 0）
@@ -195,15 +229,23 @@ class RebalanceService:
             target_positions.append(
                 Position(symbol=sym, quantity=0, last_price=px, estimated_value=0.0, env=self.env)
             )
-            orders.append(
-                Order(
-                    symbol=sym,
-                    quantity=qty_to_sell,
-                    side="SELL",
-                    price=px if px > 0 else None,
-                    order_type="MARKET",
-                )
+            o = Order(
+                symbol=sym,
+                quantity=qty_to_sell,
+                side="SELL",
+                price=px if px > 0 else None,
+                order_type="MARKET",
             )
+            est_fee, frac_hint = estimate_fees(
+                side="SELL",
+                qty_int=qty_to_sell,
+                price=px or 0.0,
+                any_fractional_lt1=False,
+                fs=fs,
+            )
+            o.est_fees = est_fee
+            o.est_frac_hint = frac_hint
+            orders.append(o)
 
         return RebalanceResult(
             target_positions=target_positions,
