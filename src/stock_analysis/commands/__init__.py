@@ -1,5 +1,5 @@
-"""命令层模块
+"""Command Layer Module
 
-这个包包含所有命令的胶水代码，负责连接 CLI 层和服务层。
-每个命令文件只做参数处理和结果渲染，不包含业务逻辑。
+This package contains all command glue code that connects the CLI layer with the service layer.
+Each command file only handles parameter processing and result rendering, without containing business logic.
 """

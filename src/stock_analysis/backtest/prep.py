@@ -1,6 +1,6 @@
-"""数据准备模块
+"""Data preparation module
 
-提供组合加载与数据对齐功能，统一处理Excel读取和数据库查询逻辑。
+Provides portfolio loading and data alignment functionality, unified handling of Excel reading and database query logic.
 """
 
 import datetime
@@ -13,13 +13,13 @@ import pandas as pd
 
 
 def tidy_ticker(col: pd.Series) -> pd.Series:
-    """清洗股票代码
+    """Clean ticker symbols
 
     Args:
-        col: 包含股票代码的Series
+        col: Series containing ticker symbols
 
     Returns:
-        pd.Series: 清洗后的股票代码Series
+        pd.Series: Cleaned ticker symbols Series
     """
     return (
         col.astype("string")
@@ -33,17 +33,17 @@ def tidy_ticker(col: pd.Series) -> pd.Series:
 def load_portfolios(
     portfolio_path: Path, is_ai_selection: bool = False
 ) -> dict[datetime.date, pd.DataFrame]:
-    """加载投资组合数据
+    """Load portfolio data
 
     Args:
-        portfolio_path: Excel文件路径
-        is_ai_selection: 是否为AI精选版本，影响列名处理逻辑
+        portfolio_path: Excel file path
+        is_ai_selection: Whether it's AI selection version, affects column name processing logic
 
     Returns:
-        Dict[datetime.date, pd.DataFrame]: 以调仓日期为键的投资组合字典
+        Dict[datetime.date, pd.DataFrame]: Portfolio dictionary with rebalance dates as keys
 
     Raises:
-        FileNotFoundError: 当文件不存在时
+        FileNotFoundError: When file does not exist
     """
     if not portfolio_path.exists():
         raise FileNotFoundError(f"Portfolio file not found: {portfolio_path}")
@@ -55,17 +55,17 @@ def load_portfolios(
         if df.empty:
             continue
 
-        # 处理列名兼容性问题
+        # Handle column name compatibility issues
         if is_ai_selection:
-            # AI版本：自动处理列名大小写，兼容 'ticker' 和 'Ticker'
+            # AI version: automatically handle column name case, compatible with 'ticker' and 'Ticker'
             if "ticker" in df.columns and "Ticker" not in df.columns:
                 df.rename(columns={"ticker": "Ticker"}, inplace=True)
 
-        # 检查是否包含必要的列
+        # Check if necessary columns are included
         if "Ticker" in df.columns:
-            # 清洗Ticker列
+            # Clean Ticker column
             df["Ticker"] = tidy_ticker(df["Ticker"])
-            # 移除空的Ticker
+            # Remove empty Tickers
             df = df.dropna(subset=["Ticker"])
 
             if not df.empty:
@@ -77,20 +77,20 @@ def load_portfolios(
 def load_price_feeds(
     db_path: Path, tickers: set[str], start_date: datetime.date, end_date: datetime.date
 ) -> dict[str, bt.feeds.PandasData]:
-    """从数据库加载价格数据并创建Backtrader数据源
+    """Load price data from database and create Backtrader data feeds
 
     Args:
-        db_path: 数据库文件路径
-        tickers: 需要加载的股票代码集合
-        start_date: 开始日期
-        end_date: 结束日期
+        db_path: Database file path
+        tickers: Set of ticker symbols to load
+        start_date: Start date
+        end_date: End date
 
     Returns:
-        Dict[str, bt.feeds.PandasData]: 以股票代码为键的数据源字典
+        Dict[str, bt.feeds.PandasData]: Data feed dictionary with ticker symbols as keys
 
     Raises:
-        FileNotFoundError: 当数据库文件不存在时
-        ValueError: 当没有找到交易日数据时
+        FileNotFoundError: When database file does not exist
+        ValueError: When no trading day data is found
     """
     print(f"Loading and preparing all price data from {start_date} to {end_date}...")
 
@@ -101,7 +101,7 @@ def load_price_feeds(
     con = sqlite3.connect(db_path)
 
     try:
-        # 获取主交易日索引
+        # Get master trading day index
         date_query = (
             "SELECT DISTINCT Date FROM share_prices "
             "WHERE Date >= ? AND Date <= ? ORDER BY Date"
@@ -121,7 +121,7 @@ def load_price_feeds(
         master_index = pd.to_datetime(master_dates_df["Date"])
         print(f"Master timeline created with {len(master_index)} trading days.")
 
-        # 批量查询所有股票数据
+        # Bulk query all stock data
         tickers_list = list(tickers)
         placeholders = ",".join(["?" for _ in tickers_list])
         bulk_query = f"""
@@ -140,26 +140,26 @@ def load_price_feeds(
             bulk_query, con, params=params, parse_dates=["Date"]
         )
 
-        # 去重修复：移除可能的重复数据
+        # Deduplication fix: remove possible duplicate data
         all_data.drop_duplicates(subset=["Ticker", "Date"], keep="last", inplace=True)
 
-        # 为每个股票创建数据源
+        # Create data feeds for each stock
         data_feeds = {}
 
         for ticker, group in all_data.groupby("Ticker"):
             group = group.set_index("Date")
 
-            # 重新索引到主交易日时间线，前向填充缺失数据
+            # Reindex to master trading day timeline, forward fill missing data
             group = group.reindex(master_index, method="ffill")
 
-            # 填充红利列的缺失值
+            # Fill missing values in dividend column
             group["Dividend"] = group["Dividend"].fillna(0.0)
 
-            # 移除仍然缺失的行（通常是新上市股票的早期数据）
+            # Remove still missing rows (usually early data for newly listed stocks)
             group = group.dropna(subset=["Open", "High", "Low", "Close", "Volume"])
 
             if not group.empty:
-                # 创建Backtrader数据源
+                # Create Backtrader data feed
                 bt_feed = bt.feeds.PandasData(
                     dataname=group, openinterest=None, name=ticker
                 )
@@ -181,20 +181,20 @@ def load_spy_data(
     end_date: datetime.datetime,
     ticker: str = "SPY",
 ) -> pd.DataFrame:
-    """从数据库加载SPY数据
+    """Load SPY data from database
 
     Args:
-        db_path: 数据库文件路径
-        start_date: 开始日期
-        end_date: 结束日期
-        ticker: 股票代码，默认为SPY
+        db_path: Database file path
+        start_date: Start date
+        end_date: End date
+        ticker: Ticker symbol, defaults to SPY
 
     Returns:
-        pd.DataFrame: SPY价格数据
+        pd.DataFrame: SPY price data
 
     Raises:
-        FileNotFoundError: 当数据库文件不存在时
-        ValueError: 当没有找到数据时
+        FileNotFoundError: When database file does not exist
+        ValueError: When no data is found
     """
     print(f"Loading {ticker} data from database: {db_path.name}...")
 
