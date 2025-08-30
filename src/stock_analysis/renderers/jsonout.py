@@ -1,6 +1,6 @@
-"""JSON 渲染器
+"""JSON renderer
 
-提供 JSON 格式的数据渲染功能。
+Provides JSON format data rendering functionality.
 """
 
 import json
@@ -10,13 +10,13 @@ from ..models import AccountSnapshot, Order, Quote, RebalanceResult
 
 
 def _serialize_dataclass(obj: Any) -> dict[str, Any]:
-    """序列化 dataclass 对象为字典
+    """Serialize dataclass object to dictionary
 
     Args:
-        obj: 要序列化的对象
+        obj: Object to serialize
 
     Returns:
-        Dict[str, Any]: 序列化后的字典
+        Dict[str, Any]: Serialized dictionary
     """
     if hasattr(obj, "__dataclass_fields__"):
         result = {}
@@ -40,78 +40,78 @@ def _serialize_dataclass(obj: Any) -> dict[str, Any]:
 
 
 def render_quotes_json(quotes: list[Quote]) -> str:
-    """渲染股票报价 JSON
+    """Render stock quotes JSON
 
     Args:
-        quotes: 报价列表
+        quotes: List of quotes
 
     Returns:
-        str: JSON 字符串
+        str: JSON string
     """
     data = [_serialize_dataclass(quote) for quote in quotes]
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def render_account_snapshot_json(snapshot: AccountSnapshot) -> str:
-    """渲染账户快照 JSON
+    """Render account snapshot JSON
 
     Args:
-        snapshot: 账户快照
+        snapshot: Account snapshot
 
     Returns:
-        str: JSON 字符串
+        str: JSON string
     """
     data = _serialize_dataclass(snapshot)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def render_multiple_account_snapshots_json(snapshots: list[AccountSnapshot]) -> str:
-    """渲染多个账户快照 JSON
+    """Render multiple account snapshots JSON
 
     Args:
-        snapshots: 账户快照列表
+        snapshots: List of account snapshots
 
     Returns:
-        str: JSON 字符串
+        str: JSON string
     """
     data = [_serialize_dataclass(snapshot) for snapshot in snapshots]
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def render_rebalance_result_json(result: RebalanceResult) -> str:
-    """渲染调仓结果 JSON
+    """Render rebalance result JSON
 
     Args:
-        result: 调仓结果
+        result: Rebalance result
 
     Returns:
-        str: JSON 字符串
+        str: JSON string
     """
     data = _serialize_dataclass(result)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def render_orders_json(orders: list[Order]) -> str:
-    """渲染订单列表 JSON
+    """Render order list JSON
 
     Args:
-        orders: 订单列表
+        orders: List of orders
 
     Returns:
-        str: JSON 字符串
+        str: JSON string
     """
     data = [_serialize_dataclass(order) for order in orders]
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def render_json(data: Any) -> str:
-    """通用 JSON 渲染器
+    """Generic JSON renderer
 
     Args:
-        data: 要渲染的数据
+        data: Data to render
 
     Returns:
-        str: JSON 字符串
+        str: JSON string
     """
     if hasattr(data, "__dataclass_fields__"):
         serialized = _serialize_dataclass(data)

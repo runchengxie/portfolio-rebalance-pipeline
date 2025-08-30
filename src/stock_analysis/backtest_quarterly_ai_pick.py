@@ -1,7 +1,7 @@
 import sys
 import time
 
-# 导入新的模块
+# Import new modules
 from .backtest.engine import generate_report, run_quarterly_backtest
 from .backtest.prep import load_portfolios, load_price_feeds
 from .utils.config import get_backtest_period, get_initial_cash
@@ -9,25 +9,25 @@ from .utils.logging import setup_logging
 from .utils.paths import AI_PORTFOLIO_FILE as PORTFOLIO_FILE
 from .utils.paths import DB_PATH, OUTPUTS_DIR
 
-# 设置日志
+# Setup logging
 logger = setup_logging("ai_backtest", "ai_backtest.log")
 
 
-# 策略类和辅助函数已移至 backtest.engine 和 backtest.prep 模块
+# Strategy classes and helper functions have been moved to backtest.engine and backtest.prep modules
 
 
-# 数据加载和日志设置函数已移至相应模块
+# Data loading and logging setup functions have been moved to respective modules
 
 
-# run_backtest函数已移至 backtest.engine 模块
+# run_backtest function has been moved to backtest.engine module
 
 
 def main():
-    """主函数 - 运行AI季度回测"""
+    """Main function - Run AI quarterly backtest"""
     print("--- Running Quarterly AI Pick Backtest (Database Mode) ---")
 
     try:
-        # 加载投资组合数据（AI精选版本）
+        # Load portfolio data (AI selection version)
         portfolios = load_portfolios(PORTFOLIO_FILE, is_ai_selection=True)
     except FileNotFoundError as e:
         print(f"[ERROR] {e}", file=sys.stderr)
@@ -39,22 +39,22 @@ def main():
 
     print(f"✓ Loaded {len(portfolios)} portfolio snapshots.")
 
-    # 收集所有需要的股票代码
+    # Collect all needed ticker symbols
     all_needed_tickers = set()
     for df in portfolios.values():
         all_needed_tickers.update(df["Ticker"].dropna())
 
-    # 从配置文件获取统一的回测时间范围
+    # Get unified backtest time range from config file
     BACKTEST_START_DATE, BACKTEST_END_DATE = get_backtest_period(portfolios)
 
-    # 从配置文件获取初始资金
+    # Get initial cash from config file
     initial_cash = get_initial_cash("ai")
 
     print(f"Backtest period: {BACKTEST_START_DATE} to {BACKTEST_END_DATE}")
     print(f"Initial cash: ${initial_cash:,.2f}")
     print(f"Calculating for a total of {len(all_needed_tickers)} unique tickers...")
 
-    # 加载价格数据
+    # Load price data
     start_time = time.time()
     try:
         price_data_dict = load_price_feeds(
@@ -64,7 +64,7 @@ def main():
             end_date=BACKTEST_END_DATE,
         )
         load_time = time.time() - start_time
-        print(f"\n[PERFORMANCE] 数据加载耗时: {load_time:.2f}秒")
+        print(f"\n[PERFORMANCE] Data loading time: {load_time:.2f} seconds")
     except Exception as e:
         print(f"[ERROR] Price data could not be loaded: {e}", file=sys.stderr)
         sys.exit(1)
@@ -73,19 +73,19 @@ def main():
         print("[ERROR] No price data available. Exiting.", file=sys.stderr)
         sys.exit(1)
 
-    # 运行回测
+    # Run backtest
     portfolio_value, metrics = run_quarterly_backtest(
         portfolios=portfolios,
         data_feeds=price_data_dict,
         initial_cash=initial_cash,
         start_date=BACKTEST_START_DATE,
         end_date=BACKTEST_END_DATE,
-        use_logging=True,  # AI版本使用logging
-        add_observers=True,  # AI版本添加观察器
-        add_annual_return=True,  # AI版本添加年化收益分析器
+        use_logging=True,  # AI version uses logging
+        add_observers=True,  # AI version adds observers
+        add_annual_return=True,  # AI version adds annual return analyzer
     )
 
-    # 生成报告
+    # Generate report
     output_png = OUTPUTS_DIR / "ai_quarterly_strategy_returns.png"
     generate_report(
         metrics=metrics,

@@ -1,6 +1,6 @@
-"""LongPort 报价命令
+"""LongPort quote command
 
-处理股票报价查询的命令逻辑。
+Handles command logic for stock quote queries.
 """
 
 from ..renderers.table import render_quotes
@@ -11,23 +11,23 @@ logger = get_logger(__name__)
 
 
 def run_lb_quote(tickers: list[str]) -> int:
-    """运行LongPort实时报价查询
+    """Run LongPort real-time quote query
 
     Args:
-        tickers: 股票代码列表
-        env: 环境选择（test或real）
+        tickers: List of stock symbols
+        env: Environment selection (test or real)
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     try:
         logger.info(f"正在获取 {', '.join(tickers)} 的实时报价... (REAL)")
 
-        # 获取报价数据
+        # Get quote data
         quotes_dict = get_quotes(tickers)
         quotes_list = list(quotes_dict.values())
 
-        # 渲染输出
+        # Render output
         output = render_quotes(quotes_list)
         print(output)
 

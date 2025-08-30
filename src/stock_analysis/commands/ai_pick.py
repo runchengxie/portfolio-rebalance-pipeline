@@ -1,6 +1,6 @@
-"""AI选股命令
+"""AI stock picking command
 
-处理AI选股分析的命令逻辑。
+Handles command logic for AI stock picking analysis.
 """
 
 from ..utils.logging import get_logger
@@ -9,14 +9,14 @@ logger = get_logger(__name__)
 
 
 def run_ai_pick(quarter: str | None = None, output: str | None = None) -> int:
-    """运行AI选股分析
+    """Run AI stock picking analysis
 
     Args:
-        quarter: 指定季度（可选）
-        output: 输出文件路径（可选）
+        quarter: Specified quarter (optional)
+        output: Output file path (optional)
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     try:
         logger.info("正在运行AI选股分析...")

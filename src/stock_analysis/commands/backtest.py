@@ -1,6 +1,6 @@
-"""回测命令
+"""Backtest command
 
-处理回测分析的命令逻辑。
+Handles command logic for backtest analysis.
 """
 
 from ..utils.logging import get_logger
@@ -9,14 +9,14 @@ logger = get_logger(__name__)
 
 
 def run_backtest(strategy: str, config_path: str | None = None) -> int:
-    """运行回测分析
+    """Run backtest analysis
 
     Args:
-        strategy: 策略类型 ('ai', 'quant', 'spy')
-        config_path: 配置文件路径（可选）
+        strategy: Strategy type ('ai', 'quant', 'spy')
+        config_path: Configuration file path (optional)
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     try:
         logger.info(f"正在运行 {strategy.upper()} 策略回测...")

@@ -1,6 +1,6 @@
-"""LongPort 账户命令
+"""LongPort account command
 
-处理账户信息查询的命令逻辑。
+Handles command logic for account information queries.
 """
 
 from ..renderers.jsonout import render_multiple_account_snapshots_json
@@ -16,22 +16,22 @@ def run_lb_account(
     only_positions: bool = False,
     fmt: str = "table",
 ) -> int:
-    """运行LongPort账户总览
+    """Run LongPort account overview
 
     Args:
-        only_funds: 只显示资金信息
-        only_positions: 只显示持仓信息
-        fmt: 输出格式（table/json）
+        only_funds: Show only fund information
+        only_positions: Show only position information
+        fmt: Output format (table/json)
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     try:
-        # 获取真实账户快照
+        # Get real account snapshot
         snapshot = get_account_snapshot(env="real")
         snapshots = [snapshot]
 
-        # 渲染输出
+        # Render output
         if fmt == "json":
             output = render_multiple_account_snapshots_json(snapshots)
         else:

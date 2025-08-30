@@ -1,6 +1,6 @@
-"""配置文件读取模块
+"""Configuration file loading module.
 
-统一管理回测配置，确保三个回测脚本使用相同的时间区间和参数。
+Provides unified configuration file loading functionality.
 """
 
 import datetime
@@ -16,20 +16,20 @@ from dateutil.relativedelta import relativedelta
 
 
 def load_cfg() -> dict[str, Any]:
-    """加载配置文件
+    """Load configuration file.
 
-    优先读取 config/config.yaml，其次项目根的 config.yaml
+    Prioritize reading config/config.yaml, then config.yaml in project root
 
     Returns:
-        Dict[str, Any]: 配置字典
+        Dict[str, Any]: Configuration dictionary
     """
-    # 项目根目录
+    # Project root directory
     root = Path(__file__).resolve().parents[3]
 
-    # 配置文件候选路径（按优先级排序）
+    # Try to load config file from multiple locations
     candidates = [
-        root / "config" / "config.yaml",  # 优先：config/config.yaml
-        root / "config.yaml",  # 备选：项目根的config.yaml
+        root / "config" / "config.yaml",  # Priority: config/config.yaml
+        root / "config.yaml",  # Alternative: config.yaml in project root
     ]
 
     config_path = None
@@ -39,12 +39,12 @@ def load_cfg() -> dict[str, Any]:
             break
 
     if config_path is None:
-        # 默认配置：回到dynamic模式，与现有逻辑一致
+        # Default configuration: return to dynamic mode, consistent with existing logic
         return {
             "backtest": {
                 "period_mode": "dynamic",
                 "buffer": {"months": 3, "days": 10},
-                "initial_cash": 1000000,  # 统一初始资金
+                "initial_cash": 1000000,  # Unified initial capital
             }
         }
 
@@ -71,13 +71,13 @@ def load_cfg() -> dict[str, Any]:
 
 
 def get_backtest_period(portfolios: dict = None) -> tuple[datetime.date, datetime.date]:
-    """获取回测时间区间
+    """Get backtest time period.
 
     Args:
-        portfolios: 投资组合字典，仅在dynamic模式下使用
+        portfolios: Portfolio dictionary, only used in dynamic mode
 
     Returns:
-        Tuple[datetime.date, datetime.date]: (开始日期, 结束日期)
+        Tuple[datetime.date, datetime.date]: (start_date, end_date)
     """
     config = load_cfg()
     backtest_config = config.get("backtest", {})
@@ -85,33 +85,33 @@ def get_backtest_period(portfolios: dict = None) -> tuple[datetime.date, datetim
     period_mode = backtest_config.get("period_mode", "dynamic")
 
     if period_mode == "fixed":
-        # 固定时间模式
+        # Fixed time mode
         start_str = backtest_config.get("start", "2021-04-02")
         end_str = backtest_config.get("end", "2025-07-02")
 
-        # 处理可能的日期格式
+        # Handle possible date formats
         if isinstance(start_str, str):
             start_date = datetime.datetime.strptime(start_str, "%Y-%m-%d").date()
         else:
-            start_date = start_str  # 已经是date对象
+            start_date = start_str  # Already a date object
 
         if isinstance(end_str, str):
             end_date = datetime.datetime.strptime(end_str, "%Y-%m-%d").date()
         else:
-            end_date = end_str  # 已经是date对象
+            end_date = end_str  # Already a date object
 
         return start_date, end_date
 
     else:
-        # 动态时间模式
+        # Dynamic time mode
         if not portfolios:
             raise ValueError("Dynamic mode requires portfolios data")
 
-        # 从投资组合数据中获取时间范围
+        # Get time range from portfolio data
         first_rebalance_date = min(portfolios.keys())
         last_rebalance_date = max(portfolios.keys())
 
-        # 添加缓冲时间
+        # Add buffer time
         buffer_config = backtest_config.get("buffer", {"months": 3, "days": 10})
         buffer_months = buffer_config.get("months", 3)
         buffer_days = buffer_config.get("days", 10)
@@ -125,26 +125,26 @@ def get_backtest_period(portfolios: dict = None) -> tuple[datetime.date, datetim
 
 
 def get_initial_cash(strategy: str) -> float:
-    """获取指定策略的初始资金
+    """Get initial cash amount.
 
-    支持两种配置格式：
-    1. 统一资金：initial_cash: 1000000
-    2. 分策略配置：initial_cash: {ai: 1000000, quant: 1000000, spy: 1000000}
+    Supports two configuration formats:
+    1. Unified capital: initial_cash: 1000000
+    2. Strategy-specific configuration: initial_cash: {ai: 1000000, quant: 1000000, spy: 1000000}
 
     Args:
-        strategy: 策略名称 ('ai', 'quant', 'spy')
+        strategy: Strategy name ('ai', 'quant', 'spy')
 
     Returns:
-        float: 初始资金金额
+        float: Initial cash amount
     """
     config = load_cfg()
     backtest_config = config.get("backtest", {})
     initial_cash_config = backtest_config.get("initial_cash", 1000000)
 
-    # 支持两种格式：数字（统一资金）或字典（分策略配置）
+    # Support two formats: number (unified capital) or dictionary (strategy-specific configuration)
     if isinstance(initial_cash_config, dict):
-        # 字典格式：按策略分别配置
+        # Dictionary format: configure by strategy
         return float(initial_cash_config.get(strategy, 1000000))
     else:
-        # 数字格式：统一资金
+        # Number format: unified capital
         return float(initial_cash_config)

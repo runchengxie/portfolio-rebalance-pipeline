@@ -1,6 +1,6 @@
-"""Excel 工具函数
+"""Excel utility functions.
 
-提供 Excel 文件处理相关的工具函数。
+Provides utility functions for Excel file processing.
 """
 
 import re
@@ -14,23 +14,23 @@ logger = get_logger(__name__)
 
 
 def pick_latest_sheet(sheet_names: list[str]) -> str:
-    """从 sheet 名称列表中选择最新的季度
+    """Select the latest quarter from sheet name list.
 
     Args:
-        sheet_names: sheet 名称列表
+        sheet_names: List of sheet names
 
     Returns:
-        str: 最新的 sheet 名称
+        str: Latest sheet name
     """
     candidates = []
 
     for sheet_name in sheet_names:
         try:
-            # 尝试直接解析为日期
+            # Try to parse directly as date
             date = pd.to_datetime(sheet_name).date()
             candidates.append((date, sheet_name))
         except Exception:
-            # 尝试匹配 yyyy-mm-dd 格式
+            # Try to match yyyy-mm-dd format
             match = re.search(r"\d{4}-\d{2}-\d{2}", sheet_name)
             if match:
                 try:
@@ -40,53 +40,53 @@ def pick_latest_sheet(sheet_names: list[str]) -> str:
                     continue
 
     if candidates:
-        # 返回日期最新的 sheet
+        # Return the sheet with the latest date
         return max(candidates)[1]
 
-    # 兜底：返回最后一个 sheet
+    # Fallback: return the last sheet
     return sheet_names[-1] if sheet_names else ""
 
 
 def read_latest_sheet_tickers(file_path: Path) -> tuple[list[str], str]:
-    """读取 Excel 文件中最新 sheet 的股票代码列表
+    """Read stock ticker list from the latest sheet in Excel file.
 
     Args:
-        file_path: Excel 文件路径
+        file_path: Excel file path
 
     Returns:
-        Tuple[List[str], str]: (股票代码列表, sheet名称)
+        Tuple[List[str], str]: (ticker list, sheet name)
 
     Raises:
-        FileNotFoundError: 文件不存在
-        ValueError: 文件格式错误或找不到股票代码列
+        FileNotFoundError: File does not exist
+        ValueError: File format error or ticker column not found
     """
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
 
     try:
-        # 读取所有 sheet
+        # Read all sheets
         excel_file = pd.ExcelFile(file_path)
 
-        # 选择最新的 sheet
+        # Select the latest sheet
         sheet_name = pick_latest_sheet(excel_file.sheet_names)
         logger.info(f"选择 sheet: {sheet_name}")
 
-        # 读取数据
+        # Read data
         df = pd.read_excel(excel_file, sheet_name=sheet_name)
 
-        # 识别 ticker 列
+        # Identify ticker column
         columns_lower = {col.lower(): col for col in df.columns}
         ticker_column = columns_lower.get("ticker") or columns_lower.get("symbol")
 
         if not ticker_column:
             raise ValueError("未找到 ticker 或 symbol 列")
 
-        # 提取股票代码
+        # Extract stock tickers
         tickers = (
             df[ticker_column].astype(str).str.upper().str.strip().dropna().tolist()
         )
 
-        # 过滤空值
+        # Filter empty values
         tickers = [ticker for ticker in tickers if ticker and ticker != "NAN"]
 
         if not tickers:
@@ -101,18 +101,18 @@ def read_latest_sheet_tickers(file_path: Path) -> tuple[list[str], str]:
 
 
 def read_excel_data(file_path: Path, sheet_name: str = None) -> pd.DataFrame:
-    """读取 Excel 文件数据
+    """Read Excel file data.
 
     Args:
-        file_path: Excel 文件路径
-        sheet_name: sheet 名称，如果为 None 则读取第一个 sheet
+        file_path: Excel file path
+        sheet_name: Sheet name, reads first sheet if None
 
     Returns:
-        pd.DataFrame: Excel 数据
+        pd.DataFrame: Excel data
 
     Raises:
-        FileNotFoundError: 文件不存在
-        ValueError: 文件格式错误
+        FileNotFoundError: File does not exist
+        ValueError: File format error
     """
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
@@ -132,16 +132,16 @@ def read_excel_data(file_path: Path, sheet_name: str = None) -> pd.DataFrame:
 
 
 def get_sheet_names(file_path: Path) -> list[str]:
-    """获取 Excel 文件中所有 sheet 名称
+    """Get all sheet names in Excel file.
 
     Args:
-        file_path: Excel 文件路径
+        file_path: Excel file path
 
     Returns:
-        List[str]: sheet 名称列表
+        List[str]: List of sheet names
 
     Raises:
-        FileNotFoundError: 文件不存在
+        FileNotFoundError: File does not exist
     """
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")

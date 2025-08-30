@@ -1,6 +1,6 @@
-"""LongPort 调仓命令
+"""LongPort rebalance command
 
-处理仓位调整的命令逻辑。
+Handles command logic for position adjustments.
 """
 
 from pathlib import Path
@@ -18,22 +18,22 @@ logger = get_logger(__name__)
 def run_lb_rebalance(
     input_file: str, account: str = "main", dry_run: bool = True, env: str = "real"
 ) -> int:
-    """运行LongPort差额调仓
+    """Run LongPort differential rebalancing
 
-    基于真实账户快照，计算目标仓位与当前持仓的差额，执行调仓操作。
-    无论test还是real环境，都统一走一条路径：先获取账户快照，计算差额，再决定是否真实下单。
+    Based on real account snapshot, calculate the difference between target positions and current holdings, execute rebalancing operations.
+    Regardless of test or real environment, follow a unified path: first get account snapshot, calculate differences, then decide whether to place real orders.
 
     Args:
-        input_file: AI选股结果文件路径
-        account: 账户名称
-        dry_run: 是否为干跑模式
-        env: 环境选择（test或real）
+        input_file: AI stock selection result file path
+        account: Account name
+        dry_run: Whether it's dry run mode
+        env: Environment selection (test or real)
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     try:
-        # 强制使用 REAL 环境；不带 --execute 则为干跑预览
+        # Force use REAL environment; without --execute it's dry run preview
         env = "real"
         if dry_run:
             logger.info("模式: 干跑模式（真实账户快照，预览不下单）")
@@ -44,13 +44,13 @@ def run_lb_rebalance(
         logger.info(f"账户: {account}")
         logger.info(f"环境: {env.upper()}")
 
-        # 检查文件是否存在
+        # Check if file exists
         file_path = Path(input_file)
         if not file_path.exists():
             logger.error(f"文件不存在: {input_file}")
             return 1
 
-        # 读取目标股票列表
+        # Read target stock list
         try:
             tickers, sheet_name = read_latest_sheet_tickers(file_path)
             logger.info(
@@ -60,14 +60,14 @@ def run_lb_rebalance(
             logger.error(f"读取Excel文件失败：{e}")
             return 1
 
-        # 构建单一客户端，贯穿全流程，避免重复初始化导致权限表打印多次
+        # Build single client throughout the process to avoid repeated initialization causing multiple permission table prints
         from ..broker.longport_client import LongPortClient
 
         client = LongPortClient(env=env)
-        # 获取账户快照（不取报价，稍后统一一次性取）
+        # Get account snapshot (without quotes, will fetch all at once later)
         account_snapshot = get_account_snapshot(env=env, include_quotes=False, client=client)
 
-        # 统一一次性取行情：目标股票 + 现有持仓
+        # Fetch quotes all at once: target stocks + existing positions
         target_syms = {t.strip().upper() for t in tickers}
         held_syms = {p.symbol for p in account_snapshot.positions}
         all_syms = target_syms | held_syms
@@ -77,20 +77,20 @@ def run_lb_rebalance(
         else:
             quote_map = {}
 
-        # 用统一报价回填账户快照的持仓估值，避免 Before 为 0
+        # Use unified quotes to backfill position valuations in account snapshot, avoid Before being 0
         if quote_map and account_snapshot.positions:
             for pos in account_snapshot.positions:
                 px = float(quote_map.get(pos.symbol, pos.last_price or 0.0) or 0.0)
                 if px > 0:
                     pos.last_price = px
                     pos.estimated_value = float(px) * float(pos.quantity)
-            # 同步更新快照合计，若总资产之前为 0，则回退为现金+持仓估值
+            # Synchronously update snapshot totals, if total assets were 0 before, fall back to cash + position valuations
             total_mv = sum(float(p.estimated_value) for p in account_snapshot.positions)
             account_snapshot.total_market_value = total_mv
             if not account_snapshot.total_portfolio_value:
                 account_snapshot.total_portfolio_value = float(account_snapshot.cash_usd) + total_mv
 
-        # 初始化调仓服务
+        # Initialize rebalance service
         rebalance_service = RebalanceService(env=env, client=client)
 
         try:

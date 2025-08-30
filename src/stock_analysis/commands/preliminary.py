@@ -1,6 +1,6 @@
-"""量化初筛命令
+"""Quantitative preliminary screening command
 
-处理量化初筛选股的命令逻辑。
+Handles command logic for quantitative preliminary stock screening.
 """
 
 from ..utils.logging import get_logger
@@ -9,20 +9,20 @@ logger = get_logger(__name__)
 
 
 def run_preliminary(output_dir: str | None = None) -> int:
-    """运行量化初筛选股
+    """Run quantitative preliminary stock screening
 
     Args:
-        output_dir: 输出目录路径（可选）
+        output_dir: Output directory path (optional)
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     try:
         logger.info("正在运行量化初筛选股...")
 
         if output_dir:
             logger.info(f"输出目录：{output_dir}")
-            # 这里可以添加输出目录配置逻辑
+            # Output directory configuration logic can be added here
 
         from ..preliminary_selection import main as prelim_main
 
