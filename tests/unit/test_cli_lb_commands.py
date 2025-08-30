@@ -35,10 +35,11 @@ def test_cli_dispatch_lb_rebalance(monkeypatch):
     """测试CLI将lb-rebalance命令分发到run_lb_rebalance函数。"""
     called = {}
 
-    def fake_run_lb_rebalance(input_file, account="main", dry_run=True):
+    def fake_run_lb_rebalance(input_file, account="main", dry_run=True, env="real"):
         called["input_file"] = input_file
         called["account"] = account
         called["dry_run"] = dry_run
+        called["env"] = env
         return 0
 
     monkeypatch.setattr(cli, "run_lb_rebalance", fake_run_lb_rebalance)
@@ -94,9 +95,11 @@ def test_main_command_routing():
 
                 result = cli.main()
                 assert result == 0
-                mock_lb_rebalance.assert_called_once_with(
-                    "portfolio.xlsx", "test_account", True
-                )
+                # 断言前三个参数（第四个为 env='real'）
+                args, kwargs = mock_lb_rebalance.call_args
+                assert args[0] == "portfolio.xlsx"
+                assert args[1] == "test_account"
+                assert args[2] is True
 
 
 @pytest.mark.unit

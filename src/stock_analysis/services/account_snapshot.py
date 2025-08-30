@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 def get_account_snapshot(
-    env: str = "test",
+    env: str = "real",
     include_quotes: bool = True,
     pre_quotes: dict[str, tuple[float, str]] | None = None,
     client: LongPortClient | None = None,
@@ -20,7 +20,7 @@ def get_account_snapshot(
     """获取账户快照
 
     Args:
-        env: 环境选择（test/real）
+        env: 环境选择（仅 real 支持，参数保留为兼容）
 
     Returns:
         AccountSnapshot: 账户快照数据
@@ -94,30 +94,18 @@ def get_account_snapshot(
         )
 
     except Exception as e:
-        logger.error(f"无法获取 {env} 环境账户数据: {e}")
+        logger.error(f"无法获取账户数据: {e}")
         # 让调用方感受到真实的痛苦，而不是假快乐
-        raise RuntimeError(f"{env} 环境账户数据获取失败: {e}") from e
+        raise RuntimeError(f"账户数据获取失败: {e}") from e
 
 
 def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
-    """获取多个环境的账户快照
-
-    Args:
-        envs: 环境列表
-
-    Returns:
-        List[AccountSnapshot]: 账户快照列表
-    """
-    snapshots = []
-    for env in envs:
-        if env in ("test", "real"):
-            snapshot = get_account_snapshot(env)
-            snapshots.append(snapshot)
-    return snapshots
+    """兼容旧接口：总是返回真实账户快照。"""
+    return [get_account_snapshot(env="real")]
 
 
 def get_quotes(
-    symbols: list[str], env: str = "test", client: LongPortClient | None = None
+    symbols: list[str], client: LongPortClient | None = None
 ) -> dict[str, Quote]:
     """获取股票报价
 
@@ -134,7 +122,7 @@ def get_quotes(
     try:
         created_here = False
         if client is None:
-            client = LongPortClient(env=env)
+            client = LongPortClient()
             created_here = True
         quote_data = client.quote_last(symbols)
         if created_here:

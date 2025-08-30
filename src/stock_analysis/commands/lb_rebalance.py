@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 def run_lb_rebalance(
-    input_file: str, account: str = "main", dry_run: bool = True, env: str = "test"
+    input_file: str, account: str = "main", dry_run: bool = True, env: str = "real"
 ) -> int:
     """运行LongPort差额调仓
 
@@ -32,16 +32,16 @@ def run_lb_rebalance(
         int: 退出码（0表示成功）
     """
     try:
-        # 允许 Real 环境干跑：读取真实账户快照，但不下单
-        if env == "real" and dry_run:
-            logger.warning("Real 环境干跑：只读取真实账户快照，不会下单。")
-        if env == "real" and not dry_run:
-            logger.warning("警告：将实际在 REAL 环境下下单。风险自负。")
+        # 强制使用 REAL 环境；不带 --execute 则为干跑预览
+        env = "real"
+        if dry_run:
+            logger.info("模式: 干跑模式（真实账户快照，预览不下单）")
+        else:
+            logger.warning("模式: 实盘执行（真实下单，谨慎操作）")
 
         logger.info(f"正在读取AI选股结果文件: {input_file}")
         logger.info(f"账户: {account}")
         logger.info(f"环境: {env.upper()}")
-        logger.info(f"模式: {'干跑模式（只打印）' if dry_run else '实际执行模式'}")
 
         # 检查文件是否存在
         file_path = Path(input_file)
@@ -71,7 +71,7 @@ def run_lb_rebalance(
         held_syms = {p.symbol for p in account_snapshot.positions}
         all_syms = target_syms | held_syms
         if all_syms:
-            quote_objs = get_quotes(list(all_syms), env, client=client)
+            quote_objs = get_quotes(list(all_syms), client=client)
             quote_map = {k: v.price for k, v in quote_objs.items()}
         else:
             quote_map = {}

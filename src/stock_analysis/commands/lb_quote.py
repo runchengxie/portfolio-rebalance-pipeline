@@ -10,7 +10,7 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def run_lb_quote(tickers: list[str], env: str = "test") -> int:
+def run_lb_quote(tickers: list[str]) -> int:
     """运行LongPort实时报价查询
 
     Args:
@@ -21,11 +21,10 @@ def run_lb_quote(tickers: list[str], env: str = "test") -> int:
         int: 退出码（0表示成功）
     """
     try:
-        logger.info(f"正在获取 {', '.join(tickers)} 的实时报价...")
-        logger.info(f"环境: {env.upper()}")
+        logger.info(f"正在获取 {', '.join(tickers)} 的实时报价... (REAL)")
 
         # 获取报价数据
-        quotes_dict = get_quotes(tickers, env)
+        quotes_dict = get_quotes(tickers)
         quotes_list = list(quotes_dict.values())
 
         # 渲染输出

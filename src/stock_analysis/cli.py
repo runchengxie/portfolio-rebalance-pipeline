@@ -6,6 +6,14 @@
 import argparse
 import sys
 
+# Re-export command entry functions for tests and external callers
+from .commands.ai_pick import run_ai_pick  # noqa: F401
+from .commands.backtest import run_backtest  # noqa: F401
+from .commands.load_data import run_load_data  # noqa: F401
+from .commands.lb_quote import run_lb_quote  # noqa: F401
+from .commands.lb_rebalance import run_lb_rebalance  # noqa: F401
+from .commands.lb_account import run_lb_account  # noqa: F401
+
 
 def create_parser() -> argparse.ArgumentParser:
     """创建命令行参数解析器
@@ -27,13 +35,11 @@ def create_parser() -> argparse.ArgumentParser:
   stockq load-data                 加载数据到数据库
   stockq ai-pick                   运行AI选股分析
   stockq lb-quote AAPL MSFT        获取实时报价
-  stockq lb-account                查看账户总览（默认test环境）
-  stockq lb-account --env real     查看真实账户总览
-  stockq lb-account --env both     同时查看test和real环境
+  stockq lb-account                查看真实账户总览
   stockq lb-account --funds        只显示资金信息
   stockq lb-account --format json  JSON格式输出
-  stockq lb-rebalance results.xlsx --env test 在测试(test)环境进行模拟调仓 (Dry-Run)
-  stockq lb-rebalance results.xlsx --env real --execute  在真实(real)环境执行真实交易 (需要 --execute 标志)
+  stockq lb-rebalance results.xlsx             真实账户干跑预览 (Dry-Run)
+  stockq lb-rebalance results.xlsx --execute   真实账户实际执行 (谨慎操作)
         """,
     )
 
@@ -105,12 +111,6 @@ def create_parser() -> argparse.ArgumentParser:
     lb_quote_parser.add_argument(
         "tickers", nargs="+", help="股票代码列表（如 AAPL MSFT 700.HK）"
     )
-    lb_quote_parser.add_argument(
-        "--env",
-        choices=["test", "real"],
-        default="test",
-        help="环境选择：test 纸交易 / real 实盘（默认 test）",
-    )
 
     # LongPort 仓位调整命令
     lb_rebalance_parser = subparsers.add_parser(
@@ -136,24 +136,13 @@ def create_parser() -> argparse.ArgumentParser:
         "--execute", action="store_true", help="实际执行交易（关闭干跑模式）"
     )
 
-    lb_rebalance_parser.add_argument(
-        "--env",
-        choices=["test", "real"],
-        default="test",
-        help="环境选择：test 纸交易 / real 实盘（默认 test）",
-    )
+    # 不再暴露 env，默认 real；--execute 控制是否真实下单
 
     # LongPort 账户总览命令
     lb_account_parser = subparsers.add_parser(
         "lb-account",
-        help="查看 LongPort 账户概览",
-        description="展示资金与持仓（默认 test 环境）",
-    )
-    lb_account_parser.add_argument(
-        "--env",
-        choices=["test", "real", "both"],
-        default="test",
-        help="环境选择：test / real / both",
+        help="查看 LongPort 真实账户概览",
+        description="展示真实账户的资金与持仓",
     )
     lb_account_parser.add_argument("--funds", action="store_true", help="只看资金")
     lb_account_parser.add_argument("--positions", action="store_true", help="只看持仓")
@@ -207,8 +196,7 @@ def main() -> int:
             )
         elif args.command == "lb-quote":
             from .commands.lb_quote import run_lb_quote
-
-            return run_lb_quote(args.tickers, getattr(args, "env", "test"))
+            return run_lb_quote(args.tickers)
         elif args.command == "lb-rebalance":
             from .commands.lb_rebalance import run_lb_rebalance
 
@@ -218,16 +206,14 @@ def main() -> int:
                 args.input_file,
                 getattr(args, "account", "main"),
                 dry_run,
-                getattr(args, "env", "test"),
+                "real",
             )
         elif args.command == "lb-account":
             from .commands.lb_account import run_lb_account
-
             return run_lb_account(
-                getattr(args, "env", "test"),
-                getattr(args, "funds", False),
-                getattr(args, "positions", False),
-                getattr(args, "format", "table"),
+                only_funds=getattr(args, "funds", False),
+                only_positions=getattr(args, "positions", False),
+                fmt=getattr(args, "format", "table"),
             )
         else:
             from .utils.logging import get_logger

@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 class RebalanceService:
     """调仓服务类"""
 
-    def __init__(self, env: str = "test", client: LongPortClient | None = None):
+    def __init__(self, env: str = "real", client: LongPortClient | None = None):
         self.env = env
         self.client = client
 
@@ -59,7 +59,7 @@ class RebalanceService:
                 _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
             ]
             try:
-                quote_objs = get_quotes(lb_symbols, self.env)
+                quote_objs = get_quotes(lb_symbols, client=self._get_client())
                 # 转为简单价格映射
                 quotes = {sym: q.price for sym, q in quote_objs.items()}
             except Exception as e:
@@ -76,7 +76,7 @@ class RebalanceService:
                 lb_symbols = [
                     _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
                 ]
-                quote_objs = get_quotes(lb_symbols, self.env)
+                quote_objs = get_quotes(lb_symbols, client=self._get_client())
                 quotes = {sym: q.price for sym, q in quote_objs.items()}
             # 用 quotes 给当前持仓估值
             current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}

@@ -70,26 +70,14 @@
 
 5. 查看当下账户情况
 
-    在执行任何交易操作前，先验证 API 连接和账户状态。
-
-    * 默认 `--env test`。
-
-    * `--env real` 允许“只读展示”，但打印一个巨醒目的横幅，告诉你现在是在看真实账户数据。
-
-    * `--env both` 时，除非显式允许 real，否则降级为只展示 test 并给出提示。
+    在执行任何交易操作前，先验证 API 连接和账户状态（默认连接真实账户，预览不下单）。
 
     ```bash
     # 验证API凭据和实时报价功能是否正常
     stockq lb-quote AAPL MSFT
 
-    # 只看测试账户（默认）
+    # 查看真实账户
     stockq lb-account
-
-    # 明确查看真实账户（只读）
-    stockq lb-account --env real
-
-    # 同时查看两个账户，并并排输出
-    stockq lb-account --env both
 
     # 只看资金或只看持仓
     stockq lb-account --funds
@@ -99,23 +87,22 @@
     stockq lb-account --format json
    ```
 
-6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance`命令内置了一套严格的安全执行机制。该机制的核心原则是默认安全：让无风险的操作（如测试和模拟）变得简单，而让有风险的真实交易需要用户进行明确、多重确认。
+6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance`命令默认使用真实账户进行干跑预览，只有添加 `--execute` 时才会真实下单。
 
     请在执行前务必理解以下**行为矩阵**：
 
     | 命令组合 | 行为描述 |
     | :--- | :--- |
-    | `stockq lb-rebalance ... --env test` | 安全模拟: 无论是否添加 `--execute`，此命令都只会在测试环境中进行模拟操作。它用于验证 API 凭据、网络连接和调仓逻辑，绝不会触及您的真实资金。 |
-    | `stockq lb-rebalance ... --env real` | 拒绝执行: 为了防止用户误操作（例如，以为自己执行了真实交易但实际上只是模拟），系统会明确拒绝此组合，并提示您必须添加 `--execute` 标志才能在真实环境下运行。这是一个关键的防呆设计。 |
-    | `stockq lb-rebalance ... --env real --execute` | 真实交易: 这是唯一会触发真实下单的命令组合。执行此命令前，请务必确认您的调仓计划。所有在代码中定义的风控措施（如单笔最大金额、交易时间窗口）将在此模式下生效。 |
+    | `stockq lb-rebalance ...` | 真实账户干跑：读取真实账户、统一抓取行情、生成等额调仓计划，但不下单。 |
+    | `stockq lb-rebalance ... --execute` | 真实交易：在真实账户下按计划下单；所有风控（交易时段/最小单位/单笔上限）生效。 |
 
     推荐的执行流程：
 
     * 测试环境模拟（Dry-Run）:
 
         ```bash
-        # 在一个完全隔离的环境中，检查调仓计划是否符合预期
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env test
+        # 预览真实账户调仓计划（不下单）
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
         ```
 
     3. 仔细检查输出: 审查上一步打印的交易计划，包括股票代码、数量和方向。
@@ -124,7 +111,7 @@
 
         ```bash
         # 确认所有信息无误后，才执行真实下单
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --env real --execute
+        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
         ```
 
 ## 可选步骤
@@ -353,8 +340,7 @@
     LONGPORT_APP_KEY="your_app_key_here"
     LONGPORT_APP_SECRET="your_app_secret_here"
     
-    # 根据 --env test 或 --env real 参数自动读取对应 Token
-    LONGPORT_ACCESS_TOKEN_TEST="your_test_access_token_here"
+    # 使用真实账户 Token 即可
     LONGPORT_ACCESS_TOKEN="your_real_access_token_here"
     ```
 
