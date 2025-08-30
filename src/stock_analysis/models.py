@@ -79,9 +79,10 @@ class AccountSnapshot:
     total_portfolio_value: float = 0.0
 
     def __post_init__(self):
-        """计算总值"""
+        """计算总值：若调用方提供了总资产，则优先使用。"""
         self.total_market_value = sum(pos.estimated_value for pos in self.positions)
-        self.total_portfolio_value = self.cash_usd + self.total_market_value
+        if not self.total_portfolio_value:
+            self.total_portfolio_value = self.cash_usd + self.total_market_value
 
 
 @dataclass

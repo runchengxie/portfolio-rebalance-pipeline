@@ -35,7 +35,11 @@ class RebalanceService:
             self.client = None
 
     def plan_rebalance(
-        self, target_tickers: list[str], account_snapshot: AccountSnapshot
+        self,
+        target_tickers: list[str],
+        account_snapshot: AccountSnapshot,
+        quotes: dict[str, float] | None = None,
+        allow_fractional: bool = False,
     ) -> RebalanceResult:
         """制定调仓计划
 
@@ -49,15 +53,18 @@ class RebalanceService:
         if not target_tickers:
             raise ValueError("目标股票列表不能为空")
 
-        # 获取实时报价
-        lb_symbols = [
-            _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
-        ]
-        try:
-            quotes = get_quotes(lb_symbols, self.env)
-        except Exception as e:
-            logger.error(f"获取报价失败: {e}")
-            raise
+        # 获取实时报价（未提供则内部拉取一次）
+        if quotes is None:
+            lb_symbols = [
+                _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
+            ]
+            try:
+                quote_objs = get_quotes(lb_symbols, self.env)
+                # 转为简单价格映射
+                quotes = {sym: q.price for sym, q in quote_objs.items()}
+            except Exception as e:
+                logger.error(f"获取报价失败: {e}")
+                raise
 
         # 计算等权重目标仓位
         n_stocks = len(target_tickers)
@@ -77,21 +84,27 @@ class RebalanceService:
             lb_symbol = _to_lb_symbol(symbol)
 
             # 获取价格
-            quote = quotes.get(lb_symbol)
-            if not quote or quote.price <= 0:
+            px = (quotes or {}).get(lb_symbol)
+            if not px or px <= 0:
                 logger.warning(f"跳过 {symbol}：无有效价格")
                 continue
 
-            price = quote.price
+            price = float(px)
 
             # 当前持仓
             current_position = current_positions_map.get(lb_symbol)
             current_qty = current_position.quantity if current_position else 0
 
-            # 计算目标持仓（按最小交易单位取整）
+            # 计算目标持仓
             target_qty_raw = target_value_per_stock / price
-            lot_size = client.lot_size(lb_symbol)
-            target_qty = (int(target_qty_raw) // lot_size) * lot_size
+            if allow_fractional:
+                # 计划层允许小数，但下单层仍以最小交易单位执行
+                # 由于 Order/Position 目前的 quantity 为 int，这里保持向下取整到 lot
+                lot_size = client.lot_size(lb_symbol)
+                target_qty = (int(target_qty_raw) // lot_size) * lot_size
+            else:
+                lot_size = client.lot_size(lb_symbol)
+                target_qty = (int(target_qty_raw) // lot_size) * lot_size
 
             # 创建目标持仓
             target_position = Position(
@@ -157,7 +170,11 @@ class RebalanceService:
         for order in orders:
             try:
                 result = client.place_order(
-                    order.symbol, order.quantity, order.side, dry_run=dry_run
+                    order.symbol,
+                    order.quantity,
+                    order.side,
+                    dry_run=dry_run,
+                    est_px=order.price if order.price else None,
                 )
 
                 # 更新订单状态

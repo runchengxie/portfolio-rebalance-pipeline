@@ -204,13 +204,21 @@ class LongPortClient:
             bars[i.symbol] = (i.last_done or 0.0, i.timestamp or "")
         return bars
 
-    def portfolio_snapshot(self) -> tuple[float, dict[str, int]]:
+    def portfolio_snapshot(self) -> tuple[float, dict[str, int], float | None, str | None]:
         """
-        返回 (现金USD估算, 持仓映射{ 'AAPL.US': 100, ... })。
+        返回 (cash_usd, stock_position_map, net_assets, base_currency)。
+
+        - cash_usd: 仅 USD 可用现金（不做 FX 折算）
+        - stock_position_map: {'AAPL.US': 100, ...}
+        - net_assets: 券商口径总资产（含多币种/持仓），若可得
+        - base_currency: 该 net_assets 的口径币种（如 'HKD'）
+
         兼容不同 SDK 版本的 asset/balance 与 stock_positions/position_list 返回形态。
         """
         cash_usd = 0.0
         pos_map: dict[str, int] = {}
+        net_assets: float | None = None
+        base_ccy: str | None = None
 
         # ---------- 现金 ----------
         try:
@@ -236,8 +244,16 @@ class LongPortClient:
                     if not ccy:
                         continue
                     totals[ccy] = totals.get(ccy, 0.0) + amt
-                # 统一粗略相加（暂不做 FX 折算），避免忽略非 USD 余额
-                cash_usd = sum(totals.values()) if totals else 0.0
+                # 仅使用 USD 现金作为 cash_usd，避免错误的多币种相加
+                cash_usd = totals.get("USD", 0.0)
+                # 券商口径总资产及其币种
+                na = getattr(asset, "net_assets", None)
+                if na is not None:
+                    try:
+                        net_assets = float(na)
+                    except Exception:
+                        net_assets = None
+                base_ccy = str(getattr(asset, "currency", "") or "").upper() or None
                 # 3) 再不行就兜底找常见字段
                 if cash_usd == 0.0:
                     for name in ("cash", "available_cash", "total_cash"):
@@ -254,7 +270,7 @@ class LongPortClient:
                 self.trade, "position_list", None
             )
             if not pos_fn:
-                return cash_usd, pos_map
+                return cash_usd, pos_map, net_assets, base_ccy
 
             ret = pos_fn()
 
@@ -350,7 +366,7 @@ class LongPortClient:
             # 拿不到就给空，调用侧会优雅降级
             pass
 
-        return cash_usd, pos_map
+        return cash_usd, pos_map, net_assets, base_ccy
 
     def fund_positions(self) -> dict[str, tuple[float, float, str]]:
         """
@@ -552,7 +568,12 @@ class LongPortClient:
 
     # ---------- 下单（市价等权示例） ----------
     def place_order(
-        self, symbol: str, qty: int, side: str, dry_run: bool = True
+        self,
+        symbol: str,
+        qty: int,
+        side: str,
+        dry_run: bool = True,
+        est_px: float | None = None,
     ) -> dict:
         """Place order with risk controls.
 
@@ -577,7 +598,7 @@ class LongPortClient:
                 raise RuntimeError(
                     f"{symbol_formatted} 数量需为最小交易单位 {lot} 的整数倍"
                 )
-            px, _ = self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))
+            px = float(est_px) if est_px is not None else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
             notional = px * qty
             if notional > self.limits.max_notional_per_order:
                 raise RuntimeError(
@@ -599,7 +620,7 @@ class LongPortClient:
         self._check_lot(symbol_formatted, qty)
         if qty > self.limits.max_qty_per_order:
             raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
-        px, _ = self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))
+        px = float(est_px) if est_px is not None else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
         notional = px * qty
         if notional > self.limits.max_notional_per_order:
             raise RuntimeError(

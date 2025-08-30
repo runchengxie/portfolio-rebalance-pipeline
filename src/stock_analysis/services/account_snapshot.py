@@ -10,7 +10,11 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def get_account_snapshot(env: str) -> AccountSnapshot:
+def get_account_snapshot(
+    env: str = "test",
+    include_quotes: bool = True,
+    pre_quotes: dict[str, tuple[float, str]] | None = None,
+) -> AccountSnapshot:
     """获取账户快照
 
     Args:
@@ -24,12 +28,15 @@ def get_account_snapshot(env: str) -> AccountSnapshot:
     """
     try:
         client = LongPortClient(env=env)
-        cash_usd, stock_position_map = client.portfolio_snapshot()
+        cash_usd, stock_position_map, net_assets, base_ccy = client.portfolio_snapshot()
 
-        # 股票持仓报价
-        stock_quotes = {}
-        if stock_position_map:
-            stock_quotes = client.quote_last(list(stock_position_map.keys()))
+        # 股票持仓报价：可以选择不取，或使用外部提供的缓存
+        stock_quotes: dict[str, tuple[float, str]] = {}
+        if include_quotes and not pre_quotes:
+            if stock_position_map:
+                stock_quotes = client.quote_last(list(stock_position_map.keys()))
+        else:
+            stock_quotes = pre_quotes or {}
 
         positions: list[Position] = []
 
@@ -62,7 +69,13 @@ def get_account_snapshot(env: str) -> AccountSnapshot:
 
         client.close()
 
-        return AccountSnapshot(env=env, cash_usd=cash_usd, positions=positions)
+        # 若券商提供 net_assets，则将其作为总资产透传，避免本地“现金+持仓估值”误差
+        return AccountSnapshot(
+            env=env,
+            cash_usd=cash_usd,
+            positions=positions,
+            total_portfolio_value=float(net_assets) if net_assets else 0.0,
+        )
 
     except Exception as e:
         logger.error(f"无法获取 {env} 环境账户数据: {e}")
