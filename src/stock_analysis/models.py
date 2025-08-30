@@ -55,6 +55,12 @@ class Order:
     order_id: str | None = None
     timestamp: datetime | None = None
     error_message: str | None = None
+    # Phase 1 preview fields (optional)
+    target_qty_frac: float | None = None
+    rounded_target_qty: int | None = None
+    rounding_loss: float | None = None
+    est_fees: float | None = None
+    est_frac_hint: float | None = None
 
     def __post_init__(self):
         """数据验证"""
