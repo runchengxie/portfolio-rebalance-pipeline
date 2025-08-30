@@ -1,19 +1,19 @@
-"""表格渲染器
+"""Table renderer
 
-提供表格格式的数据渲染功能。
+Provides table format data rendering functionality.
 """
 
 from ..models import AccountSnapshot, Order, Quote, RebalanceResult
 
 
 def render_quotes(quotes: list[Quote]) -> str:
-    """渲染股票报价表格
+    """Render stock quotes table
 
     Args:
-        quotes: 报价列表
+        quotes: List of quotes
 
     Returns:
-        str: 格式化的表格字符串
+        str: Formatted table string
     """
     if not quotes:
         return "无报价数据"
@@ -33,30 +33,30 @@ def render_quotes(quotes: list[Quote]) -> str:
 def render_account_snapshot(
     snapshot: AccountSnapshot, only_funds: bool = False, only_positions: bool = False
 ) -> str:
-    """渲染账户快照表格
+    """Render account snapshot table
 
     Args:
-        snapshot: 账户快照
-        only_funds: 只显示资金信息
-        only_positions: 只显示持仓信息
+        snapshot: Account snapshot
+        only_funds: Only show fund information
+        only_positions: Only show position information
 
     Returns:
-        str: 格式化的表格字符串
+        str: Formatted table string
     """
     lines = []
 
-    # 环境标识
+    # Environment identifier
     if snapshot.env == "real":
         lines.append("!!! REAL ACCOUNT DATA (READ-ONLY) !!!")
 
-    # 资金信息
+    # Fund information
     if not only_positions:
         lines.append(f"\n[{snapshot.env.upper()}] 现金(USD): ${snapshot.cash_usd:,.2f}")
         if not only_funds:
             lines.append(f"持仓市值: ${snapshot.total_market_value:,.2f}")
             lines.append(f"总资产: ${snapshot.total_portfolio_value:,.2f}")
 
-    # 持仓信息
+    # Position information
     if not only_funds:
         if snapshot.positions:
             if not only_positions:
@@ -81,15 +81,15 @@ def render_multiple_account_snapshots(
     only_funds: bool = False,
     only_positions: bool = False,
 ) -> str:
-    """渲染多个账户快照
+    """Render multiple account snapshots
 
     Args:
-        snapshots: 账户快照列表
-        only_funds: 只显示资金信息
-        only_positions: 只显示持仓信息
+        snapshots: List of account snapshots
+        only_funds: Only show fund information
+        only_positions: Only show position information
 
     Returns:
-        str: 格式化的表格字符串
+        str: Formatted table string
     """
     if not snapshots:
         return "无账户数据"
@@ -102,41 +102,41 @@ def render_multiple_account_snapshots(
 
 
 def render_rebalance_plan(result: RebalanceResult) -> str:
-    """渲染调仓计划表格
+    """Render rebalance plan table
 
     Args:
-        result: 调仓结果
+        result: Rebalance result
 
     Returns:
-        str: 格式化的表格字符串
+        str: Formatted table string
     """
     lines = []
 
-    # 标题
+    # Title
     mode = "干跑模式" if result.dry_run else "实际执行模式"
     lines.append(f"\n=== {mode} - {result.sheet_name} 差额调仓 ===")
     lines.append("-" * 80)
 
-    # 账户概览
+    # Account overview
     lines.append(f"总资产: ${result.total_portfolio_value:,.2f}")
     lines.append(f"等权重分配: 每只股票目标市值 ${result.target_value_per_stock:,.2f}")
     lines.append("-" * 80)
 
-    # 调仓详情表头
+    # Rebalance details header
     lines.append("Symbol   | 当前价格 | 当前持仓 | 目标持仓 | 差额    | 操作")
     lines.append("-" * 80)
 
-    # 构建当前持仓映射
+    # Build current positions mapping
     current_positions_map = {pos.symbol: pos for pos in result.current_positions}
 
-    # 显示每只目标股票的调仓情况
+    # Show rebalance situation for each target stock
     for target_pos in result.target_positions:
         current_pos = current_positions_map.get(target_pos.symbol)
         current_qty = current_pos.quantity if current_pos else 0
 
         delta_qty = target_pos.quantity - current_qty
 
-        # 查找对应的订单
+        # Find corresponding order
         order = None
         for o in result.orders:
             if o.symbol == target_pos.symbol or o.symbol.replace(
@@ -157,7 +157,7 @@ def render_rebalance_plan(result: RebalanceResult) -> str:
             f"{current_qty:8d} | {target_pos.quantity:8d} | {delta_qty:7d} | {action}"
         )
 
-    # 订单汇总
+    # Order summary
     lines.append(f"\n总计处理 {len(result.orders)} 个订单")
 
     if result.dry_run:
@@ -170,13 +170,13 @@ def render_rebalance_plan(result: RebalanceResult) -> str:
 
 
 def render_orders(orders: list[Order]) -> str:
-    """渲染订单列表
+    """Render order list
 
     Args:
-        orders: 订单列表
+        orders: List of orders
 
     Returns:
-        str: 格式化的表格字符串
+        str: Formatted table string
     """
     if not orders:
         return "无订单数据"

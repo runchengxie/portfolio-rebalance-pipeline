@@ -47,9 +47,9 @@ class Env(str, Enum):
 
 @dataclass
 class BrokerLimits:
-    max_notional_per_order: float = 20000.0  # 单笔最大金额
-    max_qty_per_order: int = 500  # 单笔最大股数（按美股演示）
-    trading_window_start: str = "09:30"  # 本地时间（仅作为降级回退）
+    max_notional_per_order: float = 20000.0  # Maximum amount per order
+    max_qty_per_order: int = 500  # Maximum shares per order (US stock example)
+    trading_window_start: str = "09:30"  # Local time (fallback only)
     trading_window_end: str = "16:00"
 
 
@@ -65,7 +65,7 @@ def _to_lb_symbol(ticker: str) -> str:
     t = ticker.strip().upper()
     if t.endswith((".US", ".HK", ".SG", ".CN")):
         return t
-    return f"{t}.US"  # 你的项目多数是美股，默认补 .US
+    return f"{t}.US"  # Most stocks in your project are US stocks, default to .US
 
 
 def _market_of(symbol: str) -> str:
@@ -92,7 +92,7 @@ def _market_enum(m: str) -> Market:
 
 
 def _market_tz(m: str) -> str:
-    # 交易所本地时区
+    # Exchange local timezone
     return {
         "US": "America/New_York",
         "HK": "Asia/Hong_Kong",
@@ -113,7 +113,7 @@ class LongPortClient:
         Args:
             config: LongPort configuration object, if None then read from environment variables
         """
-        # 强制使用 REAL 环境
+        # Force use of REAL environment
         self.env = Env.REAL
         self.region = getenv_both("LONGPORT_REGION", "LONGBRIDGE_REGION", "hk")
 
@@ -122,23 +122,23 @@ class LongPortClient:
         self.token_test = getenv_both(
             "LONGPORT_ACCESS_TOKEN_TEST", "LONGBRIDGE_ACCESS_TOKEN_TEST"
         )
-        # 实盘优先 LONGPORT_ACCESS_TOKEN，兼容历史 LONGPORT_ACCESS_TOKEN_REAL
+        # Live trading prioritizes LONGPORT_ACCESS_TOKEN, compatible with legacy LONGPORT_ACCESS_TOKEN_REAL
         self.token_real = os.getenv("LONGPORT_ACCESS_TOKEN") or os.getenv(
             "LONGPORT_ACCESS_TOKEN_REAL"
         )
 
-        # 先把必需项校验干净
+        # Validate required items first
         if not self.app_key or not self.app_secret:
             raise RuntimeError("缺少 LONGPORT_APP_KEY/SECRET。请通过系统环境变量注入。")
 
-        # 只支持 REAL 环境
+        # Only support REAL environment
         if not self.token_real:
             raise RuntimeError(
                 "缺少 LONGPORT_ACCESS_TOKEN（或兼容 LONGPORT_ACCESS_TOKEN_REAL）。请通过系统环境变量注入。"
             )
         access_token = self.token_real
 
-        # 通过环境变量注入 token/region，再用 SDK 的 from_env 选择正确端点与默认配置
+        # Inject token/region via environment variables, then use SDK's from_env to select correct endpoint and default config
         self._prev_env = {
             "LONGPORT_APP_KEY": os.getenv("LONGPORT_APP_KEY"),
             "LONGPORT_APP_SECRET": os.getenv("LONGPORT_APP_SECRET"),
@@ -150,7 +150,7 @@ class LongPortClient:
         os.environ["LONGPORT_ACCESS_TOKEN"] = access_token
         if self.region:
             os.environ["LONGPORT_REGION"] = self.region
-        # 统一走 SDK 推荐的 from_env，确保使用正确的区域与路由
+        # Uniformly use SDK recommended from_env to ensure correct region and routing
         self.config = Config.from_env()
 
         self.quote = QuoteContext(self.config)
@@ -174,7 +174,7 @@ class LongPortClient:
         self._day_cache_expire_at: float = 0.0
         self._cache_ttl_seconds: int = 600
 
-    # ---------- 读行情 ----------
+    # ---------- Quote Data ----------
     def quote_last(self, symbols: Iterable[str]) -> dict[str, tuple[float, str]]:
         """Get last quotes for given symbols.
 
@@ -225,7 +225,7 @@ class LongPortClient:
             )
             if asset_fn:
                 asset = asset_fn()
-                # 1) 优先从 cash_infos 聚合
+                # 1) Prioritize aggregation from cash_infos
                 ci_list = (
                     getattr(asset, "cash_infos", None)
                     or getattr(asset, "cash_info", None)
@@ -242,9 +242,9 @@ class LongPortClient:
                     if not ccy:
                         continue
                     totals[ccy] = totals.get(ccy, 0.0) + amt
-                # 仅使用 USD 现金作为 cash_usd，避免错误的多币种相加
+                # Only use USD cash as cash_usd, avoid incorrect multi-currency addition
                 cash_usd = totals.get("USD", 0.0)
-                # 券商口径总资产及其币种
+                # Broker's total assets and currency
                 na = getattr(asset, "net_assets", None)
                 if na is not None:
                     try:
@@ -252,7 +252,7 @@ class LongPortClient:
                     except Exception:
                         net_assets = None
                 base_ccy = str(getattr(asset, "currency", "") or "").upper() or None
-                # 3) 再不行就兜底找常见字段
+                # 3) Fallback to common fields if still zero
                 if cash_usd == 0.0:
                     for name in ("cash", "available_cash", "total_cash"):
                         v = getattr(asset, name, None)
@@ -260,7 +260,7 @@ class LongPortClient:
                             cash_usd = float(v)
                             break
         except Exception:
-            pass  # 展示而已，拿不到就算了
+            pass  # For display only, ignore if unavailable
 
         # ---------- Positions ----------
         try:
@@ -272,14 +272,14 @@ class LongPortClient:
 
             ret = pos_fn()
 
-            # 兼容多种形态：
-            # 1) 对象有 .list；2) 对象有 .channels（新版返回）；
-            # 3) dict 有同名键；4) 直接是 list
+            # Compatible with multiple formats:
+            # 1) Object has .list; 2) Object has .channels (new version return);
+            # 3) dict has same-named keys; 4) Direct list
             groups = getattr(ret, "list", None) or getattr(ret, "channels", None)
             if groups is None and isinstance(ret, dict):
                 groups = ret.get("list", None) or ret.get("channels", None)
             if groups is None:
-                groups = ret  # 有些 SDK 直接返回拍平的 list
+                groups = ret  # Some SDKs directly return flattened list
 
             def push(sym, qty, market=None):
                 if sym is None or qty is None:
@@ -295,7 +295,7 @@ class LongPortClient:
 
             if isinstance(groups, list):
                 for g in groups:
-                    # 形态 A（旧）：分组对象里有 stock_info 列表
+                    # Format A (old): Group object contains stock_info list
                     stock_info = getattr(g, "stock_info", None)
                     if stock_info is None and isinstance(g, dict):
                         stock_info = g.get("stock_info")
@@ -319,7 +319,7 @@ class LongPortClient:
                             )
                             push(sym, qty, mkt)
                     else:
-                        # 形态 B（新）：分组里有 positions 列表（如 ret.channels[].positions）
+                        # Format B (new): Group contains positions list (e.g. ret.channels[].positions)
                         positions = getattr(g, "positions", None)
                         if positions is None and isinstance(g, dict):
                             positions = g.get("positions")
@@ -342,7 +342,7 @@ class LongPortClient:
                                 )
                                 push(sym, qty, mkt)
                         else:
-                            # 形态 C：已经拍平的 Position 对象
+                            # Format C: Already flattened Position object
                             it = g
                             sym = (
                                 getattr(it, "symbol", None)
@@ -361,7 +361,7 @@ class LongPortClient:
                             )
                             push(sym, qty, mkt)
         except Exception:
-            # 拿不到就给空，调用侧会优雅降级
+            # Return empty if unavailable, caller will gracefully degrade
             pass
 
         return cash_usd, pos_map, net_assets, base_ccy
@@ -383,7 +383,7 @@ class LongPortClient:
             if not fn:
                 return result
             resp = fn()
-            # 形态：resp.list[account].fund_info[*]
+            # Format: resp.list[account].fund_info[*]
             accounts = getattr(resp, "list", None) or []
             for acc in accounts:
                 fund_info = getattr(acc, "fund_info", None) or []
@@ -430,7 +430,7 @@ class LongPortClient:
         Returns:
             Shares per lot
         """
-        # 快路径：美股默认 1，避免静态信息查询造成多余的权限输出
+        # Fast path: US stocks default to 1, avoid unnecessary permission output from static info queries
         if _market_of(symbol) == "US":
             return 1
         try:
@@ -441,11 +441,11 @@ class LongPortClient:
             pass
         return 1
 
-    # ---------- 内部：权威开市信息缓存 ----------
+    # ---------- Internal: Authoritative market info caching ----------
     def _refresh_caches_if_needed(self) -> None:
         """Refresh trading session and trading day cache if expired."""
         now_ts = time.time()
-        # 刷新交易时段缓存
+        # Refresh trading session cache
         if now_ts >= self._session_cache_expire_at:
             try:
                 resp = self.quote.trading_session()
@@ -457,7 +457,7 @@ class LongPortClient:
                         beg = int(getattr(seg, "beg_time", 0))  # hhmm
                         end = int(getattr(seg, "end_time", 0))  # hhmm
                         code = getattr(seg, "trade_session", None)
-                        # 约定：None/0 => Regular, 1 => Pre, 2 => Post, 3 => Overnight（若支持）
+                        # Convention: None/0 => Regular, 1 => Pre, 2 => Post, 3 => Overnight (if supported)
                         if code in (None, 0):
                             kind = "Regular"
                         elif code == 1:
@@ -474,15 +474,15 @@ class LongPortClient:
                 self._session_cache = session_map
                 self._session_cache_expire_at = now_ts + self._cache_ttl_seconds
             except Exception:
-                # 不可用时清空并立即过期，留给降级逻辑处理
+                # Clear and expire immediately when unavailable, leave to fallback logic
                 self._session_cache = {}
                 self._session_cache_expire_at = 0.0
 
-        # 刷新“今天是否交易日”缓存（按市场）
+        # Refresh "is today a trading day" cache (by market)
         if now_ts >= self._day_cache_expire_at:
             try:
                 date.today()
-                # 我们只在用到某个市场时再填充，先清空
+                # We only populate when a market is used, clear first
                 self._is_trading_day_cache = {}
                 self._day_cache_expire_at = now_ts + self._cache_ttl_seconds
             except Exception:
@@ -490,24 +490,24 @@ class LongPortClient:
                 self._day_cache_expire_at = 0.0
 
     def _is_trading_day(self, market_str: str) -> bool:
-        # 先看缓存
+        # Check cache first
         if market_str in self._is_trading_day_cache:
             return self._is_trading_day_cache[market_str]
         try:
             today = date.today()
             resp = self.quote.trading_days(_market_enum(market_str), today, today)
             days = set(getattr(resp, "trade_day", []) or [])
-            # API 返回 YYMMDD 字符串，简单比较今日是否在其中
-            yymmdd = today.strftime("%Y%m%d")[2:]  # 转为YYMMDD
+            # API returns YYMMDD string, simply check if today is in it
+            yymmdd = today.strftime("%Y%m%d")[2:]  # Convert to YYMMDD
             ok = yymmdd in days
             self._is_trading_day_cache[market_str] = ok
             return ok
         except Exception:
-            # API 失败：保守返回 False（fail closed）
+            # API failure: conservatively return False (fail closed)
             self._is_trading_day_cache[market_str] = False
             return False
 
-    # ---------- 下单前检查 ----------
+    # ---------- Pre-order checks ----------
     def _check_window(self, symbol: str) -> None:
         """Check if current time is within trading window.
 
@@ -518,22 +518,22 @@ class LongPortClient:
         symbol_fmt = _to_lb_symbol(symbol)
         market_str = _market_of(symbol_fmt)
 
-        # 1) 非交易日则拒绝
+        # 1) Reject if not a trading day
         if not self._is_trading_day(market_str):
             raise RuntimeError("非交易日，禁止交易")
 
-        # 2) 权威分段判定
+        # 2) Authoritative segment determination
         sessions = self._session_cache.get(market_str, [])
         if sessions and ZoneInfo is not None:
             tz = ZoneInfo(_market_tz(market_str))
             now_ex = datetime.now(tz)
             hhmm = now_ex.hour * 100 + now_ex.minute
 
-            # 允许的分段
+            # Allowed segments
             def allowed(kind: str) -> bool:
                 if kind == "Regular":
                     return True
-                # 盘前/盘后/隔夜：仅当允许扩展时段时放行
+                # Pre/Post/Overnight: only allow when extended hours are enabled
                 return self.allow_extended and (
                     kind in {"Pre", "Post", "Overnight", "Other"}
                 )
@@ -556,7 +556,7 @@ class LongPortClient:
                 raise RuntimeError(f"不在允许的交易时段：{win}")
             return
 
-        # 3) 降级：本地时间字符串粗判（原有逻辑）
+        # 3) Fallback: rough local time string check (original logic)
         now_local = datetime.now().strftime("%H:%M")
         if not (
             self.limits.trading_window_start
@@ -574,7 +574,7 @@ class LongPortClient:
         if qty % lot != 0:
             raise RuntimeError(f"{symbol} 数量需为最小交易单位 {lot} 的整数倍")
 
-    # ---------- 下单（市价等权示例） ----------
+    # ---------- Order placement (market order equal weight example) ----------
     def place_order(
         self,
         symbol: str,
@@ -599,7 +599,7 @@ class LongPortClient:
 
         symbol_formatted = _to_lb_symbol(symbol)
 
-        # 干跑或 TEST：跳过时间窗检查，但保留 lot 与金额估算
+        # Dry run or TEST: skip time window check, but keep lot and amount estimation
         if dry_run:
             lot = self.lot_size(symbol_formatted)
             if qty % lot != 0:
@@ -623,8 +623,8 @@ class LongPortClient:
                 "ts": time.time(),
             }
 
-        # 真下单：严格检查
-        self._check_window(symbol_formatted)  # 原逻辑在这里再调用
+        # Real order: strict checks
+        self._check_window(symbol_formatted)  # Original logic called here again
         self._check_lot(symbol_formatted, qty)
         if qty > self.limits.max_qty_per_order:
             raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
@@ -635,7 +635,7 @@ class LongPortClient:
                 f"超过单笔金额上限 ${self.limits.max_notional_per_order:,.0f}"
             )
 
-        # TODO: 调 LongPort 真下单接口（此处留白以免误触）
+        # TODO: Call LongPort real order interface (left blank to avoid accidental triggering)
         return {
             "env": self.env.value,
             "dry_run": False,
@@ -649,16 +649,16 @@ class LongPortClient:
         }
 
     def close(self):
-        """Close quote and trade contexts (容错，不依赖 SDK 是否提供 close)。"""
+        """Close quote and trade contexts (fault-tolerant, does not depend on whether SDK provides close)."""
         for ctx in (self.quote, self.trade):
             try:
                 fn = getattr(ctx, "close", None)
                 if callable(fn):
                     fn()
             except Exception:
-                # 忽略关闭异常，避免影响主流程
+                # Ignore close exceptions to avoid affecting main flow
                 pass
-        # 恢复环境变量，避免影响后续实例或进程中的其他用法
+        # Restore environment variables to avoid affecting subsequent instances or other usage in processes
         try:
             for k, v in (getattr(self, "_prev_env", {}) or {}).items():
                 if v is None:
@@ -666,5 +666,5 @@ class LongPortClient:
                 else:
                     os.environ[k] = v
         except Exception:
-            # 任何恢复失败都不应影响调用方
+            # Any restoration failure should not affect the caller
             pass

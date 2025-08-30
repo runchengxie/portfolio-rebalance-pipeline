@@ -1,4 +1,4 @@
-"""工具模块
+"""Utility Module
 
-提供路径配置和日志配置等通用功能。
+Provides common functionalities including path configuration and logging configuration.
 """

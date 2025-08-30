@@ -1,7 +1,7 @@
-# 自动检测并执行LF转化
+# Auto-detect text files and perform LF normalization
 * text=auto
 
-# 强制以下文件使用LF
+# Force LF line endings for the following files
 .env text eol=lf
 *.env text eol=lf
 *.sh  text eol=lf
