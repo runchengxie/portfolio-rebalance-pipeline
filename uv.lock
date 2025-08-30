@@ -813,7 +813,7 @@ dependencies = [
     { name = "scipy" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "mypy" },
     { name = "pre-commit" },
@@ -828,18 +828,21 @@ requires-dist = [
     { name = "google-genai" },
     { name = "longport", specifier = ">=0.2.77" },
     { name = "matplotlib" },
-    { name = "mypy", marker = "extra == 'dev'" },
     { name = "openpyxl" },
     { name = "pandas" },
-    { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "ruff", marker = "extra == 'dev'" },
     { name = "scipy" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pre-commit" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-cov" },
+    { name = "ruff", specifier = ">=0.5" },
+]
 
 [[package]]
 name = "tenacity"
