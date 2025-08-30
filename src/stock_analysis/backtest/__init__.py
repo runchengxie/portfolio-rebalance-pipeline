@@ -1,4 +1,4 @@
-"""回测模块
+"""Backtesting Module
 
-提供回测引擎和数据准备功能。
+Provides backtesting engine and data preparation functionality.
 """

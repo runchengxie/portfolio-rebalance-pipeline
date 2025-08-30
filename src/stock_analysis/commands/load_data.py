@@ -1,6 +1,6 @@
-"""数据加载命令
+"""Data loading command
 
-处理数据加载的命令逻辑。
+Handles command logic for data loading.
 """
 
 from ..utils.logging import get_logger
@@ -11,25 +11,25 @@ logger = get_logger(__name__)
 def run_load_data(
     data_dir: str | None = None, skip_prices: bool = False, only_prices: bool = False
 ) -> int:
-    """运行数据加载
+    """Run data loading
 
     Args:
-        data_dir: 数据目录路径（可选）
+        data_dir: Data directory path (optional)
 
     Returns:
-        int: 退出码（0表示成功）
+        int: Exit code (0 indicates success)
     """
     try:
         logger.info("正在加载数据到数据库...")
 
         if data_dir:
-            # 如果指定了数据目录，需要临时修改路径配置
+            # If data directory is specified, need to temporarily modify path configuration
             logger.info(f"使用指定数据目录：{data_dir}")
-            # 这里可以添加路径配置逻辑
+            # Path configuration logic can be added here
 
         from ..load_data_to_db import main as load_main
 
-        # 执行加载（支持只导入价格或跳过价格）
+        # Execute loading (supports importing only prices or skipping prices)
         load_main(skip_prices=skip_prices, only_prices=only_prices)
 
         logger.info("数据加载完成！")

@@ -4,13 +4,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
-# 兼容性导入：优先使用 longport，回退到 longbridge
+# Compatibility import: prefer longport, fallback to longbridge
 try:
     from longport.openapi import Config, Market, QuoteContext, TradeContext
 except ImportError:
     from longbridge.openapi import Config, Market, QuoteContext, TradeContext
 
-# 时区支持（Python 3.9+），不可用时回退为本地时间判定
+# Timezone support (Python 3.9+), fallback to local time determination when unavailable
 try:
     from zoneinfo import ZoneInfo  # type: ignore
 except Exception:  # pragma: no cover
@@ -20,23 +20,23 @@ from datetime import date, datetime
 
 
 def get_config():
-    """返回基于环境变量的 LongPort 配置。
+    """Return LongPort configuration based on environment variables.
 
-    兼容测试中的直接调用，等价于 Config.from_env()。
+    Compatible with direct calls in tests, equivalent to Config.from_env().
     """
     return Config.from_env()
 
 
 def getenv_both(name_new: str, name_old: str, default: str = None) -> str:
-    """兼容性环境变量读取函数，优先读取新前缀，回退到旧前缀。
+    """Compatibility environment variable reading function, prioritize new prefix, fallback to old prefix.
 
     Args:
-        name_new: 新的环境变量名（LONGPORT_*）
-        name_old: 旧的环境变量名（LONGBRIDGE_*）
-        default: 默认值
+        name_new: New environment variable name (LONGPORT_*)
+        name_old: Old environment variable name (LONGBRIDGE_*)
+        default: Default value
 
     Returns:
-        环境变量值或默认值
+        Environment variable value or default value
     """
     return os.getenv(name_new) or os.getenv(name_old) or default
 
@@ -102,20 +102,16 @@ def _market_tz(m: str) -> str:
 
 
 class LongPortClient:
-    """LongPort API client for quotes and trading.
+    """LongPort client for stock trading and querying.
 
-    Provides a thin wrapper around LongPort OpenAPI for:
-    - Real-time quotes
-    - Historical candlestick data
-    - Order submission with risk controls
+    Provides a unified interface to access LongPort's trading and quote functionality.
     """
 
-    def __init__(self, env: str = None, limits: BrokerLimits | None = None) -> None:
+    def __init__(self, config=None):
         """Initialize LongPort client.
 
         Args:
-            env: Environment (test/real). If None, uses LONGPORT_DEFAULT_ENV or defaults to test.
-            limits: Risk control limits. If None, uses default limits.
+            config: LongPort configuration object, if None then read from environment variables
         """
         # 强制使用 REAL 环境
         self.env = Env.REAL
@@ -171,6 +167,7 @@ class LongPortClient:
             "y",
         }
 
+        # Cache related
         self._session_cache: dict[str, list[tuple[int, int, str]]] = {}
         self._session_cache_expire_at: float = 0.0
         self._is_trading_day_cache: dict[str, bool] = {}
@@ -205,21 +202,23 @@ class LongPortClient:
 
     def portfolio_snapshot(self) -> tuple[float, dict[str, int], float | None, str | None]:
         """
-        返回 (cash_usd, stock_position_map, net_assets, base_currency)。
+        Get account snapshot including cash and position information.
+        
+        Returns:
+            Tuple of (cash_usd, stock_position_map, net_assets, base_currency)
+            - cash_usd: USD available cash only (no FX conversion)
+            - stock_position_map: {'AAPL.US': 100, ...}
+            - net_assets: Total assets from broker (multi-currency/positions), if available
+            - base_currency: Currency of net_assets (e.g. 'HKD')
 
-        - cash_usd: 仅 USD 可用现金（不做 FX 折算）
-        - stock_position_map: {'AAPL.US': 100, ...}
-        - net_assets: 券商口径总资产（含多币种/持仓），若可得
-        - base_currency: 该 net_assets 的口径币种（如 'HKD'）
-
-        兼容不同 SDK 版本的 asset/balance 与 stock_positions/position_list 返回形态。
+        Compatible with different SDK versions of asset/balance and stock_positions/position_list return formats.
         """
         cash_usd = 0.0
         pos_map: dict[str, int] = {}
         net_assets: float | None = None
         base_ccy: str | None = None
 
-        # ---------- 现金 ----------
+        # ---------- Cash ----------
         try:
             asset_fn = getattr(self.trade, "asset", None) or getattr(
                 self.trade, "account_balance", None
@@ -263,7 +262,7 @@ class LongPortClient:
         except Exception:
             pass  # 展示而已，拿不到就算了
 
-        # ---------- 持仓 ----------
+        # ---------- Positions ----------
         try:
             pos_fn = getattr(self.trade, "stock_positions", None) or getattr(
                 self.trade, "position_list", None
@@ -369,12 +368,14 @@ class LongPortClient:
 
     def fund_positions(self) -> dict[str, tuple[float, float, str]]:
         """
-        返回基金持仓映射：{ symbol => (holding_units, current_nav, currency) }。
-
-        - symbol: LongPort 返回的基金代码/ISIN
-        - holding_units: 持有份额（float）
-        - current_nav: 当前净值（float）
-        - currency: 货币代码
+        Get fund position information.
+        
+        Returns:
+            Fund position mapping: { symbol => (holding_units, current_nav, currency) }
+            - symbol: Fund code/ISIN returned by LongPort
+            - holding_units: Holding units (float)
+            - current_nav: Current net asset value (float)
+            - currency: Currency code
         """
         result: dict[str, tuple[float, float, str]] = {}
         try:
@@ -416,12 +417,19 @@ class LongPortClient:
                         continue
                     result[str(sym)] = (u, p, str(ccy or ""))
         except Exception:
-            # 获取失败不影响主流程
+            # Failure to get fund positions doesn't affect main flow
             pass
         return result
 
     def lot_size(self, symbol: str) -> int:
-        """查询最小交易单位，查不到就返回 1。"""
+        """Get the lot size (shares per lot) for a stock.
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            Shares per lot
+        """
         # 快路径：美股默认 1，避免静态信息查询造成多余的权限输出
         if _market_of(symbol) == "US":
             return 1
@@ -435,6 +443,7 @@ class LongPortClient:
 
     # ---------- 内部：权威开市信息缓存 ----------
     def _refresh_caches_if_needed(self) -> None:
+        """Refresh trading session and trading day cache if expired."""
         now_ts = time.time()
         # 刷新交易时段缓存
         if now_ts >= self._session_cache_expire_at:
@@ -502,7 +511,7 @@ class LongPortClient:
     def _check_window(self, symbol: str) -> None:
         """Check if current time is within trading window.
 
-        使用 LongPort 权威交易时段与交易日接口。若接口不可用则回退为本地时间粗判。
+        Uses LongPort authoritative trading session and trading day interface. Falls back to local time estimation if interface unavailable.
         """
         self._refresh_caches_if_needed()
 
