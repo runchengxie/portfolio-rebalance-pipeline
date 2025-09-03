@@ -17,6 +17,10 @@ except Exception:  # pragma: no cover
     ZoneInfo = None  # type: ignore
 
 from datetime import date, datetime
+from ..utils.logging import get_logger
+from ..utils.fx import to_usd
+
+logger = get_logger(__name__)
 
 
 def get_config():
@@ -219,48 +223,92 @@ class LongPortClient:
         base_ccy: str | None = None
 
         # ---------- Cash ----------
-        try:
-            asset_fn = getattr(self.trade, "asset", None) or getattr(
-                self.trade, "account_balance", None
+        # Be resilient: try asset() then account_balance(); log failures instead of swallowing silently.
+        asset = None
+        last_err: Exception | None = None
+        for fn_name in ("asset", "account_balance"):
+            fn = getattr(self.trade, fn_name, None)
+            if not fn:
+                continue
+            try:
+                asset = fn()
+                break
+            except Exception as e:  # pragma: no cover - depends on live SDK/network
+                last_err = e
+                logger.debug(f"调用 {fn_name}() 获取资金失败: {e}")
+                continue
+
+        if asset is None:
+            if last_err is not None:
+                logger.warning(f"无法获取账户资金信息，视为0（原因: {last_err}）")
+        else:
+            # 1) Prefer detailed cash_infos aggregation by currency
+            ci_list = (
+                getattr(asset, "cash_infos", None)
+                or getattr(asset, "cash_info", None)
+                or []
             )
-            if asset_fn:
-                asset = asset_fn()
-                # 1) Prioritize aggregation from cash_infos
-                ci_list = (
-                    getattr(asset, "cash_infos", None)
-                    or getattr(asset, "cash_info", None)
-                    or []
+            totals: dict[str, float] = {}
+            for ci in ci_list:
+                ccy = str(getattr(ci, "currency", "") or getattr(ci, "ccy", "")).upper()
+                amt = float(
+                    getattr(ci, "cash", 0)
+                    or getattr(ci, "available_cash", 0)
+                    or 0
                 )
-                totals: dict[str, float] = {}
-                for ci in ci_list:
-                    ccy = str(
-                        getattr(ci, "currency", "") or getattr(ci, "ccy", "")
-                    ).upper()
-                    amt = float(
-                        getattr(ci, "cash", 0) or getattr(ci, "available_cash", 0) or 0
-                    )
-                    if not ccy:
+                if not ccy:
+                    continue
+                totals[ccy] = totals.get(ccy, 0.0) + amt
+            if totals:
+                logger.debug(
+                    "现金分币种: " + ", ".join(f"{k}={v:.2f}" for k, v in totals.items())
+                )
+
+            # Only use USD cash directly
+            cash_usd = totals.get("USD", 0.0)
+
+            # Broker-reported total assets and base currency (may be non-USD)
+            na = getattr(asset, "net_assets", None)
+            if na is not None:
+                try:
+                    net_assets = float(na)
+                except Exception:
+                    net_assets = None
+            base_ccy = (
+                str(getattr(asset, "currency", "") or getattr(asset, "base_currency", "")).upper()
+                or None
+            )
+
+            # 2) Fallback to common fields if USD bucket is zero
+            if cash_usd == 0.0:
+                for name in ("cash", "available_cash", "withdraw_cash", "total_cash"):
+                    v = getattr(asset, name, None)
+                    if v is None:
                         continue
-                    totals[ccy] = totals.get(ccy, 0.0) + amt
-                # Only use USD cash as cash_usd, avoid incorrect multi-currency addition
-                cash_usd = totals.get("USD", 0.0)
-                # Broker's total assets and currency
-                na = getattr(asset, "net_assets", None)
-                if na is not None:
                     try:
-                        net_assets = float(na)
+                        raw = float(v)
                     except Exception:
-                        net_assets = None
-                base_ccy = str(getattr(asset, "currency", "") or "").upper() or None
-                # 3) Fallback to common fields if still zero
-                if cash_usd == 0.0:
-                    for name in ("cash", "available_cash", "total_cash"):
-                        v = getattr(asset, name, None)
-                        if v is not None:
-                            cash_usd = float(v)
+                        continue
+                    if raw == 0.0:
+                        continue
+                    # If base currency known and not USD, convert; otherwise only accept when USD/unknown stays zero
+                    if base_ccy and base_ccy != "USD":
+                        converted = to_usd(raw, base_ccy)
+                        if converted is not None:
+                            cash_usd = float(converted)
+                            logger.debug(
+                                f"使用{base_ccy}字段{name}={raw:.2f}折算USD={cash_usd:.2f}"
+                            )
                             break
-        except Exception:
-            pass  # For display only, ignore if unavailable
+                    elif base_ccy == "USD":
+                        cash_usd = raw
+                        logger.debug(f"使用USD字段{name}={cash_usd:.2f}")
+                        break
+                # If still zero and we had totals with non-USD currencies, keep 0 but warn once
+                if cash_usd == 0.0 and totals and any(k != "USD" for k in totals):
+                    logger.debug(
+                        "未找到USD现金，检测到非USD余额；如需折算，请配置FX或启用USD子账户。"
+                    )
 
         # ---------- Positions ----------
         try:
