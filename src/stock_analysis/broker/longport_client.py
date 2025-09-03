@@ -242,69 +242,102 @@ class LongPortClient:
             if last_err is not None:
                 logger.warning(f"无法获取账户资金信息，视为0（原因: {last_err}）")
         else:
-            # 1) Prefer detailed cash_infos aggregation by currency
-            ci_list = (
-                getattr(asset, "cash_infos", None)
-                or getattr(asset, "cash_info", None)
-                or []
-            )
+            # 1) Prefer detailed cash_infos aggregation by currency; support list returns
+            assets_seq = asset if isinstance(asset, (list, tuple)) else [asset]
             totals: dict[str, float] = {}
-            for ci in ci_list:
-                ccy = str(getattr(ci, "currency", "") or getattr(ci, "ccy", "")).upper()
-                amt = float(
-                    getattr(ci, "cash", 0)
-                    or getattr(ci, "available_cash", 0)
-                    or 0
+            picked_net_assets: float | None = None
+            picked_base_ccy: str | None = None
+            for ab in assets_seq:
+                ci_list = (
+                    getattr(ab, "cash_infos", None)
+                    or getattr(ab, "cash_info", None)
+                    or []
                 )
-                if not ccy:
-                    continue
-                totals[ccy] = totals.get(ccy, 0.0) + amt
+                for ci in ci_list:
+                    ccy = str(getattr(ci, "currency", "") or getattr(ci, "ccy", "")).upper()
+                    # prefer available_cash > cash > withdraw_cash
+                    raw_amt = (
+                        getattr(ci, "available_cash", None)
+                        or getattr(ci, "cash", None)
+                        or getattr(ci, "withdraw_cash", 0.0)
+                    )
+                    try:
+                        amt = float(raw_amt or 0.0)
+                    except Exception:
+                        amt = 0.0
+                    if not ccy:
+                        continue
+                    totals[ccy] = totals.get(ccy, 0.0) + amt
+
+                if picked_net_assets is None:
+                    na = getattr(ab, "net_assets", None)
+                    if na is not None:
+                        try:
+                            picked_net_assets = float(na)
+                        except Exception:
+                            picked_net_assets = None
+                if picked_base_ccy is None:
+                    picked_base_ccy = (
+                        str(
+                            getattr(ab, "currency", "")
+                            or getattr(ab, "base_currency", "")
+                        ).upper()
+                        or None
+                    )
+
             if totals:
                 logger.debug(
                     "现金分币种: " + ", ".join(f"{k}={v:.2f}" for k, v in totals.items())
                 )
-
-            # Only use USD cash directly
+            # USD direct bucket
             cash_usd = totals.get("USD", 0.0)
+            # Broker-reported total assets and base currency
+            if picked_net_assets is not None:
+                net_assets = picked_net_assets
+            if picked_base_ccy is not None:
+                base_ccy = picked_base_ccy
 
-            # Broker-reported total assets and base currency (may be non-USD)
-            na = getattr(asset, "net_assets", None)
-            if na is not None:
-                try:
-                    net_assets = float(na)
-                except Exception:
-                    net_assets = None
-            base_ccy = (
-                str(getattr(asset, "currency", "") or getattr(asset, "base_currency", "")).upper()
-                or None
-            )
-
-            # 2) Fallback to common fields if USD bucket is zero
+            # 2) If no USD bucket, try converting other currencies; finally fallback to object-level fields
             if cash_usd == 0.0:
-                for name in ("cash", "available_cash", "withdraw_cash", "total_cash"):
-                    v = getattr(asset, name, None)
-                    if v is None:
-                        continue
-                    try:
-                        raw = float(v)
-                    except Exception:
-                        continue
-                    if raw == 0.0:
-                        continue
-                    # If base currency known and not USD, convert; otherwise only accept when USD/unknown stays zero
-                    if base_ccy and base_ccy != "USD":
-                        converted = to_usd(raw, base_ccy)
-                        if converted is not None:
-                            cash_usd = float(converted)
-                            logger.debug(
-                                f"使用{base_ccy}字段{name}={raw:.2f}折算USD={cash_usd:.2f}"
-                            )
+                if totals:
+                    total_conv = 0.0
+                    any_conv = False
+                    for ccy, amt in totals.items():
+                        if ccy == "USD":
+                            continue
+                        conv = to_usd(amt, ccy)
+                        if conv is not None:
+                            total_conv += float(conv)
+                            any_conv = True
+                    if any_conv:
+                        cash_usd = total_conv
+                        logger.debug(f"按汇率折算非USD现金合计: {cash_usd:.2f} USD")
+
+                if cash_usd == 0.0:
+                    # Some SDKs expose top-level fields on a single object; attempt a last resort
+                    for name in ("available_cash", "cash", "withdraw_cash", "total_cash"):
+                        v = getattr(asset, name, None)
+                        if v is None:
+                            continue
+                        try:
+                            raw = float(v)
+                        except Exception:
+                            continue
+                        if raw == 0.0:
+                            continue
+                        b = (base_ccy or "").upper() if base_ccy else None
+                        if b and b != "USD":
+                            converted = to_usd(raw, b)
+                            if converted is not None:
+                                cash_usd = float(converted)
+                                logger.debug(
+                                    f"使用{b}字段{name}={raw:.2f}折算USD={cash_usd:.2f}"
+                                )
+                                break
+                        elif b == "USD":
+                            cash_usd = raw
+                            logger.debug(f"使用USD字段{name}={cash_usd:.2f}")
                             break
-                    elif base_ccy == "USD":
-                        cash_usd = raw
-                        logger.debug(f"使用USD字段{name}={cash_usd:.2f}")
-                        break
-                # If still zero and we had totals with non-USD currencies, keep 0 but warn once
                 if cash_usd == 0.0 and totals and any(k != "USD" for k in totals):
                     logger.debug(
                         "未找到USD现金，检测到非USD余额；如需折算，请配置FX或启用USD子账户。"
