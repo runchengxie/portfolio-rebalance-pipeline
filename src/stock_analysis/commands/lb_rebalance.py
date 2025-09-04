@@ -16,7 +16,11 @@ logger = get_logger(__name__)
 
 
 def run_lb_rebalance(
-    input_file: str, account: str = "main", dry_run: bool = True, env: str = "real"
+    input_file: str,
+    account: str = "main",
+    dry_run: bool = True,
+    env: str = "real",
+    target_gross_exposure: float = 1.0,
 ) -> int:
     """Run LongPort differential rebalancing
 
@@ -96,7 +100,10 @@ def run_lb_rebalance(
         try:
             # 制定调仓计划
             rebalance_result = rebalance_service.plan_rebalance(
-                tickers, account_snapshot, quotes=quote_map
+                tickers,
+                account_snapshot,
+                quotes=quote_map,
+                target_gross_exposure=target_gross_exposure,
             )
             rebalance_result.dry_run = dry_run
             rebalance_result.sheet_name = sheet_name

@@ -43,6 +43,7 @@ class RebalanceService:
         account_snapshot: AccountSnapshot,
         quotes: dict[str, float] | None = None,
         allow_fractional: bool = False,
+        target_gross_exposure: float = 1.0,
     ) -> RebalanceResult:
         """Create rebalancing plan
 
@@ -69,43 +70,65 @@ class RebalanceService:
                 logger.error(f"获取报价失败: {e}")
                 raise
 
-        # Calculate equal-weight target positions (with fallback: if total assets are 0 or missing, recalculate with USD cash + quote valuation)
+        # Calculate equal-weight target positions.
+        # Robust effective_total:
+        # - Prefer recomputing from positions using quotes/last_price when snapshot total looks like just cash or mismatched.
+        # - Fall back to broker-reported total only when it closely matches recomputed value.
         n_stocks = len(target_tickers)
-        if account_snapshot.total_portfolio_value and account_snapshot.total_portfolio_value > 0:
-            effective_total = float(account_snapshot.total_portfolio_value)
-        else:
-            total_pos_value = 0.0
-            if quotes is None:
-                lb_symbols = [
-                    _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
-                ]
+
+        # Ensure we have quotes if needed
+        if quotes is None:
+            lb_symbols = [
+                _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
+            ]
+            try:
                 quote_objs = get_quotes(lb_symbols, client=self._get_client())
                 quotes = {sym: q.price for sym, q in quote_objs.items()}
-            # Use quotes to value current positions
-            current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
-            for sym, pos in current_positions_map.items():
-                px = float((quotes or {}).get(sym, pos.last_price or 0.0))
-                total_pos_value += px * float(pos.quantity)
-            effective_total = float(account_snapshot.cash_usd) + float(total_pos_value)
-            if effective_total <= 0:
-                # Further hint: if broker returns non-USD net assets but cannot value existing positions, need FX or switch to real environment
-                try:
-                    from ..utils.logging import get_logger as _get_logger
+            except Exception:
+                quotes = {}
 
-                    _lg = _get_logger(__name__)
-                    if account_snapshot.base_currency and account_snapshot.base_currency != "USD":
-                        _lg.warning(
-                            "总资产为 0：当前环境持仓/现金按 USD 计为 0，券商净资产为非USD(%s)。"
-                            " 可使用 real 环境干跑，或提供 FX 汇率进行折算。",
-                            account_snapshot.base_currency,
-                        )
-                    else:
-                        _lg.warning(
-                            "总资产为 0：未获取到 USD 现金与可估值持仓，建议切换 real 环境或检查账户余额。"
-                        )
-                except Exception:
-                    pass
-        target_value_per_stock = effective_total / n_stocks
+        # Revalue current positions: prefer provided quotes -> last_price -> estimated_value/qty -> 0
+        total_pos_value_recomp = 0.0
+        any_zero_priced = False
+        for pos in account_snapshot.positions:
+            px = float((quotes or {}).get(pos.symbol, 0.0) or 0.0)
+            if px <= 0:
+                px = float(pos.last_price or 0.0)
+            if px <= 0 and pos.quantity > 0:
+                any_zero_priced = True
+                # As a last resort, derive price from estimated_value if available
+                if float(pos.estimated_value or 0.0) > 0 and pos.quantity > 0:
+                    try:
+                        px = float(pos.estimated_value) / float(pos.quantity)
+                    except Exception:
+                        px = 0.0
+            val = px * float(pos.quantity)
+            # If still zero, fallback to estimated_value (useful for funds/NAV that may not have quotes)
+            if val <= 0 and float(pos.estimated_value or 0.0) > 0:
+                val = float(pos.estimated_value)
+            total_pos_value_recomp += val
+
+        cash_usd = float(account_snapshot.cash_usd or 0.0)
+        recomputed_total = cash_usd + float(total_pos_value_recomp)
+
+        snapshot_total = float(account_snapshot.total_portfolio_value or 0.0)
+        # Consider snapshot reliable if close (within 1%) to recomputed_total and no obviously unpriced holdings
+        def _close(a: float, b: float) -> bool:
+            if a <= 0 and b <= 0:
+                return True
+            denom = max(1.0, abs(b))
+            return abs(a - b) <= 0.01 * denom
+
+        if snapshot_total > 0 and _close(snapshot_total, recomputed_total) and not any_zero_priced:
+            effective_total = snapshot_total
+        else:
+            effective_total = recomputed_total
+
+        # Apply gross exposure (default 1.0)
+        exposure = max(0.0, float(target_gross_exposure))
+        effective_total *= exposure
+
+        target_value_per_stock = effective_total / max(1, n_stocks)
 
         # Build current position mapping
         current_positions_map = {pos.symbol: pos for pos in account_snapshot.positions}
