@@ -135,6 +135,12 @@ def create_parser() -> argparse.ArgumentParser:
     lb_rebalance_parser.add_argument(
         "--execute", action="store_true", help="实际执行交易（关闭干跑模式）"
     )
+    lb_rebalance_parser.add_argument(
+        "--target-gross-exposure",
+        type=float,
+        default=1.0,
+        help="目标总敞口比例（0-1，默认1.0表示用现金+基金+股票总资产进行等额分配）",
+    )
 
     # No longer expose env, default to real; --execute controls actual order execution
 
@@ -207,6 +213,7 @@ def main() -> int:
                 getattr(args, "account", "main"),
                 dry_run,
                 "real",
+                getattr(args, "target_gross_exposure", 1.0),
             )
         elif args.command == "lb-account":
             from .commands.lb_account import run_lb_account
