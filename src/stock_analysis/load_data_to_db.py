@@ -202,11 +202,18 @@ def main(
                 file_size_mb = price_csv.stat().st_size / (1024 * 1024)
                 print(f"    - Price data file size: {file_size_mb:.1f} MB")
 
+                # Normalize whitelist and date boundaries once
+                wl: Optional[Set[str]] = (
+                    {str(t).upper().strip() for t in tickers_whitelist}
+                    if tickers_whitelist
+                    else None
+                )
+                ds = pd.to_datetime(date_start) if date_start else None
+                de = pd.to_datetime(date_end) if date_end else None
+
                 # Determine if filters are provided; if so, skip CLI fast path
-                has_filters = (
-                    (tickers_whitelist is not None and len(list(tickers_whitelist)) > 0)
-                    or (date_start is not None)
-                    or (date_end is not None)
+                has_filters = (wl is not None and len(wl) > 0) or (ds is not None) or (
+                    de is not None
                 )
 
                 cli_success = False
@@ -224,15 +231,6 @@ def main(
                     price_dtype = {
                         "Ticker": "string",
                     }
-                    # Parse date boundaries
-                    ds = pd.to_datetime(date_start) if date_start else None
-                    de = pd.to_datetime(date_end) if date_end else None
-                    # Normalize whitelist to a set of uppercase tickers
-                    wl: Optional[Set[str]] = (
-                        {str(t).upper().strip() for t in tickers_whitelist}
-                        if tickers_whitelist
-                        else None
-                    )
                     rows = _load_csv_in_chunks(
                         price_csv,
                         "share_prices",

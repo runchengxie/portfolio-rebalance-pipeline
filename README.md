@@ -48,7 +48,26 @@
     stockq ai-pick
     ```
 
-4. 步骤 4: 运行 AI 筛选组合的回测
+4. 导入价格数据进sqlite数据库
+
+    ```bash
+    生成白名单（从初筛 Excel 聚合去重，按时间窗筛 sheet）
+    stockq gen-whitelist --from preliminary --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
+
+    可选：AI 精选作为来源
+    stockq gen-whitelist --from ai --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end
+  2025-07-02
+
+    仅导白名单价格，并裁日期
+    stockq load-data --only-prices --tickers-file outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
+    ```
+
+    * 不传 --excel 时，默认读取：
+
+        * 初筛：`outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx`
+        * AI：`outputs/point_in_time_ai_stock_picks_all_sheets.xlsx`
+
+5. 步骤 4: 运行 AI 筛选组合的回测
 
     此脚本读取 AI 筛选的股票列表，使用`backtrader`引擎进行回测，并生成最终的累计收益图和性能指标。
 
@@ -251,13 +270,12 @@
 │       │   ├── ai_pick.py
 │       │   ├── backtest.py
 │       │   ├── lb_account.py
-│       │   ├── lb_quote.py
-│       │   ├── lb_rebalance.py
 │       │   └── ...
 │       ├── services/               # 业务逻辑层
 │       │   ├── account_snapshot.py
 │       │   └── rebalancer.py
 │       ├── renderers/              # 输出渲染层
+│       │   ├── diff.py             # Rebalance前后对比渲染
 │       │   ├── jsonout.py
 │       │   └── table.py
 │       └── utils/                  # 通用工具 (配置、日志、路径)

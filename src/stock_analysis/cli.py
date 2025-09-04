@@ -10,6 +10,7 @@ import sys
 from .commands.ai_pick import run_ai_pick  # noqa: F401
 from .commands.backtest import run_backtest  # noqa: F401
 from .commands.load_data import run_load_data  # noqa: F401
+from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
 from .commands.lb_quote import run_lb_quote  # noqa: F401
 from .commands.lb_rebalance import run_lb_rebalance  # noqa: F401
 from .commands.lb_account import run_lb_account  # noqa: F401
@@ -117,6 +118,39 @@ def create_parser() -> argparse.ArgumentParser:
     )
     ai_parser.add_argument("--output", type=str, help="输出文件路径（可选）")
 
+    # Generate whitelist command
+    gen_parser = subparsers.add_parser(
+        "gen-whitelist",
+        help="从结果文件生成Ticker白名单",
+        description="汇总 preliminary 或 AI 结果中的全部Ticker，去重并输出白名单文件",
+    )
+    gen_parser.add_argument(
+        "--from",
+        dest="source",
+        choices=["preliminary", "ai"],
+        default="preliminary",
+        help="读取哪类结果文件（默认：preliminary）",
+    )
+    gen_parser.add_argument(
+        "--excel",
+        type=str,
+        help=(
+            "结果Excel路径（默认：outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx 或 "
+            "outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"
+        ),
+    )
+    gen_parser.add_argument(
+        "--date-start", type=str, help="起始日期（YYYY-MM-DD，可选）"
+    )
+    gen_parser.add_argument(
+        "--date-end", type=str, help="结束日期（YYYY-MM-DD，可选）"
+    )
+    gen_parser.add_argument(
+        "--out",
+        type=str,
+        help="输出白名单路径（默认：outputs/selected_tickers.txt）",
+    )
+
     # LongPort quote command
     lb_quote_parser = subparsers.add_parser(
         "lb-quote",
@@ -217,6 +251,15 @@ def main() -> int:
 
             return run_ai_pick(
                 getattr(args, "quarter", None), getattr(args, "output", None)
+            )
+        elif args.command == "gen-whitelist":
+            from .commands.gen_whitelist import run_gen_whitelist
+            return run_gen_whitelist(
+                getattr(args, "source", "preliminary"),
+                getattr(args, "excel", None),
+                getattr(args, "date_start", None),
+                getattr(args, "date_end", None),
+                getattr(args, "out", None),
             )
         elif args.command == "lb-quote":
             from .commands.lb_quote import run_lb_quote
