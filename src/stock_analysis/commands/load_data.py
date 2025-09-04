@@ -4,12 +4,20 @@ Handles command logic for data loading.
 """
 
 from ..utils.logging import get_logger
+from pathlib import Path
+from typing import Optional, Set
+import pandas as pd
 
 logger = get_logger(__name__)
 
 
 def run_load_data(
-    data_dir: str | None = None, skip_prices: bool = False, only_prices: bool = False
+    data_dir: str | None = None,
+    skip_prices: bool = False,
+    only_prices: bool = False,
+    tickers_file: str | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
 ) -> int:
     """Run data loading
 
@@ -29,8 +37,52 @@ def run_load_data(
 
         from ..load_data_to_db import main as load_main
 
+        # Parse optional tickers whitelist
+        wl: Optional[Set[str]] = None
+        if tickers_file:
+            path = Path(tickers_file)
+            if not path.exists():
+                logger.error(f"找不到 tickers 文件: {tickers_file}")
+                return 1
+            try:
+                if path.suffix.lower() in {".xlsx", ".xls"}:
+                    df = pd.read_excel(path)
+                elif path.suffix.lower() == ".csv":
+                    df = pd.read_csv(path)
+                else:
+                    # Treat as newline-delimited text file
+                    with path.open("r", encoding="utf-8") as f:
+                        wl = {
+                            line.strip().upper()
+                            for line in f
+                            if line.strip() and not line.startswith("#")
+                        }
+                        logger.info(f"已从文本读取 {len(wl)} 个Ticker 白名单")
+                    df = None
+
+                if df is not None:
+                    col = None
+                    for name in ["Ticker", "ticker", "Symbol", "symbol"]:
+                        if name in df.columns:
+                            col = name
+                            break
+                    if col is None:
+                        # Fall back to first column
+                        col = df.columns[0]
+                    wl = {str(t).upper().strip() for t in df[col].dropna().unique()}
+                    logger.info(f"已从表格读取 {len(wl)} 个Ticker 白名单")
+            except Exception as e:
+                logger.error(f"解析 tickers 文件失败: {e}")
+                return 1
+
         # Execute loading (supports importing only prices or skipping prices)
-        load_main(skip_prices=skip_prices, only_prices=only_prices)
+        load_main(
+            skip_prices=skip_prices,
+            only_prices=only_prices,
+            tickers_whitelist=wl,
+            date_start=date_start,
+            date_end=date_end,
+        )
 
         logger.info("数据加载完成！")
         return 0
