@@ -3,6 +3,7 @@ import shutil
 import sqlite3
 import subprocess
 from pathlib import Path
+from typing import Iterable, Optional, Set
 
 import pandas as pd
 
@@ -85,6 +86,10 @@ def _load_csv_in_chunks(
     sep=";",
     dtype=None,
     chunk=200_000,
+    *,
+    tickers_whitelist: Optional[Set[str]] = None,
+    date_start: Optional[pd.Timestamp] = None,
+    date_end: Optional[pd.Timestamp] = None,
 ) -> int:
     """Load CSV file to database in chunks"""
     rows = 0
@@ -110,8 +115,24 @@ def _load_csv_in_chunks(
             if "date_known" in df.columns:
                 df["date_known"] = pd.to_datetime(df["date_known"], errors="coerce")
 
-        # Remove duplicates from price data
+        # Remove duplicates from price data and apply optional filters
         if table == "share_prices":
+            # Ensure Date is datetime if present
+            if "Date" in df.columns and not pd.api.types.is_datetime64_any_dtype(
+                df["Date"]
+            ):
+                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+
+            # Apply ticker whitelist
+            if tickers_whitelist:
+                df = df[df["Ticker"].isin(tickers_whitelist)]
+
+            # Apply date range
+            if date_start is not None:
+                df = df[df["Date"] >= date_start]
+            if date_end is not None:
+                df = df[df["Date"] <= date_end]
+
             df = df.drop_duplicates(subset=["Ticker", "Date"], keep="last")
 
         df.to_sql(table, con, if_exists="replace" if first else "append", index=False)
@@ -120,12 +141,22 @@ def _load_csv_in_chunks(
     return rows
 
 
-def main(*, skip_prices: bool = False, only_prices: bool = False):
+def main(
+    *,
+    skip_prices: bool = False,
+    only_prices: bool = False,
+    tickers_whitelist: Optional[Iterable[str]] = None,
+    date_start: Optional[str] = None,
+    date_end: Optional[str] = None,
+):
     """Main function: optimized database loading
 
     Args:
         skip_prices: Skip stock price data import (only import financial statement tables)
         only_prices: Only import stock price data (skip financial statement tables)
+        tickers_whitelist: Optional iterable of tickers to include for price import only
+        date_start: Optional start date (YYYY-MM-DD) for price import
+        date_end: Optional end date (YYYY-MM-DD) for price import
     """
     print(f"Creating SQLite database at: {DB_PATH}")
     with sqlite3.connect(DB_PATH) as con:
@@ -171,13 +202,32 @@ def main(*, skip_prices: bool = False, only_prices: bool = False):
                 file_size_mb = price_csv.stat().st_size / (1024 * 1024)
                 print(f"    - Price data file size: {file_size_mb:.1f} MB")
 
+                # Normalize whitelist and date boundaries once
+                wl: Optional[Set[str]] = (
+                    {str(t).upper().strip() for t in tickers_whitelist}
+                    if tickers_whitelist
+                    else None
+                )
+                ds = pd.to_datetime(date_start) if date_start else None
+                de = pd.to_datetime(date_end) if date_end else None
+
+                # Determine if filters are provided; if so, skip CLI fast path
+                has_filters = (wl is not None and len(wl) > 0) or (ds is not None) or (
+                    de is not None
+                )
+
                 cli_success = False
-                if _check_sqlite3_cli() and schema_sql.exists():
+                if not has_filters and _check_sqlite3_cli() and schema_sql.exists():
                     print("    - SQLite CLI available, attempting fast import...")
                     cli_success = _import_prices_with_cli(price_csv, DB_PATH, schema_sql)
 
                 if not cli_success:
-                    print("    - Falling back to pandas chunked import...")
+                    if has_filters:
+                        print(
+                            "    - Filters provided (tickers/date); using pandas chunked import with filtering..."
+                        )
+                    else:
+                        print("    - Falling back to pandas chunked import...")
                     price_dtype = {
                         "Ticker": "string",
                     }
@@ -187,6 +237,9 @@ def main(*, skip_prices: bool = False, only_prices: bool = False):
                         con,
                         parse_dates=["Date"],
                         dtype=price_dtype,
+                        tickers_whitelist=wl,
+                        date_start=ds,
+                        date_end=de,
                     )
                     print(f"    - Loaded {rows} rows into share_prices")
 

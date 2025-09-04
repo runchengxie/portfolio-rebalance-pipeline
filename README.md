@@ -10,35 +10,25 @@
 
 *(上图为AI策略在2021-04-01至2025-07-01期间的回测表现示例)*
 
-## 执行步骤
+## 快速开始
 
 所有操作均通过`stockq`命令行工具完成。
 
+### 配置环境
+
+* 安装依赖: `uv sync`
+
+* 复制 `.env.example` 为 `.env` 并填入你的 API 密钥。
+
+* 复制 `config/template.yaml` 为 `config/config.yaml`。
+
 ### 阶段一：数据准备与量化初筛
 
-1. 步骤 1: 创建数据库（WSL/Linux 全量重建）
-
-    推荐使用一键全量重建脚本，跨平台、可重复并且更快：
+1. 步骤 1：只导财报数据进sqlite数据库，跳过价格
 
     ```bash
-    bash scripts/rebuild_db.sh
+    stockq load-data --skip-prices
     ```
-
-    该脚本将：
-    - 用 `sqlite3 .import` 高速导入价格数据（`data/us-shareprices-daily.csv`）。
-    - 调整并导入财报数据到 `balance_sheet`/`cash_flow`/`income`（通过现有 Python 逻辑完成字段重命名与清洗）。
-    - 建立必要索引并优化数据库。
-
-    如需最简方式也可执行：
-
-    ```bash
-    stockq load-data
-    ```
-
-    可选参数：
-
-    - 仅导入价格：`stockq load-data --only-prices`
-    - 跳过价格（仅导入财报）：`stockq load-data --skip-prices`
 
 2. 步骤 2: 运行量化初筛策略
 
@@ -58,7 +48,26 @@
     stockq ai-pick
     ```
 
-4. 步骤 4: 运行 AI 筛选组合的回测
+4. 导入价格数据进sqlite数据库
+
+    ```bash
+    生成白名单（从初筛 Excel 聚合去重，按时间窗筛 sheet）
+    stockq gen-whitelist --from preliminary --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
+
+    可选：AI 精选作为来源
+    stockq gen-whitelist --from ai --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end
+  2025-07-02
+
+    仅导白名单价格，并裁日期
+    stockq load-data --only-prices --tickers-file outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
+    ```
+
+    * 不传 --excel 时，默认读取：
+
+        * 初筛：`outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx`
+        * AI：`outputs/point_in_time_ai_stock_picks_all_sheets.xlsx`
+
+5. 步骤 4: 运行 AI 筛选组合的回测
 
     此脚本读取 AI 筛选的股票列表，使用`backtrader`引擎进行回测，并生成最终的累计收益图和性能指标。
 
@@ -115,6 +124,36 @@
         ```
 
 ## 可选步骤
+
+* 创建数据库（WSL/Linux 全量重建）
+
+    使用一键全量重建脚本，跨平台、可重复并且更快：
+
+    ```bash
+    bash scripts/rebuild_db.sh
+    ```
+
+    该脚本将：
+    - 用 `sqlite3 .import` 高速导入价格数据（`data/us-shareprices-daily.csv`）。
+
+    - 调整并导入财报数据到 `balance_sheet`/`cash_flow`/`income`（通过现有 Python 逻辑完成字段重命名与清洗）。
+
+    - 建立必要索引并优化数据库。
+
+    如需最简方式也可执行：
+
+    ```bash
+    stockq load-data
+    ```
+
+    可选参数：
+
+    - 仅导入价格：`stockq load-data --only-prices`
+
+    - 跳过价格（仅导入财报）：`stockq load-data --skip-prices`
+
+    - 只导白名单价格（并裁日期）：`stockq load-data --only-prices --tickers-file outputs/selected_tickers.txt --date-start 2015-01-01 --date-end
+  2025-07-02`
 
 * 对比回测 1 (量化初筛组合): 评估纯量化策略（未经过 AI 筛选的 20 只股票组合）的表现。
 
@@ -231,13 +270,12 @@
 │       │   ├── ai_pick.py
 │       │   ├── backtest.py
 │       │   ├── lb_account.py
-│       │   ├── lb_quote.py
-│       │   ├── lb_rebalance.py
 │       │   └── ...
 │       ├── services/               # 业务逻辑层
 │       │   ├── account_snapshot.py
 │       │   └── rebalancer.py
 │       ├── renderers/              # 输出渲染层
+│       │   ├── diff.py             # Rebalance前后对比渲染
 │       │   ├── jsonout.py
 │       │   └── table.py
 │       └── utils/                  # 通用工具 (配置、日志、路径)
