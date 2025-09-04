@@ -14,8 +14,8 @@ dist/
 *.egg-info/
 
 # --- Project-specific ---
-# Data files
-data/
+# Large data files
+us-shareprices-daily.csv
 
 # Generated output files
 outputs/
