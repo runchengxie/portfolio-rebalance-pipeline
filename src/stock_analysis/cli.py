@@ -71,6 +71,21 @@ def create_parser() -> argparse.ArgumentParser:
     load_parser.add_argument(
         "--data-dir", type=str, help="数据目录路径（可选，默认使用项目data目录）"
     )
+    load_parser.add_argument(
+        "--tickers-file",
+        type=str,
+        help="仅导入此清单中的股价（支持 .txt/.csv/.xlsx；文本按行一个ticker）",
+    )
+    load_parser.add_argument(
+        "--date-start",
+        type=str,
+        help="价格导入起始日期（YYYY-MM-DD，可选）",
+    )
+    load_parser.add_argument(
+        "--date-end",
+        type=str,
+        help="价格导入结束日期（YYYY-MM-DD，可选）",
+    )
     group = load_parser.add_mutually_exclusive_group()
     group.add_argument(
         "--skip-prices",
@@ -189,6 +204,9 @@ def main() -> int:
                 getattr(args, "data_dir", None),
                 getattr(args, "skip_prices", False),
                 getattr(args, "only_prices", False),
+                getattr(args, "tickers_file", None),
+                getattr(args, "date_start", None),
+                getattr(args, "date_end", None),
             )
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
