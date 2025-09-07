@@ -182,30 +182,30 @@
 
 - Excel → 多个 JSON（按调仓日分文件）
 
-  ```bash
-  # 初筛
-  stockq export --from preliminary --direction excel-to-json
+    ```bash
+    # 初筛
+    stockq export --from preliminary --direction excel-to-json
 
-  # AI 精选
-  stockq export --from ai --direction excel-to-json
-  ```
+    # AI 精选
+    stockq export --from ai --direction excel-to-json
+    ```
 
 - 多个 JSON → Excel（每个调仓日一张工作表）
 
-  ```bash
-  # 初筛
-  stockq export --from preliminary --direction json-to-excel
+    ```bash
+    # 初筛
+    stockq export --from preliminary --direction json-to-excel
 
-  # AI 精选
-  stockq export --from ai --direction json-to-excel
-  ```
+    # AI 精选
+    stockq export --from ai --direction json-to-excel
+    ```
 
 - 校验 Excel 与 JSON 是否一致
 
-  ```bash
-  stockq validate-exports --source preliminary
-  stockq validate-exports --source ai
-  ```
+    ```bash
+    stockq validate-exports --source preliminary
+    stockq validate-exports --source ai
+    ```
 
 可选参数：`--excel` 指定Excel路径，`--json-root` 指定JSON根目录，`--overwrite` 控制excel→json是否覆盖已存在文件。
 
@@ -215,23 +215,23 @@
 
 * 时点回测:
 
-  * 避免幸存者偏差: 在每个调仓日，选股范围限定为当时的 S&P 500 指数成分股。
+    * 避免幸存者偏差: 在每个调仓日，选股范围限定为当时的 S&P 500 指数成分股。
 
-  * 杜绝未来数据: 使用财报的发布日期（Publish Date）作为判断信息是否可用的标准。
+    * 杜绝未来数据: 使用财报的发布日期（Publish Date）作为判断信息是否可用的标准。
 
 * AI筛选:
 
-  * 多API密钥池: 支持配置多个Gemini API密钥，通过轮换机制分摊请求压力，最大化吞吐量。
+    * 多API密钥池: 支持配置多个Gemini API密钥，通过轮换机制分摊请求压力，最大化吞吐量。
 
-  * 智能容错与限速: 内置一套API 管理系统，包括：
+    * 智能容错与限速: 内置一套API 管理系统，包括：
 
-    * 滑动窗口限速器: 为每个API Key精确控制请求频率，避免超出 QPM (每分钟查询数) 限制。
+        * 滑动窗口限速器: 为每个API Key精确控制请求频率，避免超出 QPM (每分钟查询数) 限制。
 
-    * 指数退避重试: 对临时性网络或服务器错误采用带“抖动”的指数退避策略进行重试。
+        * 指数退避重试: 对临时性网络或服务器错误采用带“抖动”的指数退避策略进行重试。
 
-    * 熔断器机制: 当某个 Key 连续失败时，系统会将其暂时“熔断”并移出工作池，防止连锁失败。
+        * 熔断器机制: 当某个 Key 连续失败时，系统会将其暂时“熔断”并移出工作池，防止连锁失败。
 
-    * 分级错误处理: 系统能自动区分API Key认证失败（永久移除）、项目级限流（全局冷却）和临时性网络错误（单Key临时退避），确保在高并发请求下依然稳健运行。
+        * 分级错误处理: 系统能自动区分API Key认证失败（永久移除）、项目级限流（全局冷却）和临时性网络错误（单Key临时退避），确保在高并发请求下依然稳健运行。
 
 * 命令行工具: 通过`stockq`命令及其子命令（如`load-data`, `ai-pick`, `backtest`, `lb-rebalance`）执行所有核心工作流，实现流程自动化。
 
@@ -440,6 +440,7 @@
 
 ## JSON格式选股提示词
 
+```text
 You will receive a single JSON document containing one period of preliminary results.
 
 ## Task
@@ -497,6 +498,7 @@ Return **one** JSON object with the following shape and nothing else:
 - All ranks present and consecutive
 - All confidence are integers in [1,10]
 - No fields are null/empty
+```
 
 ## 项目测试
 
@@ -697,17 +699,17 @@ def test_uppercase(input, expected):
 
 1. 集成测试失败
 
-   - 检查API密钥是否配置
+   * 检查API密钥是否配置
 
-   - 检查网络连接
+   * 检查网络连接
 
-   - 检查外部服务状态
+   * 检查外部服务状态
 
 2. 覆盖率不足
 
-   - 运行 `pytest --cov=stock_analysis --cov-report=html` 查看详细报告
+   * 运行 `pytest --cov=stock_analysis --cov-report=html` 查看详细报告
 
-   - 添加缺失的测试用例
+   * 添加缺失的测试用例
 
 3. 测试运行缓慢
 
