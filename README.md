@@ -48,6 +48,17 @@
     stockq ai-pick
     ```
 
+    JSON/Excel 并行输出：
+
+    - 默认同时写 Excel 总表和分期 JSON 文件。
+    - 仅写 JSON：追加 `--no-excel`
+    - 仅写 Excel：追加 `--no-json`
+
+    目录结构（示例）：
+
+    - `outputs/preliminary/YYYY/YYYY-MM-DD.json`
+    - `outputs/ai_pick/YYYY/YYYY-MM-DD.json`
+
 4. 导入价格数据进sqlite数据库
 
     ```bash
@@ -166,6 +177,37 @@
     ```bash
     stockq backtest spy
     ```
+
+### 导出与一致性校验（Excel ↔ JSON）
+
+- Excel → 多个 JSON（按调仓日分文件）
+
+  ```bash
+  # 初筛
+  stockq export --from preliminary --direction excel-to-json
+
+  # AI 精选
+  stockq export --from ai --direction excel-to-json
+  ```
+
+- 多个 JSON → Excel（每个调仓日一张工作表）
+
+  ```bash
+  # 初筛
+  stockq export --from preliminary --direction json-to-excel
+
+  # AI 精选
+  stockq export --from ai --direction json-to-excel
+  ```
+
+- 校验 Excel 与 JSON 是否一致
+
+  ```bash
+  stockq validate-exports --source preliminary
+  stockq validate-exports --source ai
+  ```
+
+可选参数：`--excel` 指定Excel路径，`--json-root` 指定JSON根目录，`--overwrite` 控制excel→json是否覆盖已存在文件。
 
 ## 核心特性
 

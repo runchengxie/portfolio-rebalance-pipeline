@@ -108,6 +108,12 @@ def create_parser() -> argparse.ArgumentParser:
     prelim_parser.add_argument(
         "--output-dir", type=str, help="输出目录路径（可选，默认使用项目outputs目录）"
     )
+    prelim_parser.add_argument(
+        "--no-excel", action="store_true", help="仅生成JSON，不写Excel/TXT"
+    )
+    prelim_parser.add_argument(
+        "--no-json", action="store_true", help="仅生成Excel/TXT，不写JSON"
+    )
 
     # AI stock picking command
     ai_parser = subparsers.add_parser(
@@ -117,6 +123,56 @@ def create_parser() -> argparse.ArgumentParser:
         "--quarter", type=str, help="指定季度（格式：YYYY-QX，如2024-Q1）"
     )
     ai_parser.add_argument("--output", type=str, help="输出文件路径（可选）")
+    ai_parser.add_argument(
+        "--no-excel", action="store_true", help="仅生成JSON，不写Excel"
+    )
+    ai_parser.add_argument(
+        "--no-json", action="store_true", help="仅生成Excel，不写JSON"
+    )
+
+    # Export command
+    export_parser = subparsers.add_parser(
+        "export",
+        help="导出Excel/JSON",
+        description="在Excel与分期JSON之间进行双向导出",
+    )
+    export_parser.add_argument(
+        "--from",
+        dest="source",
+        choices=["preliminary", "ai"],
+        default="preliminary",
+        help="数据来源：preliminary 或 ai",
+    )
+    export_parser.add_argument(
+        "--direction",
+        choices=["excel-to-json", "json-to-excel"],
+        default="excel-to-json",
+        help="导出方向（默认 excel-to-json）",
+    )
+    export_parser.add_argument(
+        "--excel", type=str, help="指定Excel路径（可选，默认读取/写入项目既定路径）"
+    )
+    export_parser.add_argument(
+        "--json-root", type=str, help="指定JSON根目录（可选，默认在outputs下）"
+    )
+    export_parser.add_argument(
+        "--overwrite", action="store_true", help="excel->json 时覆盖已存在文件"
+    )
+
+    # Validate exports command
+    validate_parser = subparsers.add_parser(
+        "validate-exports",
+        help="校验Excel与JSON一致性",
+        description="检查同一调仓日在Excel与JSON中的股票集合是否一致",
+    )
+    validate_parser.add_argument(
+        "--source",
+        choices=["preliminary", "ai"],
+        default="preliminary",
+        help="数据来源：preliminary 或 ai",
+    )
+    validate_parser.add_argument("--excel", type=str, help="Excel路径（可选）")
+    validate_parser.add_argument("--json-root", type=str, help="JSON根目录（可选）")
 
     # Generate whitelist command
     gen_parser = subparsers.add_parser(
@@ -245,12 +301,37 @@ def main() -> int:
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
 
-            return run_preliminary(getattr(args, "output_dir", None))
+            return run_preliminary(
+                getattr(args, "output_dir", None),
+                getattr(args, "no_excel", False),
+                getattr(args, "no_json", False),
+            )
         elif args.command == "ai-pick":
             from .commands.ai_pick import run_ai_pick
 
             return run_ai_pick(
-                getattr(args, "quarter", None), getattr(args, "output", None)
+                getattr(args, "quarter", None),
+                getattr(args, "output", None),
+                getattr(args, "no_excel", False),
+                getattr(args, "no_json", False),
+            )
+        elif args.command == "export":
+            from .commands.export import run_export
+
+            return run_export(
+                getattr(args, "source", "preliminary"),
+                getattr(args, "direction", "excel-to-json"),
+                getattr(args, "overwrite", False),
+                getattr(args, "excel", None),
+                getattr(args, "json_root", None),
+            )
+        elif args.command == "validate-exports":
+            from .commands.validate_exports import run_validate_exports
+
+            return run_validate_exports(
+                getattr(args, "source", "preliminary"),
+                getattr(args, "excel", None),
+                getattr(args, "json_root", None),
             )
         elif args.command == "gen-whitelist":
             from .commands.gen_whitelist import run_gen_whitelist

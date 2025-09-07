@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -17,6 +18,8 @@ except NameError:
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+PRELIM_JSON_DIR = OUTPUTS_DIR / "preliminary"
+PRELIM_JSON_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Strategy Configuration ---
 BACKTEST_FREQUENCY = "QE"
@@ -201,7 +204,7 @@ def calc_factor_scores(
     return df_agg_scores
 
 
-def main():
+def main(*, export_json: bool = True, export_excel: bool = True):
     """
     Main execution function (using local historical CSV for quarterly rebalancing + dynamic S&P 500 filtering + chart output)
     """
@@ -302,10 +305,51 @@ def main():
         df_ranked = df_agg_scores.sort_values(by="avg_factor_score", ascending=False)
         top_stocks = df_ranked.head(NUM_STOCKS_TO_SELECT)
 
-        all_period_portfolios[trade_date.date()] = top_stocks.reset_index()
+        df_top_reset = top_stocks.reset_index()
+        all_period_portfolios[trade_date.date()] = df_top_reset
+
+        if export_json:
+            # Save per-period JSON (idempotent, overwrite if exists)
+            try:
+                cutoff_date = (trade_date - pd.offsets.BDay(2)).date()
+                year_dir = PRELIM_JSON_DIR / f"{trade_date.year}"
+                year_dir.mkdir(parents=True, exist_ok=True)
+                out_path = year_dir / f"{trade_date.date()}.json"
+
+                rows = []
+                for i, row in df_top_reset.reset_index(drop=True).iterrows():
+                    rows.append(
+                        {
+                            "ticker": str(row["Ticker"]).upper().strip(),
+                            "rank": int(i + 1),
+                            "avg_factor_score": round(float(row["avg_factor_score"]), 6),
+                            "num_reports": int(row["num_reports"]),
+                        }
+                    )
+
+                payload = {
+                    "schema_version": 1,
+                    "source": "preliminary",
+                    "trade_date": str(trade_date.date()),
+                    "data_cutoff_date": str(cutoff_date),
+                    "universe": "sp500",
+                    "method": "preliminary_v1",
+                    "params": {
+                        "rolling_years": ROLLING_WINDOW_YEARS,
+                        "min_reports": MIN_REPORTS_IN_WINDOW,
+                        "top_n": NUM_STOCKS_TO_SELECT,
+                        "rank_metric": "avg_factor_score",
+                    },
+                    "rows": rows,
+                }
+
+                with open(out_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"  - [警告] 保存JSON失败 {trade_date.date()}: {e}")
 
     # Step 6: Save results to files
-    if all_period_portfolios:
+    if export_excel and all_period_portfolios:
         output_excel_file = OUTPUT_FILE_BASE.with_suffix(".xlsx")
         output_txt_file = OUTPUT_FILE_BASE.with_suffix(".txt")
         try:

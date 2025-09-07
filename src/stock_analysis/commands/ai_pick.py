@@ -8,7 +8,12 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def run_ai_pick(quarter: str | None = None, output: str | None = None) -> int:
+def run_ai_pick(
+    quarter: str | None = None,
+    output: str | None = None,
+    no_excel: bool = False,
+    no_json: bool = False,
+) -> int:
     """Run AI stock picking analysis
 
     Args:
@@ -28,7 +33,9 @@ def run_ai_pick(quarter: str | None = None, output: str | None = None) -> int:
 
         from ..ai_stock_pick import main as ai_pick_main
 
-        ai_pick_main()
+        export_excel = not no_excel
+        export_json = not no_json
+        ai_pick_main(export_json=export_json, export_excel=export_excel)
 
         logger.info("AI选股分析完成！")
         return 0
