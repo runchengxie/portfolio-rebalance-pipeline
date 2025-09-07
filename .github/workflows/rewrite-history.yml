@@ -30,7 +30,8 @@ jobs:
 
       - name: Force push rewritten history
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git push --force --mirror
+          # 可见即可得，避免依赖远端名
+          git gc --prune=now
+          git push --force --mirror "$REPO"
