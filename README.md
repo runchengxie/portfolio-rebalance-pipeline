@@ -209,6 +209,15 @@
 
 可选参数：`--excel` 指定Excel路径，`--json-root` 指定JSON根目录，`--overwrite` 控制excel→json是否覆盖已存在文件。
 
+额外的 JSON 健康检查（工具脚本）
+
+- 深度校验 AI JSON 的字段规范、rank 连续性、候选映射与与 preliminary 的日期覆盖：
+
+  ```bash
+  python tools/validate_ai_pick_jsons.py
+  ```
+  非零退出码代表校验失败，方便在 CI 中使用。
+
 ## 核心特性
 
 * 两阶段混合模型: 结合了基于财务报表数据的量化筛选和大型语言模型的深度分析，实现自动化、多维度的选股流程。
