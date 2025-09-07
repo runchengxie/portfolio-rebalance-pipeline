@@ -26,11 +26,12 @@ jobs:
         run: |
           git config user.name  "repo-surgeon"
           git config user.email "action@users.noreply.github.com"
-          git filter-repo --path data --invert-paths --force
+          git filter-repo --path-glob 'data/**' --invert-paths --force
 
       - name: Force push rewritten history
         env:
-          REPO: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          REPO: https://x-access-token:${{ secrets.PUSH_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
+          git for-each-ref --format='%(refname)' refs/replace | xargs -r -n1 git update-ref -d
           git gc --prune=now
           git push --force --mirror "$REPO"
