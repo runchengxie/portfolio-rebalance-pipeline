@@ -32,6 +32,5 @@ jobs:
         env:
           REPO: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
-          # 可见即可得，避免依赖远端名
           git gc --prune=now
           git push --force --mirror "$REPO"
