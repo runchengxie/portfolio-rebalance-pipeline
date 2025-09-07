@@ -396,6 +396,66 @@
     initial_cash: 1000000
     ```
 
+## JSON格式选股提示词
+
+You will receive a single JSON document containing one period of preliminary results.
+
+## Task
+Based on **Buffett-style investment logic**, select exactly `{top_n}` most promising stocks **only from the provided candidates**, and produce one AI stock-pick JSON object.
+
+## Analysis Time Point (Critical)
+Limit all analysis to the market environment at **{analysis_date}**. If this date exceeds your training data cutoff, reason using timeless fundamentals and the provided JSON only. Do not use events after {analysis_date}.
+
+## Candidate Set
+You must select only from the tickers listed in the input JSON (field: rows[*].ticker). Do not invent tickers.
+
+## Buffett Logic Checklist (use for your internal reasoning; do NOT output text)
+- Moat and durability of cash flows
+- ROIC and reinvestment runway
+- Earnings quality and free cash flow conversion
+- Capital allocation discipline and leverage prudence
+- Valuation sanity relative to quality (margin of safety)
+- Key risks and industry structure as of {analysis_date}
+- Near- to mid-term catalysts consistent with the above
+
+## Strict Output Contract
+Return **one** JSON object with the following shape and nothing else:
+
+{
+  "schema_version": 1,
+  "source": "ai_pick",
+  "trade_date": "{trade_date}",
+  "data_cutoff_date": "{data_cutoff_date}",
+  "universe": "{universe}",
+  "model": "{model_name_or_empty}",
+  "prompt_version": "{prompt_version}",
+  "params": {"top_n": {top_n}},
+  "picks": [
+    {
+      "ticker": "<from candidates>",
+      "rank": 1,
+      "confidence": <integer 1-10>,
+      "rationale": "<<= 80 words; concise, period-accurate>"
+    }
+    // exactly {top_n} items, ranks 1..{top_n} with no gaps
+  ]
+}
+
+## Hard Rules
+- Exactly {top_n} items in "picks".
+- All "ticker" values must come from the candidate list.
+- "rank" must be consecutive integers 1..{top_n}.
+- "confidence" must be an **integer** from 1 to 10.
+- "rationale" is concise, no empty fields, no placeholders.
+- Output **only** the JSON object. No markdown, no prose, no code fences.
+
+## Self-check (must enforce before returning)
+- Count(picks) == {top_n}
+- Unique(ticker) == {top_n}
+- All ranks present and consecutive
+- All confidence are integers in [1,10]
+- No fields are null/empty
+
 ## 项目测试
 
 本项目包含一套 pytest 测试。通过在项目根目录运行以下命令来执行所有测试：
