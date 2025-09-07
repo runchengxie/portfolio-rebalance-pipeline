@@ -453,7 +453,7 @@
 You will receive a single JSON document containing one period of preliminary results.
 
 ## Task
-Based on **Buffett-style investment logic**, select exactly `{top_n}` most promising stocks **only from the provided candidates**, and produce one AI stock-pick JSON object.
+Based on **Buffett-style investment logic**, select exactly `{top_n}` (in this time, top_n = 10) most promising stocks **only from the provided candidates**, and produce one AI stock-pick JSON object.
 
 ## Analysis Time Point (Critical)
 Limit all analysis to the market environment at **{analysis_date}**. If this date exceeds your training data cutoff, reason using timeless fundamentals and the provided JSON only. Do not use events after {analysis_date}.
