@@ -8,7 +8,11 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def run_preliminary(output_dir: str | None = None) -> int:
+def run_preliminary(
+    output_dir: str | None = None,
+    no_excel: bool = False,
+    no_json: bool = False,
+) -> int:
     """Run quantitative preliminary stock screening
 
     Args:
@@ -26,7 +30,9 @@ def run_preliminary(output_dir: str | None = None) -> int:
 
         from ..preliminary_selection import main as prelim_main
 
-        prelim_main()
+        export_excel = not no_excel
+        export_json = not no_json
+        prelim_main(export_json=export_json, export_excel=export_excel)
 
         logger.info("量化初筛选股完成！")
         return 0

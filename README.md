@@ -48,6 +48,17 @@
     stockq ai-pick
     ```
 
+    JSON/Excel 并行输出：
+
+    - 默认同时写 Excel 总表和分期 JSON 文件。
+    - 仅写 JSON：追加 `--no-excel`
+    - 仅写 Excel：追加 `--no-json`
+
+    目录结构（示例）：
+
+    - `outputs/preliminary/YYYY/YYYY-MM-DD.json`
+    - `outputs/ai_pick/YYYY/YYYY-MM-DD.json`
+
 4. 导入价格数据进sqlite数据库
 
     ```bash
@@ -167,29 +178,69 @@
     stockq backtest spy
     ```
 
+### 导出与一致性校验（Excel ↔ JSON）
+
+- Excel → 多个 JSON（按调仓日分文件）
+
+    ```bash
+    # 初筛
+    stockq export --from preliminary --direction excel-to-json
+
+    # AI 精选
+    stockq export --from ai --direction excel-to-json
+    ```
+
+- 多个 JSON → Excel（每个调仓日一张工作表）
+
+    ```bash
+    # 初筛
+    stockq export --from preliminary --direction json-to-excel
+
+    # AI 精选
+    stockq export --from ai --direction json-to-excel
+    ```
+
+- 校验 Excel 与 JSON 是否一致
+
+    ```bash
+    stockq validate-exports --source preliminary
+    stockq validate-exports --source ai
+    ```
+
+可选参数：`--excel` 指定Excel路径，`--json-root` 指定JSON根目录，`--overwrite` 控制excel→json是否覆盖已存在文件。
+
+额外的 JSON 健康检查（工具脚本）
+
+- 深度校验 AI JSON 的字段规范、rank 连续性、候选映射与与 preliminary 的日期覆盖：
+
+  ```bash
+  python tools/validate_ai_pick_jsons.py
+  ```
+  非零退出码代表校验失败，方便在 CI 中使用。
+
 ## 核心特性
 
 * 两阶段混合模型: 结合了基于财务报表数据的量化筛选和大型语言模型的深度分析，实现自动化、多维度的选股流程。
 
 * 时点回测:
 
-  * 避免幸存者偏差: 在每个调仓日，选股范围限定为当时的 S&P 500 指数成分股。
+    * 避免幸存者偏差: 在每个调仓日，选股范围限定为当时的 S&P 500 指数成分股。
 
-  * 杜绝未来数据: 使用财报的发布日期（Publish Date）作为判断信息是否可用的标准。
+    * 杜绝未来数据: 使用财报的发布日期（Publish Date）作为判断信息是否可用的标准。
 
 * AI筛选:
 
-  * 多API密钥池: 支持配置多个Gemini API密钥，通过轮换机制分摊请求压力，最大化吞吐量。
+    * 多API密钥池: 支持配置多个Gemini API密钥，通过轮换机制分摊请求压力，最大化吞吐量。
 
-  * 智能容错与限速: 内置一套API 管理系统，包括：
+    * 智能容错与限速: 内置一套API 管理系统，包括：
 
-    * 滑动窗口限速器: 为每个API Key精确控制请求频率，避免超出 QPM (每分钟查询数) 限制。
+        * 滑动窗口限速器: 为每个API Key精确控制请求频率，避免超出 QPM (每分钟查询数) 限制。
 
-    * 指数退避重试: 对临时性网络或服务器错误采用带“抖动”的指数退避策略进行重试。
+        * 指数退避重试: 对临时性网络或服务器错误采用带“抖动”的指数退避策略进行重试。
 
-    * 熔断器机制: 当某个 Key 连续失败时，系统会将其暂时“熔断”并移出工作池，防止连锁失败。
+        * 熔断器机制: 当某个 Key 连续失败时，系统会将其暂时“熔断”并移出工作池，防止连锁失败。
 
-    * 分级错误处理: 系统能自动区分API Key认证失败（永久移除）、项目级限流（全局冷却）和临时性网络错误（单Key临时退避），确保在高并发请求下依然稳健运行。
+        * 分级错误处理: 系统能自动区分API Key认证失败（永久移除）、项目级限流（全局冷却）和临时性网络错误（单Key临时退避），确保在高并发请求下依然稳健运行。
 
 * 命令行工具: 通过`stockq`命令及其子命令（如`load-data`, `ai-pick`, `backtest`, `lb-rebalance`）执行所有核心工作流，实现流程自动化。
 
@@ -396,6 +447,68 @@
     initial_cash: 1000000
     ```
 
+## JSON格式选股提示词
+
+```text
+You will receive a single JSON document containing one period of preliminary results.
+
+## Task
+Based on **Buffett-style investment logic**, select exactly `{top_n}` most promising stocks **only from the provided candidates**, and produce one AI stock-pick JSON object.
+
+## Analysis Time Point (Critical)
+Limit all analysis to the market environment at **{analysis_date}**. If this date exceeds your training data cutoff, reason using timeless fundamentals and the provided JSON only. Do not use events after {analysis_date}.
+
+## Candidate Set
+You must select only from the tickers listed in the input JSON (field: rows[*].ticker). Do not invent tickers.
+
+## Buffett Logic Checklist (use for your internal reasoning; do NOT output text)
+- Moat and durability of cash flows
+- ROIC and reinvestment runway
+- Earnings quality and free cash flow conversion
+- Capital allocation discipline and leverage prudence
+- Valuation sanity relative to quality (margin of safety)
+- Key risks and industry structure as of {analysis_date}
+- Near- to mid-term catalysts consistent with the above
+
+## Strict Output Contract
+Return **one** JSON object with the following shape and nothing else:
+
+{
+  "schema_version": 1,
+  "source": "ai_pick",
+  "trade_date": "{trade_date}",
+  "data_cutoff_date": "{data_cutoff_date}",
+  "universe": "{universe}",
+  "model": "{model_name_or_empty}",
+  "prompt_version": "{prompt_version}",
+  "params": {"top_n": {top_n}},
+  "picks": [
+    {
+      "ticker": "<from candidates>",
+      "rank": 1,
+      "confidence": <integer 1-10>,
+      "rationale": "<<= 80 words; concise, period-accurate>"
+    }
+    // exactly {top_n} items, ranks 1..{top_n} with no gaps
+  ]
+}
+
+## Hard Rules
+- Exactly {top_n} items in "picks".
+- All "ticker" values must come from the candidate list.
+- "rank" must be consecutive integers 1..{top_n}.
+- "confidence" must be an **integer** from 1 to 10.
+- "rationale" is concise, no empty fields, no placeholders.
+- Output **only** the JSON object. No markdown, no prose, no code fences.
+
+## Self-check (must enforce before returning)
+- Count(picks) == {top_n}
+- Unique(ticker) == {top_n}
+- All ranks present and consecutive
+- All confidence are integers in [1,10]
+- No fields are null/empty
+```
+
 ## 项目测试
 
 本项目包含一套 pytest 测试。通过在项目根目录运行以下命令来执行所有测试：
@@ -595,17 +708,17 @@ def test_uppercase(input, expected):
 
 1. 集成测试失败
 
-   - 检查API密钥是否配置
+   * 检查API密钥是否配置
 
-   - 检查网络连接
+   * 检查网络连接
 
-   - 检查外部服务状态
+   * 检查外部服务状态
 
 2. 覆盖率不足
 
-   - 运行 `pytest --cov=stock_analysis --cov-report=html` 查看详细报告
+   * 运行 `pytest --cov=stock_analysis --cov-report=html` 查看详细报告
 
-   - 添加缺失的测试用例
+   * 添加缺失的测试用例
 
 3. 测试运行缓慢
 

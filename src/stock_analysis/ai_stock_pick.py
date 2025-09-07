@@ -19,6 +19,11 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 INPUT_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
 OUTPUT_AI_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_all_sheets.xlsx"
 COMPANY_INFO_FILE = DATA_DIR / "us-companies.csv"
+AI_PICK_JSON_DIR = OUTPUTS_DIR / "ai_pick"
+AI_PICK_JSON_DIR.mkdir(parents=True, exist_ok=True)
+
+# Version tag for prompt/content format
+PROMPT_VERSION = "v1"
 
 # --- Gemini API Configuration: Local file reading only, no global environment injection ---
 _local_env = {}
@@ -259,6 +264,59 @@ def save_sheet_result(sheet_name, df_ai_picks, output_file):
         return False
 
 
+# --- Save per-quarter JSON result ---
+def save_json_result(trade_date_str: str, df_ai_picks: pd.DataFrame) -> bool:
+    """Save AI pick result for a single trade date to JSON.
+
+    The output path is `outputs/ai_pick/YYYY/YYYY-MM-DD.json`.
+    """
+    try:
+        trade_date = pd.to_datetime(trade_date_str).date()
+        cutoff_date = (pd.Timestamp(trade_date) - pd.offsets.BDay(2)).date()
+        year_dir = AI_PICK_JSON_DIR / f"{trade_date.year}"
+        year_dir.mkdir(parents=True, exist_ok=True)
+        out_path = year_dir / f"{trade_date}.json"
+
+        # Ensure stable order by confidence desc, then ticker asc
+        df_sorted = df_ai_picks.copy()
+        if "confidence_score" in df_sorted.columns:
+            df_sorted = df_sorted.sort_values(
+                by=["confidence_score", "ticker"], ascending=[False, True]
+            )
+
+        picks = []
+        for i, row in df_sorted.reset_index(drop=True).iterrows():
+            score = int(row.get("confidence_score", 0))
+            picks.append(
+                {
+                    "ticker": str(row.get("ticker", "")).upper().strip(),
+                    "rank": int(i + 1),
+                    "confidence": round(score / 10.0, 2),
+                    "rationale": str(row.get("reasoning", "")),
+                }
+            )
+
+        payload = {
+            "schema_version": 1,
+            "source": "ai_pick",
+            "trade_date": str(trade_date),
+            "data_cutoff_date": str(cutoff_date),
+            "universe": "sp500",
+            "model": "gemini-2.5-pro",
+            "prompt_version": PROMPT_VERSION,
+            "params": {"top_n": len(picks)},
+            "picks": picks,
+        }
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        print(f"  ✓ JSON saved to {out_path}")
+        return True
+    except Exception as e:
+        print(f"  ✗ Failed to save JSON: {e}")
+        return False
+
+
 # --- Create Key Pool ---
 def create_key_pool():
     """Create and initialize API Key pool"""
@@ -321,7 +379,7 @@ def parse_response_robust(response):
 
 
 # --- Function to Process Single Quarter ---
-def process_one_sheet(sheet_name, df_companies, keypool):
+def process_one_sheet(sheet_name, df_companies, keypool, export_excel: bool = True, export_json: bool = True):
     """Process stock data from a single worksheet"""
     try:
         # Read candidate stocks for this quarter
@@ -364,8 +422,21 @@ def process_one_sheet(sheet_name, df_companies, keypool):
                 by="confidence_score", ascending=False
             )
 
-            # Thread-safe save results
-            if save_sheet_result_threadsafe(sheet_name, df_ai_picks, OUTPUT_AI_FILE):
+            # Thread-safe save results (Excel)
+            excel_ok = True
+            if export_excel:
+                excel_ok = save_sheet_result_threadsafe(
+                    sheet_name, df_ai_picks, OUTPUT_AI_FILE
+                )
+
+            # Also save structured JSON per trade date (best-effort)
+            if export_json:
+                try:
+                    save_json_result(str(analysis_date), df_ai_picks)
+                except Exception:
+                    pass
+
+            if excel_ok:
                 return (sheet_name, "success", len(df_ai_picks))
             else:
                 return (sheet_name, "save_failed", None)
@@ -417,7 +488,7 @@ def create_prompt(analysis_date, ticker_list_df):
 
 
 # --- Main Logic ---
-def main():
+def main(*, export_json: bool = True, export_excel: bool = True):
     print("--- Concurrent AI Stock Selection Script (Key Pool Rotation) ---")
     print(
         f"Configuration: MAX_QPM={MAX_QPM}, MAX_RETRIES={MAX_RETRIES}, TIMEOUT={REQUEST_TIMEOUT}s"
@@ -466,6 +537,18 @@ def main():
 
     if not pending_sheets:
         print("All quarters have been processed!")
+        # Best-effort: export JSON for existing results if not present
+        if export_json:
+            try:
+                existing_xls = pd.ExcelFile(OUTPUT_AI_FILE)
+                for sheet in existing_xls.sheet_names:
+                    try:
+                        df_existing = pd.read_excel(existing_xls, sheet_name=sheet)
+                        save_json_result(sheet, df_existing)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         return
 
     # Use thread pool for concurrent processing
@@ -482,7 +565,7 @@ def main():
         futures = []
         for sheet_name in pending_sheets:
             future = executor.submit(
-                process_one_sheet, sheet_name, df_companies, keypool
+                process_one_sheet, sheet_name, df_companies, keypool, export_excel, export_json
             )
             futures.append(future)
 
