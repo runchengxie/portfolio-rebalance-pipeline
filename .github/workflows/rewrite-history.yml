@@ -22,7 +22,7 @@ jobs:
           git bundle create ../before-rewrite.bundle --all
           ls -lh ../before-rewrite.bundle
 
-      - name: Rewrite: drop data/ from all history
+      - name: "Rewrite: drop data/ from all history"
         run: |
           git config user.name  "repo-surgeon"
           git config user.email "action@users.noreply.github.com"
