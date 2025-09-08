@@ -151,7 +151,7 @@ fractional_preview:
     ```bash
     # 生成 outputs/targets/{YYYY-MM-DD}.json
     stockq targets gen --from ai
-
+    
     # 或者显式指定 Excel/日期/输出位置
     stockq targets gen --from ai --excel outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --asof 2025-09-05 --out outputs/targets/2025-09-05.json
     ```
@@ -178,7 +178,7 @@ fractional_preview:
         ```bash
         # 使用 targets JSON（推荐）
         stockq lb-rebalance outputs/targets/2025-09-05.json
-
+        
         # 向后兼容：直接读取 AI Excel 最新期
         stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
         ```
@@ -191,7 +191,7 @@ fractional_preview:
         # 确认所有信息无误后，才执行真实下单
         # 使用 targets JSON 执行（谨慎）
         stockq lb-rebalance outputs/targets/2025-09-05.json --execute
-
+        
         # 或：AI Excel 最新期（谨慎）
         stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
         ```
@@ -458,18 +458,15 @@ fractional_preview:
     # 从项目根目录运行
     pip install -e .
 
-
     # --- 或者使用uv ---
     # 开发环境下使用
     uv sync
     
     # CI/发布环境
     uv sync --no-dev
-
+    
     # 仅安装开发的依赖
     uv sync --only-dev
-
-
     ```
 
 2. 配置API密钥:
