@@ -63,14 +63,15 @@ def validate_ai_file(path: Path) -> list[str]:
             f"{path}: file name/date mismatch (stem={path.stem} trade_date={trade_date})"
         )
 
-    params = data.get("params", {}) if isinstance(data.get("params"), dict) else {}
+    params: dict[str, Any] = data.get("params", {}) if isinstance(data.get("params"), dict) else {}
     top_n = params.get("top_n")
-    picks = data.get("picks", [])
+    raw_picks = data.get("picks", [])
+    picks: list[dict[str, Any]] = raw_picks if isinstance(raw_picks, list) else []
 
     if not isinstance(top_n, int):
         issues.append(f"{path}: params.top_n must be int")
 
-    if not isinstance(picks, list) or len(picks) == 0:
+    if not isinstance(raw_picks, list) or len(picks) == 0:
         issues.append(f"{path}: picks must be non-empty list")
         return issues
 
@@ -79,12 +80,13 @@ def validate_ai_file(path: Path) -> list[str]:
         issues.append(f"{path}: picks length {len(picks)} != top_n {top_n}")
 
     # Ranks 1..N unique
-    ranks = [p.get("rank") for p in picks if isinstance(p, dict)]
-    try:
+    ranks_raw = [p.get("rank") for p in picks]
+    if any(not isinstance(r, int) for r in ranks_raw):
+        issues.append(f"{path}: invalid ranks (non-integer present)")
+    else:
+        ranks: list[int] = [int(r) for r in ranks_raw]  # type: ignore[arg-type]
         if sorted(ranks) != list(range(1, len(picks) + 1)):
             issues.append(f"{path}: ranks must be consecutive 1..N")
-    except Exception:
-        issues.append(f"{path}: invalid ranks (non-integer present)")
 
     # Tickers unique (normalized)
     tickers = [str(p.get("ticker", "")).upper().strip() for p in picks]
