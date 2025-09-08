@@ -12,6 +12,8 @@ from dotenv import dotenv_values
 from google import genai
 from pydantic import BaseModel, Field
 
+from .utils.logging import get_logger
+
 # --- Paths and Configuration ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -21,6 +23,8 @@ OUTPUT_AI_FILE = OUTPUTS_DIR / "point_in_time_ai_stock_picks_all_sheets.xlsx"
 COMPANY_INFO_FILE = DATA_DIR / "us-companies.csv"
 AI_PICK_JSON_DIR = OUTPUTS_DIR / "ai_pick"
 AI_PICK_JSON_DIR.mkdir(parents=True, exist_ok=True)
+
+logger = get_logger(__name__)
 
 # Version tag for prompt/content format
 PROMPT_VERSION = "v1"
@@ -446,7 +450,7 @@ def process_one_sheet(
                 try:
                     save_json_result(str(analysis_date), df_ai_picks)
                 except Exception:
-                    pass
+                    logger.exception("Failed to save JSON result for %s", analysis_date)
 
             if excel_ok:
                 return (sheet_name, "success", len(df_ai_picks))
@@ -478,7 +482,7 @@ def create_prompt(analysis_date, ticker_list_df):
 
     # Analysis Time Point (Critical)
     Please limit your analysis to the market environment at **{analysis_date}**. If this time point exceeds your training data cutoff date, please analyze based on your knowledge and reasonable assumptions.
-    
+
     # Candidate Stock List (Total {len(ticker_list_df)} stocks)
     Stocks initially screened based on financial fundamentals at {analysis_date}:
     {ticker_str}
@@ -494,7 +498,7 @@ def create_prompt(analysis_date, ticker_list_df):
     - confidence_score must be an integer from 1-10
     - All fields must be filled, cannot be empty
     - Return standard JSON format array
-    
+
     Please strictly follow the AIStockPick model format to return results.
     """
 
@@ -558,9 +562,9 @@ def main(*, export_json: bool = True, export_excel: bool = True):
                         df_existing = pd.read_excel(existing_xls, sheet_name=sheet)
                         save_json_result(sheet, df_existing)
                     except Exception:
-                        pass
+                        logger.exception("Failed to export JSON for sheet %s", sheet)
             except Exception:
-                pass
+                logger.exception("Failed to export existing JSON results")
         return
 
     # Use thread pool for concurrent processing

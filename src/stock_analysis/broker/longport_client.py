@@ -166,6 +166,7 @@ class LongPortClient:
 
         # Build limits from env if not explicitly provided. 0 means unlimited.
         if limits is None:
+
             def _to_float(v: str | None, default: float = 0.0) -> float:
                 try:
                     return float(str(v)) if v is not None else default
@@ -497,9 +498,8 @@ class LongPortClient:
                                 else it.get("market")
                             )
                             push(sym, qty, mkt)
-        except Exception:
-            # Return empty if unavailable, caller will gracefully degrade
-            pass
+        except Exception as e:
+            logger.warning(f"获取持仓信息失败: {e}")
 
         return cash_usd, pos_map, net_assets, base_ccy
 
@@ -553,9 +553,9 @@ class LongPortClient:
                     except Exception:
                         continue
                     result[str(sym)] = (u, p, str(ccy or ""))
-        except Exception:
+        except Exception as e:
             # Failure to get fund positions doesn't affect main flow
-            pass
+            logger.warning(f"获取基金持仓失败: {e}")
         return result
 
     def lot_size(self, symbol: str) -> int:
@@ -574,8 +574,8 @@ class LongPortClient:
             info = self.quote.static_info([_to_lb_symbol(symbol)])
             if info and info[0].lot_size:
                 return max(1, int(info[0].lot_size))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"获取 {symbol} 的 lot size 失败: {e}")
         return 1
 
     # ---------- Internal: Authoritative market info caching ----------
