@@ -6,9 +6,38 @@
 
 ## 回测结果图
 
-![AI策略回测示例](outputs/ai_quarterly_strategy_returns.png)
+![AI策略回测示例](assets/ai_quarterly_strategy_returns.png)
+
+对比
 
 *(上图为AI策略在2021-04-01至2025-07-01期间的回测表现示例)*
+
+```bash
+==================================================
+      AI Quarterly Strategy Backtest Results
+==================================================
+Time Period Covered:     2016-10-04 to 2025-08-31
+Initial Portfolio Value: $1,000,000.00
+Final Portfolio Value:   $3,691,312.40
+--------------------------------------------------
+Total Return:            130.60%
+Annualized Return:       9.84%
+Max Drawdown:            20.79%
+==================================================
+
+==================================================
+       SPY Benchmark Results (Total Return)
+==================================================
+Time Period Covered:     2016-10-04 to 2025-07-02
+Initial Portfolio Value: $1,000,000.00
+Final Portfolio Value:   $2,867,639.44
+--------------------------------------------------
+Total Return:            105.35%
+Annualized Return:       8.58%
+Max Drawdown:            33.96%
+==================================================
+
+```
 
 ## 快速开始
 
