@@ -9,11 +9,11 @@ import sys
 # Re-export command entry functions for tests and external callers
 from .commands.ai_pick import run_ai_pick  # noqa: F401
 from .commands.backtest import run_backtest  # noqa: F401
-from .commands.load_data import run_load_data  # noqa: F401
 from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
+from .commands.lb_account import run_lb_account  # noqa: F401
 from .commands.lb_quote import run_lb_quote  # noqa: F401
 from .commands.lb_rebalance import run_lb_rebalance  # noqa: F401
-from .commands.lb_account import run_lb_account  # noqa: F401
+from .commands.load_data import run_load_data  # noqa: F401
 
 
 def create_parser() -> argparse.ArgumentParser:

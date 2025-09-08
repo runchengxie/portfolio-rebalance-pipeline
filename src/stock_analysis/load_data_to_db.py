@@ -2,8 +2,8 @@ import os
 import shutil
 import sqlite3
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional, Set
 
 import pandas as pd
 
@@ -87,9 +87,9 @@ def _load_csv_in_chunks(
     dtype=None,
     chunk=200_000,
     *,
-    tickers_whitelist: Optional[Set[str]] = None,
-    date_start: Optional[pd.Timestamp] = None,
-    date_end: Optional[pd.Timestamp] = None,
+    tickers_whitelist: set[str] | None = None,
+    date_start: pd.Timestamp | None = None,
+    date_end: pd.Timestamp | None = None,
 ) -> int:
     """Load CSV file to database in chunks"""
     rows = 0
@@ -145,9 +145,9 @@ def main(
     *,
     skip_prices: bool = False,
     only_prices: bool = False,
-    tickers_whitelist: Optional[Iterable[str]] = None,
-    date_start: Optional[str] = None,
-    date_end: Optional[str] = None,
+    tickers_whitelist: Iterable[str] | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
 ):
     """Main function: optimized database loading
 
@@ -203,7 +203,7 @@ def main(
                 print(f"    - Price data file size: {file_size_mb:.1f} MB")
 
                 # Normalize whitelist and date boundaries once
-                wl: Optional[Set[str]] = (
+                wl: set[str] | None = (
                     {str(t).upper().strip() for t in tickers_whitelist}
                     if tickers_whitelist
                     else None

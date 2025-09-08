@@ -9,8 +9,8 @@ Produces a human-readable diff similar to git control:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable, Tuple
 
 from ..models import AccountSnapshot, Order, Position, RebalanceResult
 
@@ -82,8 +82,8 @@ def _bucketize_after(
 
 
 def _diffstat(
-    current: Dict[str, Position], target: Dict[str, Position]
-) -> Tuple[int, int, int, int]:
+    current: dict[str, Position], target: dict[str, Position]
+) -> tuple[int, int, int, int]:
     added = 0
     removed = 0
     increased = 0

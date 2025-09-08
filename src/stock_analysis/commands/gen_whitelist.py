@@ -7,14 +7,13 @@ into a de-duplicated, uppercased, sorted list for price import filtering.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 
 from ..utils.logging import get_logger
 from ..utils.paths import (
-    OUTPUTS_DIR,
     AI_PORTFOLIO_FILE,
+    OUTPUTS_DIR,
     QUANT_PORTFOLIO_FILE,
 )
 

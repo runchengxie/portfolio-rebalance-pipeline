@@ -14,7 +14,7 @@ from typing import Literal
 
 import pandas as pd
 
-from ..utils.paths import OUTPUTS_DIR, AI_PORTFOLIO_FILE, QUANT_PORTFOLIO_FILE
+from ..utils.paths import AI_PORTFOLIO_FILE, OUTPUTS_DIR, QUANT_PORTFOLIO_FILE
 
 
 def _prelim_json_dir(root: Path | None = None) -> Path:

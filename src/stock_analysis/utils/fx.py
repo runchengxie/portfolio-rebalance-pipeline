@@ -15,12 +15,11 @@ valuation via USD cash + USD-quoted positions.
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .config import load_cfg
 
 
-def _from_env(ccy: str) -> Optional[float]:
+def _from_env(ccy: str) -> float | None:
     key1 = f"FX_{ccy}_USD"
     key2 = f"LONGPORT_FX_{ccy}_USD"
     for k in (key1, key2):
@@ -33,7 +32,7 @@ def _from_env(ccy: str) -> Optional[float]:
     return None
 
 
-def _from_config(ccy: str) -> Optional[float]:
+def _from_config(ccy: str) -> float | None:
     try:
         cfg = load_cfg() or {}
     except Exception:
@@ -58,7 +57,7 @@ def _from_config(ccy: str) -> Optional[float]:
     return None
 
 
-def get_rate_to_usd(ccy: str) -> Optional[float]:
+def get_rate_to_usd(ccy: str) -> float | None:
     """Return FX rate for CCY->USD if available.
 
     ccy: Base currency code (e.g., "HKD").
@@ -71,7 +70,7 @@ def get_rate_to_usd(ccy: str) -> Optional[float]:
     return _from_env(c) or _from_config(c)
 
 
-def to_usd(amount: float, ccy: str) -> Optional[float]:
+def to_usd(amount: float, ccy: str) -> float | None:
     """Convert amount from ccy into USD using available sources.
 
     Returns converted amount or None if no rate is available.

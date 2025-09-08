@@ -3,10 +3,11 @@
 Handles command logic for data loading.
 """
 
-from ..utils.logging import get_logger
 from pathlib import Path
-from typing import Optional, Set
+
 import pandas as pd
+
+from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -38,7 +39,7 @@ def run_load_data(
         from ..load_data_to_db import main as load_main
 
         # Parse optional tickers whitelist
-        wl: Optional[Set[str]] = None
+        wl: set[str] | None = None
         if tickers_file:
             path = Path(tickers_file)
             if not path.exists():

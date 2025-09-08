@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parent.parent
 AI_DIR = ROOT / "outputs" / "ai_pick"
 PRELIM_DIR = ROOT / "outputs" / "preliminary"

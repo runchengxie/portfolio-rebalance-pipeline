@@ -5,7 +5,6 @@ Handles command logic for position adjustments.
 
 from pathlib import Path
 
-from ..renderers.table import render_rebalance_plan
 from ..renderers.diff import render_rebalance_diff
 from ..services.account_snapshot import get_account_snapshot, get_quotes
 from ..services.rebalancer import RebalanceService
