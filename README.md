@@ -22,6 +22,36 @@
 
 * 复制 `config/template.yaml` 为 `config/config.yaml`。
 
+环境变量要点（.env）：
+
+| 变量 | 示例 | 说明 |
+| --- | --- | --- |
+| `GEMINI_API_KEY[_2|_3]` | `xxxx` | Gemini API 密钥（可多把，轮换限流） |
+| `LONGPORT_REGION` | `cn` | 长桥区域：`hk` 或 `cn` |
+| `LONGPORT_ENABLE_OVERNIGHT` | `true` | 是否启用隔夜行情（预览友好） |
+| `LONGPORT_APP_KEY` / `LONGPORT_APP_SECRET` | `...` | 长桥应用凭据 |
+| `LONGPORT_ACCESS_TOKEN` | `...` | 真实账户访问令牌 |
+| `LONGPORT_MAX_NOTIONAL_PER_ORDER` | `20000` | 本地单笔名义金额上限（0=不限制） |
+| `LONGPORT_MAX_QTY_PER_ORDER` | `500` | 本地单笔数量上限（0=不限制） |
+| `LONGPORT_TRADING_WINDOW_START/END` | `09:30/16:00` | 本地交易时间窗（降级判定） |
+
+可选成本模型与碎股预览（config.yaml）：
+
+```yaml
+# 复制 config/template.yaml 为 config/config.yaml 后可按需开启
+fees:
+  domicile: HK
+  commission: 0.0
+  platform_per_share: 0.005
+  fractional_pct_lt1: 0.012
+  fractional_cap_lt1: 0.99
+  sell_reg_fees_bps: 0.0
+
+fractional_preview:
+  enable: true
+  default_step: 0.001
+```
+
 ### 阶段一：数据准备与量化初筛
 
 1. 步骤 1：只导财报数据进sqlite数据库，跳过价格
@@ -66,8 +96,7 @@
     stockq gen-whitelist --from preliminary --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
 
     可选：AI 精选作为来源
-    stockq gen-whitelist --from ai --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end
-  2025-07-02
+    stockq gen-whitelist --from ai --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
 
     仅导白名单价格，并裁日期
     stockq load-data --only-prices --tickers-file outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
@@ -78,7 +107,7 @@
         * 初筛：`outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx`
         * AI：`outputs/point_in_time_ai_stock_picks_all_sheets.xlsx`
 
-5. 步骤 4: 运行 AI 筛选组合的回测
+5. 步骤 5: 运行 AI 筛选组合的回测
 
     此脚本读取 AI 筛选的股票列表，使用`backtrader`引擎进行回测，并生成最终的累计收益图和性能指标。
 
@@ -110,7 +139,26 @@
     stockq lb-account --format json
    ```
 
-6. 执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance`命令默认使用真实账户进行干跑预览，只有添加 `--execute` 时才会真实下单。
+6. 生成可编辑的调仓目标（targets JSON）并执行调仓
+
+    为避免“回测产物 = 实盘目标”的耦合，实盘调仓目标与 AI pick 拆分：
+
+    - 先从最新一期 AI 结果生成一份独立的 targets JSON（可手动修订）。
+    - 再用 `lb-rebalance` 读取这份 targets JSON 进行干跑/执行。
+
+    生成 targets JSON（默认从 AI Excel 的最新 sheet 抽取）：
+
+    ```bash
+    # 生成 outputs/targets/{YYYY-MM-DD}.json
+    stockq targets gen --from ai
+
+    # 或者显式指定 Excel/日期/输出位置
+    stockq targets gen --from ai --excel outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --asof 2025-09-05 --out outputs/targets/2025-09-05.json
+    ```
+
+    你可以手动编辑这份 JSON（增加/删除票、加权重/备注），AI 回测产物不会被污染。
+
+    执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance`命令默认使用真实账户进行干跑预览，只有添加 `--execute` 时才会真实下单。
 
     请在执行前务必理解以下**行为矩阵**：
 
@@ -121,10 +169,17 @@
 
     推荐的执行流程：
 
-    * 测试环境模拟（Dry-Run）:
+    输入文件支持：targets JSON（推荐）或 AI Excel（总表）。
+
+    示例流程：
+
+    * 干跑预览（推荐先预览）:
 
         ```bash
-        # 预览真实账户调仓计划（不下单）
+        # 使用 targets JSON（推荐）
+        stockq lb-rebalance outputs/targets/2025-09-05.json
+
+        # 向后兼容：直接读取 AI Excel 最新期
         stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
         ```
 
@@ -134,6 +189,10 @@
 
         ```bash
         # 确认所有信息无误后，才执行真实下单
+        # 使用 targets JSON 执行（谨慎）
+        stockq lb-rebalance outputs/targets/2025-09-05.json --execute
+
+        # 或：AI Excel 最新期（谨慎）
         stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
         ```
 
@@ -358,6 +417,9 @@
 6. `us-companies.csv`: 公司基本信息，用于丰富报告。
 
 *本项目使用的原始数据可从SimFin获取。请确保下载的CSV文件格式与说明一致。*
+
+提示：请预留数 GB 级别的磁盘空间（取决于历史覆盖范围与价格频率）。
+将上述 CSV 放入 `data/` 目录后再运行导入命令。建议在下载完成后检查列名/行数是否与示例相符，以避免因字段变更导致的导入失败。
 
 ## 输出文件
 

@@ -42,6 +42,7 @@ def create_parser() -> argparse.ArgumentParser:
   stockq lb-account --format json  JSON格式输出
   stockq lb-rebalance results.xlsx             真实账户干跑预览 (Dry-Run)
   stockq lb-rebalance results.xlsx --execute   真实账户实际执行 (谨慎操作)
+  stockq targets gen --from ai                 从最新AI选股生成可编辑的调仓目标JSON
         """,
     )
 
@@ -219,13 +220,18 @@ def create_parser() -> argparse.ArgumentParser:
     # LongPort rebalance command
     lb_rebalance_parser = subparsers.add_parser(
         "lb-rebalance",
-        help="根据AI选股结果调整仓位",
-        description="读取AI选股结果文件，生成仓位调整订单（默认干跑模式）",
+        help="根据目标组合调整仓位",
+        description=(
+            "读取调仓目标（targets JSON 或 AI Excel），生成仓位调整订单（默认干跑模式）"
+        ),
     )
     lb_rebalance_parser.add_argument(
         "input_file",
         type=str,
-        help="AI选股结果文件路径（如 outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）",
+        help=(
+            "目标输入文件：可为 targets JSON（推荐，如 outputs/targets/2025-09-05.json）"
+            "或 AI Excel（如 outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"
+        ),
     )
     lb_rebalance_parser.add_argument(
         "--account", type=str, default="main", help="账户名称（默认：main）"
@@ -274,6 +280,47 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=True,
         help="显示配置（默认）",
+    )
+
+    # Targets command group
+    targets_parser = subparsers.add_parser(
+        "targets",
+        help="生成与管理实盘调仓目标（targets JSON）",
+        description=(
+            "将最新一期AI/初筛结果平移为独立的调仓目标JSON，便于人工修订与留痕"
+        ),
+    )
+    targets_sub = targets_parser.add_subparsers(dest="targets_cmd", metavar="SUB")
+    t_gen = targets_sub.add_parser(
+        "gen",
+        help="从AI/初筛结果生成targets JSON",
+        description=(
+            "默认读取AI Excel最新sheet，输出到 outputs/targets/{asof}.json，可手动编辑"
+        ),
+    )
+    t_gen.add_argument(
+        "--from",
+        dest="source",
+        choices=["ai", "preliminary"],
+        default="ai",
+        help="来源：ai 或 preliminary（默认：ai）",
+    )
+    t_gen.add_argument(
+        "--excel",
+        type=str,
+        help=(
+            "可选：显式指定来源Excel（默认：AI总表 outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"
+        ),
+    )
+    t_gen.add_argument(
+        "--asof",
+        type=str,
+        help="可选：指定sheet日期（YYYY-MM-DD）；默认取最新sheet",
+    )
+    t_gen.add_argument(
+        "--out",
+        type=str,
+        help="可选：输出路径（默认：outputs/targets/{asof}.json）",
     )
 
     return parser
@@ -383,6 +430,20 @@ def main() -> int:
             from .commands.lb_config import run_lb_config
 
             return run_lb_config(getattr(args, "show", True))
+        elif args.command == "targets":
+            from .commands.targets import run_targets_gen
+
+            sub = getattr(args, "targets_cmd", None)
+            if sub == "gen":
+                return run_targets_gen(
+                    source=getattr(args, "source", "ai"),
+                    excel=getattr(args, "excel", None),
+                    out=getattr(args, "out", None),
+                    asof=getattr(args, "asof", None),
+                )
+            else:
+                parser.print_help()
+                return 0
         else:
             from .utils.logging import get_logger
 
