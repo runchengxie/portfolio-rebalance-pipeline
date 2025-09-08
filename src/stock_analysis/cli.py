@@ -14,6 +14,7 @@ from .commands.lb_account import run_lb_account  # noqa: F401
 from .commands.lb_quote import run_lb_quote  # noqa: F401
 from .commands.lb_rebalance import run_lb_rebalance  # noqa: F401
 from .commands.load_data import run_load_data  # noqa: F401
+from .commands.lb_config import run_lb_config  # noqa: F401
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -262,6 +263,19 @@ def create_parser() -> argparse.ArgumentParser:
         help="输出格式：table 表格 / json JSON格式",
     )
 
+    # LongPort configuration display
+    lb_cfg_parser = subparsers.add_parser(
+        "lb-config",
+        help="显示 LongPort 相关环境配置",
+        description="读取环境变量并显示LongPort区域、隔夜、下单上限与交易时段等配置",
+    )
+    lb_cfg_parser.add_argument(
+        "--show",
+        action="store_true",
+        default=True,
+        help="显示配置（默认）",
+    )
+
     return parser
 
 
@@ -365,6 +379,10 @@ def main() -> int:
                 only_positions=getattr(args, "positions", False),
                 fmt=getattr(args, "format", "table"),
             )
+        elif args.command == "lb-config":
+            from .commands.lb_config import run_lb_config
+
+            return run_lb_config(getattr(args, "show", True))
         else:
             from .utils.logging import get_logger
 

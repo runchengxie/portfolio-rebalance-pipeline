@@ -52,8 +52,9 @@ class Env(str, Enum):
 
 @dataclass
 class BrokerLimits:
-    max_notional_per_order: float = 20000.0  # Maximum amount per order
-    max_qty_per_order: int = 500  # Maximum shares per order (US stock example)
+    # 0 or negative means "no local cap" (unlimited, rely on broker)
+    max_notional_per_order: float = 0.0
+    max_qty_per_order: int = 0
     trading_window_start: str = "09:30"  # Local time (fallback only)
     trading_window_end: str = "16:00"
 
@@ -162,7 +163,49 @@ class LongPortClient:
 
         self.quote = QuoteContext(self.config)
         self.trade = TradeContext(self.config)
-        self.limits = limits or BrokerLimits()
+
+        # Build limits from env if not explicitly provided. 0 means unlimited.
+        if limits is None:
+            def _to_float(v: str | None, default: float = 0.0) -> float:
+                try:
+                    return float(str(v)) if v is not None else default
+                except Exception:
+                    return default
+
+            def _to_int(v: str | None, default: int = 0) -> int:
+                try:
+                    return int(float(str(v))) if v is not None else default
+                except Exception:
+                    return default
+
+            max_notional_env = getenv_both(
+                "LONGPORT_MAX_NOTIONAL_PER_ORDER",
+                "LONGBRIDGE_MAX_NOTIONAL_PER_ORDER",
+                "0",
+            )
+            max_qty_env = getenv_both(
+                "LONGPORT_MAX_QTY_PER_ORDER",
+                "LONGBRIDGE_MAX_QTY_PER_ORDER",
+                "0",
+            )
+            tw_start = getenv_both(
+                "LONGPORT_TRADING_WINDOW_START",
+                "LONGBRIDGE_TRADING_WINDOW_START",
+                "09:30",
+            )
+            tw_end = getenv_both(
+                "LONGPORT_TRADING_WINDOW_END",
+                "LONGBRIDGE_TRADING_WINDOW_END",
+                "16:00",
+            )
+            self.limits = BrokerLimits(
+                max_notional_per_order=_to_float(max_notional_env, 0.0),
+                max_qty_per_order=_to_int(max_qty_env, 0),
+                trading_window_start=str(tw_start or "09:30"),
+                trading_window_end=str(tw_end or "16:00"),
+            )
+        else:
+            self.limits = limits
 
         enable_overnight = getenv_both(
             "LONGPORT_ENABLE_OVERNIGHT", "LONGBRIDGE_ENABLE_OVERNIGHT", "false"
@@ -706,9 +749,16 @@ class LongPortClient:
                 else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
             )
             notional = px * qty
-            if notional > self.limits.max_notional_per_order:
-                raise RuntimeError(
-                    f"超过单笔金额上限 ${self.limits.max_notional_per_order:,.0f}"
+            # Do not enforce local notional cap in dry run; broker will enforce actual limits.
+            if (
+                self.limits.max_notional_per_order
+                and self.limits.max_notional_per_order > 0
+                and notional > self.limits.max_notional_per_order
+            ):
+                logger.warning(
+                    "估算成交金额 %.2f 超过本地预设上限 %.0f，继续（干跑模式不拦截）",
+                    notional,
+                    self.limits.max_notional_per_order,
                 )
             return {
                 "env": self.env.value,
@@ -724,7 +774,7 @@ class LongPortClient:
         # Real order: strict checks
         self._check_window(symbol_formatted)  # Original logic called here again
         self._check_lot(symbol_formatted, qty)
-        if qty > self.limits.max_qty_per_order:
+        if self.limits.max_qty_per_order and qty > self.limits.max_qty_per_order:
             raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
         px = (
             float(est_px)
@@ -732,9 +782,16 @@ class LongPortClient:
             else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
         )
         notional = px * qty
-        if notional > self.limits.max_notional_per_order:
-            raise RuntimeError(
-                f"超过单笔金额上限 ${self.limits.max_notional_per_order:,.0f}"
+        # Do not enforce local notional cap; rely on broker-side risk control instead.
+        if (
+            self.limits.max_notional_per_order
+            and self.limits.max_notional_per_order > 0
+            and notional > self.limits.max_notional_per_order
+        ):
+            logger.warning(
+                "估算成交金额 %.2f 超过本地预设上限 %.0f，继续下单（以券商风控为准）",
+                notional,
+                self.limits.max_notional_per_order,
             )
 
         # TODO: Call LongPort real order interface (left blank to avoid accidental triggering)

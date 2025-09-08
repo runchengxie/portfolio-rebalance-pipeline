@@ -93,6 +93,9 @@
     在执行任何交易操作前，先验证 API 连接和账户状态（默认连接真实账户，预览不下单）。
 
     ```bash
+    # 查看LongPort相关环境配置（区域、隔夜、上限、交易时段等）
+    stockq lb-config --show
+
     # 验证API凭据和实时报价功能是否正常
     stockq lb-quote AAPL MSFT
 
@@ -431,6 +434,18 @@
     
     # 使用真实账户 Token 即可
     LONGPORT_ACCESS_TOKEN="your_real_access_token_here"
+    ```
+
+    可选：本地风控与交易时段（不设置则为无限制或默认时段）
+
+    ```dotenv
+    # 0 表示无限制，仅做本地预防；实盘仍以券商风控为准
+    LONGPORT_MAX_NOTIONAL_PER_ORDER="0"     # 单笔金额上限(USD)，如 20000
+    LONGPORT_MAX_QTY_PER_ORDER="0"          # 单笔数量上限(股)，如 500
+
+    # 交易时间窗（仅作为降级判定；若能获取到券商会话时间，以会话为准）
+    LONGPORT_TRADING_WINDOW_START="09:30"
+    LONGPORT_TRADING_WINDOW_END="16:00"
     ```
 
 3. 配置回测参数:
