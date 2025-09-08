@@ -125,3 +125,32 @@ def test_validate_prelim_missing_warning(tmp_path: Path) -> None:
 
     issues = mod.validate_ai_file(ai_path)
     assert any("preliminary candidates not found" in s for s in issues), issues
+
+
+def test_filename_trade_date_mismatch(tmp_path: Path) -> None:
+    mod = _import_validator()
+
+    file_date = "2099-01-05"
+    trade_date = "2099-01-06"  # intentionally different from file name
+    year = file_date[:4]
+
+    # Minimal valid picks
+    ai_picks = [
+        {"rank": 1, "ticker": "AAPL", "confidence": 7},
+    ]
+    ai_obj = {
+        "schema_version": 1,
+        "source": "ai_pick",
+        "trade_date": trade_date,
+        "data_cutoff_date": trade_date,
+        "universe": "US",
+        "model": "gpt-4o-mini",
+        "prompt_version": "v1",
+        "params": {"top_n": len(ai_picks)},
+        "picks": ai_picks,
+    }
+    ai_path = PROJECT_ROOT / "outputs" / "ai_pick" / year / f"{file_date}.json"
+    _write_json(ai_path, ai_obj)
+
+    issues = mod.validate_ai_file(ai_path)
+    assert any("file name/date mismatch" in s for s in issues), issues
