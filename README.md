@@ -62,7 +62,7 @@ fractional_preview:
 
 2. 步骤 2: 运行量化初筛策略
 
-    此脚本执行多因子选股逻辑，并将每个季度的前20名候选股保存到`outputs/`目录的Excel文件中。
+    此脚本执行多因子选股逻辑，并将每个季度的前20名候选股保存到`outputs/`目录的 Excel 总表和分期 JSON 文件中。
 
     ```bash
     stockq preliminary
@@ -72,7 +72,7 @@ fractional_preview:
 
 3. 步骤 3: 运行 AI 筛选策略
 
-    此脚本读取上一步生成的 Excel 文件，提交给`gemini-2.5-pro`进行分析，并将 AI 筛选的10只股票及其分析理由保存到新的Excel文件中。
+    此脚本读取上一步生成的 Excel 文件，提交给`gemini-2.5-pro`进行分析，并将 AI 筛选的 10 只股票及其分析理由保存到新的 Excel 文件，同时输出对应的 JSON 文件。
 
     ```bash
     stockq ai-pick
@@ -102,14 +102,19 @@ fractional_preview:
     stockq load-data --only-prices --tickers-file outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
     ```
 
-    * 不传 --excel 时，默认读取：
+    * 不传 --excel 时，回测默认优先读取：
+
+        * 初筛：`outputs/preliminary/`（按日期拆分的 JSON 文件）
+        * AI：`outputs/ai_pick/`（按日期拆分的 JSON 文件）
+
+      若上述目录不存在，则回退到 Excel：
 
         * 初筛：`outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx`
         * AI：`outputs/point_in_time_ai_stock_picks_all_sheets.xlsx`
 
 5. 步骤 5: 运行 AI 筛选组合的回测
 
-    此脚本读取 AI 筛选的股票列表，使用`backtrader`引擎进行回测，并生成最终的累计收益图和性能指标。
+    此脚本读取 AI 筛选的股票列表，使用`backtrader`引擎进行回测，并生成最终的累计收益图和性能指标。默认情况下，它会优先从 `outputs/ai_pick/` 和 `outputs/preliminary/` 目录中按日期读取 JSON 文件；若缺失则回退到对应的 Excel 文件。
 
     ```bash
     stockq backtest ai
@@ -423,11 +428,15 @@ fractional_preview:
 
 ## 输出文件
 
-脚本执行成功后，会在`outputs/`目录下生成以下文件：
+脚本执行成功后，会在`outputs/`目录下生成以下文件/目录：
 
-* `point_in_time_backtest_quarterly_sp500_historical.xlsx`: [量化初筛结果] 每个季度筛选出的前 20 名候选股票。
+* `preliminary/`：按调仓日拆分的量化初筛 JSON 文件（回测默认读取）。
 
-* `point_in_time_ai_stock_picks_all_sheets.xlsx`: [AI 精选结果] AI 从候选池中筛选出的 10 只股票，包含置信度和详细理由。
+* `ai_pick/`：按调仓日拆分的 AI 精选 JSON 文件（回测默认读取）。
+
+* `point_in_time_backtest_quarterly_sp500_historical.xlsx`： [量化初筛结果] 每个季度筛选出的前 20 名候选股票。
+
+* `point_in_time_ai_stock_picks_all_sheets.xlsx`： [AI 精选结果] AI 从候选池中筛选出的 10 只股票，包含置信度和详细理由。
 
 * `ai_quarterly_strategy_returns.png`: [AI 策略回测图] 最终 AI 精选组合的累计收益曲线图。
 

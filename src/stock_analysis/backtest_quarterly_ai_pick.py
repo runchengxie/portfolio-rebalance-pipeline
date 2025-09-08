@@ -6,8 +6,12 @@ from .backtest.engine import generate_report, run_quarterly_backtest
 from .backtest.prep import load_portfolios, load_price_feeds
 from .utils.config import get_backtest_period, get_initial_cash
 from .utils.logging import setup_logging
-from .utils.paths import AI_PORTFOLIO_FILE as PORTFOLIO_FILE
-from .utils.paths import DB_PATH, OUTPUTS_DIR
+from .utils.paths import (
+    AI_PORTFOLIO_FILE,
+    AI_PORTFOLIO_JSON_DIR,
+    DB_PATH,
+    OUTPUTS_DIR,
+)
 
 # Setup logging
 logger = setup_logging("ai_backtest", "ai_backtest.log")
@@ -27,8 +31,15 @@ def main():
     print("--- Running Quarterly AI Pick Backtest (Database Mode) ---")
 
     try:
+        # Prefer JSON directory if present, otherwise fall back to Excel workbook
+        portfolio_path = (
+            AI_PORTFOLIO_JSON_DIR
+            if AI_PORTFOLIO_JSON_DIR.exists()
+            else AI_PORTFOLIO_FILE
+        )
+
         # Load portfolio data (AI selection version)
-        portfolios = load_portfolios(PORTFOLIO_FILE, is_ai_selection=True)
+        portfolios = load_portfolios(portfolio_path, is_ai_selection=True)
     except FileNotFoundError as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         sys.exit(1)
