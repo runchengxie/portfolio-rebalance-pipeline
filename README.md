@@ -117,6 +117,9 @@ fractional_preview:
     - `outputs/preliminary/YYYY/YYYY-MM-DD.json`
     - `outputs/ai_pick/YYYY/YYYY-MM-DD.json`
 
+    提示：AI JSON 可由 `stockq ai-pick` 直接生成，或通过
+    `stockq export --from ai --direction excel-to-json` 从 AI 总表导出。
+
 4. 导入价格数据进sqlite数据库
 
     ```bash
@@ -179,14 +182,20 @@ fractional_preview:
     - 先从最新一期 AI 结果生成一份独立的 targets JSON（可手动修订）。
     - 再用 `lb-rebalance` 读取这份 targets JSON 进行干跑/执行。
 
-    生成 targets JSON（默认从 AI Excel 的最新 sheet 抽取）：
+    生成 targets JSON（默认读取最新 AI JSON，按文件名日期选取）：
 
     ```bash
-    # 生成 outputs/targets/{YYYY-MM-DD}.json
+    # 生成 outputs/targets/{YYYY-MM-DD}.json（自动选取最新 AI JSON）
     stockq targets gen --from ai
     
-    # 或者显式指定 Excel/日期/输出位置
-    stockq targets gen --from ai --excel outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --asof 2025-09-05 --out outputs/targets/2025-09-05.json
+    # 指定日期（按 outputs/ai_pick/YYYY/{asof}.json 匹配）
+    stockq targets gen --from ai --asof 2025-09-05
+    
+    # 或者显式指定 Excel/日期/输出位置（Excel 兜底/兼容旧流程）
+    stockq targets gen --from ai \
+      --excel outputs/point_in_time_ai_stock_picks_all_sheets.xlsx \
+      --asof 2025-09-05 \
+      --out outputs/targets/2025-09-05.json
     ```
 
     你可以手动编辑这份 JSON（增加/删除票、加权重/备注），AI 回测产物不会被污染。
@@ -210,7 +219,7 @@ fractional_preview:
 
         ```bash
         # 使用 targets JSON（推荐）
-        stockq lb-rebalance outputs/targets/2025-09-05.json
+        stockq lb-rebalance outputs/targets/2025-07-02.json
         
         # 向后兼容：直接读取 AI Excel 最新期
         stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
@@ -233,7 +242,7 @@ fractional_preview:
 
 * 创建数据库（WSL/Linux 全量重建）
 
-    使用一键全量重建脚本，跨平台、可重复并且更快：
+    使用一键全量重建脚本，跨平台、可重复：
 
     ```bash
     bash scripts/rebuild_db.sh
@@ -246,7 +255,7 @@ fractional_preview:
 
     - 建立必要索引并优化数据库。
 
-    如需最简方式也可执行：
+    如需最简方式也可执行（但由于没有调用sqlite原生基于C语言设计的导入机制，所以速度更慢）：
 
     ```bash
     stockq load-data

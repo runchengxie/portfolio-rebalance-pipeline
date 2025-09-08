@@ -295,7 +295,8 @@ def create_parser() -> argparse.ArgumentParser:
         "gen",
         help="从AI/初筛结果生成targets JSON",
         description=(
-            "默认读取AI Excel最新sheet，输出到 outputs/targets/{asof}.json，可手动编辑"
+            "默认读取最新AI JSON（按文件名日期选取），输出到 outputs/targets/{asof}.json，可手动编辑；"
+            "如显式提供 --excel 则改为从该Excel的最新/指定sheet生成"
         ),
     )
     t_gen.add_argument(
