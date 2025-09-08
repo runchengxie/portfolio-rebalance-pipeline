@@ -4,8 +4,12 @@ import time
 from .backtest.engine import generate_report, run_quarterly_backtest
 from .backtest.prep import load_portfolios, load_price_feeds
 from .utils.config import get_backtest_period, get_initial_cash
-from .utils.paths import DB_PATH, OUTPUTS_DIR
-from .utils.paths import QUANT_PORTFOLIO_FILE as PORTFOLIO_FILE
+from .utils.paths import (
+    DB_PATH,
+    OUTPUTS_DIR,
+    QUANT_PORTFOLIO_FILE,
+    QUANT_PORTFOLIO_JSON_DIR,
+)
 
 # Strategy classes and helper functions have been moved to backtest.engine and backtest.prep modules
 
@@ -15,8 +19,15 @@ def main():
     print("--- Running Quarterly Point-in-Time Backtest (Database Mode) ---")
 
     try:
+        # Prefer JSON directory if present, otherwise fall back to Excel workbook
+        portfolio_path = (
+            QUANT_PORTFOLIO_JSON_DIR
+            if QUANT_PORTFOLIO_JSON_DIR.exists()
+            else QUANT_PORTFOLIO_FILE
+        )
+
         # Load portfolio data (unselected version)
-        portfolios = load_portfolios(PORTFOLIO_FILE, is_ai_selection=False)
+        portfolios = load_portfolios(portfolio_path, is_ai_selection=False)
     except FileNotFoundError as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         sys.exit(1)

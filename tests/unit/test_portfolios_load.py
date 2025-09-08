@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import json
 
 from stock_analysis.backtest.prep import load_portfolios, tidy_ticker
 
@@ -285,6 +286,54 @@ class TestLoadPortfolios:
         assert df["Weight"].tolist() == [0.6, 0.4]
         assert df["Sector"].tolist() == ["Technology", "Technology"]
         assert df["Score"].tolist() == [0.85, 0.92]
+
+    def test_load_preliminary_json_directory(self, tmp_path):
+        """测试从预筛选JSON目录加载"""
+        data = {
+            "schema_version": 1,
+            "source": "preliminary",
+            "trade_date": "2022-01-01",
+            "rows": [
+                {"ticker": "  aapl_DELISTED  ", "rank": 1},
+                {"ticker": "MSFT", "rank": 2},
+                {"ticker": "", "rank": 3},
+            ],
+        }
+        year_dir = tmp_path / "2022"
+        year_dir.mkdir()
+        (year_dir / "2022-01-01.json").write_text(
+            json.dumps(data), encoding="utf-8"
+        )
+
+        portfolios = load_portfolios(tmp_path, is_ai_selection=False)
+
+        assert len(portfolios) == 1
+        df = portfolios[datetime.date(2022, 1, 1)]
+        assert df["Ticker"].tolist() == ["AAPL", "MSFT"]
+
+    def test_load_ai_json_directory(self, tmp_path):
+        """测试从AI选股JSON目录加载"""
+        data = {
+            "schema_version": 1,
+            "source": "ai_pick",
+            "trade_date": "2022-01-01",
+            "picks": [
+                {"ticker": "aapl", "confidence": 0.9},
+                {"ticker": "MSFT_DELISTED", "confidence": 0.8},
+                {"ticker": ""},
+            ],
+        }
+        year_dir = tmp_path / "2022"
+        year_dir.mkdir()
+        (year_dir / "2022-01-01.json").write_text(
+            json.dumps(data), encoding="utf-8"
+        )
+
+        portfolios = load_portfolios(tmp_path, is_ai_selection=True)
+
+        assert len(portfolios) == 1
+        df = portfolios[datetime.date(2022, 1, 1)]
+        assert df["Ticker"].tolist() == ["AAPL", "MSFT"]
 
 
 class TestLoadPortfoliosIntegration:
