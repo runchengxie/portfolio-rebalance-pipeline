@@ -8,7 +8,7 @@
 
 ![AI策略回测示例](assets/ai_quarterly_strategy_returns.png)
 
-对比
+相比SPY，该策略有相对更低的回撤和略微更高的总收益
 
 *(上图为AI策略在2021-04-01至2025-07-01期间的回测表现示例)*
 
