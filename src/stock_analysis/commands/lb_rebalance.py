@@ -9,6 +9,7 @@ from ..renderers.diff import render_rebalance_diff
 from ..services.account_snapshot import get_account_snapshot, get_quotes
 from ..services.rebalancer import RebalanceService
 from ..utils.excel import read_latest_sheet_tickers
+from ..utils.targets import read_targets_json
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -53,14 +54,22 @@ def run_lb_rebalance(
             logger.error(f"文件不存在: {input_file}")
             return 1
 
-        # Read target stock list
+        # Read target stock list (JSON targets or Excel latest sheet)
         try:
-            tickers, sheet_name = read_latest_sheet_tickers(file_path)
-            logger.info(
-                f"成功读取文件，使用 sheet: {sheet_name}，包含 {len(tickers)} 条记录"
-            )
+            if file_path.suffix.lower() == ".json":
+                tg = read_targets_json(file_path)
+                tickers = tg.tickers
+                sheet_name = tg.asof or file_path.stem
+                logger.info(
+                    f"成功读取 targets JSON: {file_path.name}（asof={sheet_name}），包含 {len(tickers)} 条记录"
+                )
+            else:
+                tickers, sheet_name = read_latest_sheet_tickers(file_path)
+                logger.info(
+                    f"成功读取Excel，使用 sheet: {sheet_name}，包含 {len(tickers)} 条记录"
+                )
         except Exception as e:
-            logger.error(f"读取Excel文件失败：{e}")
+            logger.error(f"读取输入文件失败：{e}")
             return 1
 
         # Build single client throughout the process to avoid repeated initialization causing multiple permission table prints
