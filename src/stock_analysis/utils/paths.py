@@ -37,6 +37,10 @@ QUANT_PORTFOLIO_FILE = (
     OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"
 )
 
+# JSON portfolio directories (per-date files)
+AI_PORTFOLIO_JSON_DIR = OUTPUTS_DIR / "ai_pick"
+QUANT_PORTFOLIO_JSON_DIR = OUTPUTS_DIR / "preliminary"
+
 # Backtest configuration constants
 DEFAULT_INITIAL_CASH = 1_000_000.0
 SPY_INITIAL_CASH = 100_000.0

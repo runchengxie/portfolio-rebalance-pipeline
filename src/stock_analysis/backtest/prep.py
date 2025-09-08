@@ -6,6 +6,7 @@ Provides portfolio loading and data alignment functionality, unified handling of
 import datetime
 import sqlite3
 import sys
+import json
 from pathlib import Path
 
 import backtrader as bt
@@ -30,44 +31,72 @@ def tidy_ticker(col: pd.Series) -> pd.Series:
     )
 
 
+
 def load_portfolios(
     portfolio_path: Path, is_ai_selection: bool = False
 ) -> dict[datetime.date, pd.DataFrame]:
-    """Load portfolio data
+    """Load portfolio data from Excel or JSON.
 
     Args:
-        portfolio_path: Excel file path
+        portfolio_path: Excel workbook path or JSON file/directory path
         is_ai_selection: Whether it's AI selection version, affects column name processing logic
 
     Returns:
         Dict[datetime.date, pd.DataFrame]: Portfolio dictionary with rebalance dates as keys
 
     Raises:
-        FileNotFoundError: When file does not exist
+        FileNotFoundError: When file or directory does not exist
     """
     if not portfolio_path.exists():
         raise FileNotFoundError(f"Portfolio file not found: {portfolio_path}")
 
+    portfolios: dict[datetime.date, pd.DataFrame] = {}
+
+    if portfolio_path.suffix.lower() == ".json" or portfolio_path.is_dir():
+        json_files = (
+            [portfolio_path]
+            if portfolio_path.is_file()
+            else sorted(portfolio_path.rglob("*.json"))
+        )
+        for fp in json_files:
+            try:
+                data = json.loads(fp.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            trade_date = data.get("trade_date")
+            if not trade_date:
+                continue
+
+            key = "picks" if is_ai_selection else "rows"
+            rows = data.get(key, [])
+            if not rows:
+                continue
+
+            df = pd.DataFrame(rows)
+            if "ticker" in df.columns and "Ticker" not in df.columns:
+                df.rename(columns={"ticker": "Ticker"}, inplace=True)
+
+            if "Ticker" in df.columns:
+                df["Ticker"] = tidy_ticker(df["Ticker"])
+                df = df.dropna(subset=["Ticker"])
+                if not df.empty:
+                    portfolios[pd.to_datetime(trade_date).date()] = df
+
+        return portfolios
+
     xls = pd.read_excel(portfolio_path, sheet_name=None, engine="openpyxl")
-    portfolios = {}
 
     for date_str, df in xls.items():
         if df.empty:
             continue
 
-        # Handle column name compatibility issues
-        if is_ai_selection:
-            # AI version: automatically handle column name case, compatible with 'ticker' and 'Ticker'
-            if "ticker" in df.columns and "Ticker" not in df.columns:
-                df.rename(columns={"ticker": "Ticker"}, inplace=True)
+        if is_ai_selection and "ticker" in df.columns and "Ticker" not in df.columns:
+            df.rename(columns={"ticker": "Ticker"}, inplace=True)
 
-        # Check if necessary columns are included
         if "Ticker" in df.columns:
-            # Clean Ticker column
             df["Ticker"] = tidy_ticker(df["Ticker"])
-            # Remove empty Tickers
             df = df.dropna(subset=["Ticker"])
-
             if not df.empty:
                 portfolios[pd.to_datetime(date_str).date()] = df
 
