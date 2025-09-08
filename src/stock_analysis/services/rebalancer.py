@@ -37,6 +37,121 @@ class RebalanceService:
             self.client.close()
             self.client = None
 
+    def _fetch_quotes(self, target_tickers: list[str]) -> dict[str, float]:
+        """Fetch quotes for given tickers."""
+        lb_symbols = [_to_lb_symbol(t.upper().strip()) for t in target_tickers]
+        quote_objs = get_quotes(lb_symbols, client=self._get_client())
+        return {sym: q.price for sym, q in quote_objs.items()}
+
+    def _compute_effective_total(
+        self,
+        account_snapshot: AccountSnapshot,
+        quotes: dict[str, float],
+        target_gross_exposure: float,
+    ) -> float:
+        """Compute effective total portfolio value after applying exposure."""
+        total_pos_value_recomp = 0.0
+        any_zero_priced = False
+        for pos in account_snapshot.positions:
+            px = float(quotes.get(pos.symbol, 0.0) or 0.0)
+            if px <= 0:
+                px = float(pos.last_price or 0.0)
+            if px <= 0 and pos.quantity > 0:
+                any_zero_priced = True
+                if float(pos.estimated_value or 0.0) > 0 and pos.quantity > 0:
+                    try:
+                        px = float(pos.estimated_value) / float(pos.quantity)
+                    except Exception:
+                        px = 0.0
+            val = px * float(pos.quantity)
+            if val <= 0 and float(pos.estimated_value or 0.0) > 0:
+                val = float(pos.estimated_value)
+            total_pos_value_recomp += val
+
+        cash_usd = float(account_snapshot.cash_usd or 0.0)
+        recomputed_total = cash_usd + float(total_pos_value_recomp)
+
+        snapshot_total = float(account_snapshot.total_portfolio_value or 0.0)
+
+        def _close(a: float, b: float) -> bool:
+            if a <= 0 and b <= 0:
+                return True
+            denom = max(1.0, abs(b))
+            return abs(a - b) <= 0.01 * denom
+
+        if (
+            snapshot_total > 0
+            and _close(snapshot_total, recomputed_total)
+            and not any_zero_priced
+        ):
+            effective_total = snapshot_total
+        else:
+            effective_total = recomputed_total
+
+        exposure = max(0.0, float(target_gross_exposure))
+        return effective_total * exposure
+
+    def _build_order(
+        self,
+        lb_symbol: str,
+        price: float,
+        current_qty: int,
+        target_value_per_stock: float,
+        allow_fractional: bool,
+        client: LongPortClient,
+        fs: FeeSchedule,
+        frac_enable: bool,
+        frac_step: Decimal,
+    ) -> tuple[Position, Order | None]:
+        """Build target position and corresponding order for a symbol."""
+        target_qty_raw = target_value_per_stock / price
+        lot_size = client.lot_size(lb_symbol)
+        target_qty = (int(target_qty_raw) // lot_size) * lot_size
+        target_qty_frac = Decimal(0)
+        if price > 0 and frac_enable:
+            target_qty_frac = (
+                Decimal(target_value_per_stock) / Decimal(price)
+            ).quantize(frac_step, rounding=ROUND_HALF_UP)
+        target_position = Position(
+            symbol=lb_symbol,
+            quantity=target_qty,
+            last_price=price,
+            estimated_value=target_qty * price,
+            env=self.env,
+        )
+
+        delta_qty = target_qty - current_qty
+        if abs(delta_qty) < lot_size:
+            logger.info(
+                f"跳过 {lb_symbol}：差额 {delta_qty} 小于最小交易单位 {lot_size}"
+            )
+            return target_position, None
+
+        side = "BUY" if delta_qty > 0 else "SELL"
+        qty_to_trade = abs(delta_qty)
+        order = Order(
+            symbol=lb_symbol,
+            quantity=qty_to_trade,
+            side=side,
+            price=price,
+            order_type="MARKET",
+        )
+        est_fee, frac_hint = estimate_fees(
+            side=side,
+            qty_int=qty_to_trade,
+            price=price,
+            any_fractional_lt1=(target_qty_frac > 0 and target_qty_frac < 1),
+            fs=fs,
+        )
+        order.est_fees = est_fee
+        order.est_frac_hint = frac_hint
+        if frac_enable:
+            order.target_qty_frac = float(target_qty_frac)
+            order.rounded_target_qty = int(target_qty)
+            order.rounding_loss = float(target_qty_frac - Decimal(int(target_qty)))
+
+        return target_position, order
+
     def plan_rebalance(
         self,
         target_tickers: list[str],
@@ -57,82 +172,18 @@ class RebalanceService:
         if not target_tickers:
             raise ValueError("目标股票列表不能为空")
 
-        # Get real-time quotes (fetch internally if not provided)
         if quotes is None:
-            lb_symbols = [
-                _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
-            ]
             try:
-                quote_objs = get_quotes(lb_symbols, client=self._get_client())
-                # 转为简单价格映射
-                quotes = {sym: q.price for sym, q in quote_objs.items()}
+                quotes = self._fetch_quotes(target_tickers)
             except Exception as e:
                 logger.error(f"获取报价失败: {e}")
                 raise
 
-        # Calculate equal-weight target positions.
-        # Robust effective_total:
-        # - Prefer recomputing from positions using quotes/last_price when snapshot total looks like just cash or mismatched.
-        # - Fall back to broker-reported total only when it closely matches recomputed value.
         n_stocks = len(target_tickers)
 
-        # Ensure we have quotes if needed
-        if quotes is None:
-            lb_symbols = [
-                _to_lb_symbol(ticker.upper().strip()) for ticker in target_tickers
-            ]
-            try:
-                quote_objs = get_quotes(lb_symbols, client=self._get_client())
-                quotes = {sym: q.price for sym, q in quote_objs.items()}
-            except Exception:
-                quotes = {}
-
-        # Revalue current positions: prefer provided quotes -> last_price -> estimated_value/qty -> 0
-        total_pos_value_recomp = 0.0
-        any_zero_priced = False
-        for pos in account_snapshot.positions:
-            px = float((quotes or {}).get(pos.symbol, 0.0) or 0.0)
-            if px <= 0:
-                px = float(pos.last_price or 0.0)
-            if px <= 0 and pos.quantity > 0:
-                any_zero_priced = True
-                # As a last resort, derive price from estimated_value if available
-                if float(pos.estimated_value or 0.0) > 0 and pos.quantity > 0:
-                    try:
-                        px = float(pos.estimated_value) / float(pos.quantity)
-                    except Exception:
-                        px = 0.0
-            val = px * float(pos.quantity)
-            # If still zero, fallback to estimated_value (useful for funds/NAV that may not have quotes)
-            if val <= 0 and float(pos.estimated_value or 0.0) > 0:
-                val = float(pos.estimated_value)
-            total_pos_value_recomp += val
-
-        cash_usd = float(account_snapshot.cash_usd or 0.0)
-        recomputed_total = cash_usd + float(total_pos_value_recomp)
-
-        snapshot_total = float(account_snapshot.total_portfolio_value or 0.0)
-
-        # Consider snapshot reliable if close (within 1%) to recomputed_total and no obviously unpriced holdings
-        def _close(a: float, b: float) -> bool:
-            if a <= 0 and b <= 0:
-                return True
-            denom = max(1.0, abs(b))
-            return abs(a - b) <= 0.01 * denom
-
-        if (
-            snapshot_total > 0
-            and _close(snapshot_total, recomputed_total)
-            and not any_zero_priced
-        ):
-            effective_total = snapshot_total
-        else:
-            effective_total = recomputed_total
-
-        # Apply gross exposure (default 1.0)
-        exposure = max(0.0, float(target_gross_exposure))
-        effective_total *= exposure
-
+        effective_total = self._compute_effective_total(
+            account_snapshot, quotes, target_gross_exposure
+        )
         target_value_per_stock = effective_total / max(1, n_stocks)
 
         # Build current position mapping
@@ -162,83 +213,29 @@ class RebalanceService:
             symbol = ticker.upper().strip()
             lb_symbol = _to_lb_symbol(symbol)
 
-            # Get price
             px = (quotes or {}).get(lb_symbol)
             if not px or px <= 0:
                 logger.warning(f"跳过 {symbol}：无有效价格")
                 continue
 
             price = float(px)
-
-            # Current position
             current_position = current_positions_map.get(lb_symbol)
             current_qty = current_position.quantity if current_position else 0
 
-            # Calculate target position
-            target_qty_raw = target_value_per_stock / price
-            if allow_fractional:
-                # Planning layer allows fractional, but order layer still executes in minimum trading units
-                # Since Order/Position currently have quantity as int, keep rounding down to lot
-                lot_size = client.lot_size(lb_symbol)
-                target_qty = (int(target_qty_raw) // lot_size) * lot_size
-            else:
-                lot_size = client.lot_size(lb_symbol)
-                target_qty = (int(target_qty_raw) // lot_size) * lot_size
-
-            # Create target position (conservative execution: integer shares/lot), but calculate target fractional shares for display
-            target_qty_frac = Decimal(0)
-            if price > 0 and frac_enable:
-                target_qty_frac = (
-                    Decimal(target_value_per_stock) / Decimal(price)
-                ).quantize(frac_step, rounding=ROUND_HALF_UP)
-            target_position = Position(
-                symbol=lb_symbol,
-                quantity=target_qty,
-                last_price=price,
-                estimated_value=target_qty * price,
-                env=self.env,
+            target_position, order = self._build_order(
+                lb_symbol,
+                price,
+                current_qty,
+                target_value_per_stock,
+                allow_fractional,
+                client,
+                fs,
+                frac_enable,
+                frac_step,
             )
             target_positions.append(target_position)
-
-            # Calculate difference
-            delta_qty = target_qty - current_qty
-
-            if abs(delta_qty) < lot_size:
-                logger.info(
-                    f"跳过 {symbol}：差额 {delta_qty} 小于最小交易单位 {lot_size}"
-                )
-                continue
-
-            # Generate order
-            if delta_qty > 0:
-                side = "BUY"
-                qty_to_trade = delta_qty
-            else:
-                side = "SELL"
-                qty_to_trade = abs(delta_qty)
-
-            order = Order(
-                symbol=symbol,
-                quantity=qty_to_trade,
-                side=side,
-                price=price,
-                order_type="MARKET",
-            )
-            # Fee estimation (charged based on integer execution quantity); provide fractional share hint if target fractional shares < 1
-            est_fee, frac_hint = estimate_fees(
-                side=side,
-                qty_int=qty_to_trade,
-                price=price,
-                any_fractional_lt1=(target_qty_frac > 0 and target_qty_frac < 1),
-                fs=fs,
-            )
-            order.est_fees = est_fee
-            order.est_frac_hint = frac_hint
-            if frac_enable:
-                order.target_qty_frac = float(target_qty_frac)
-                order.rounded_target_qty = int(target_qty)
-                order.rounding_loss = float(target_qty_frac - Decimal(int(target_qty)))
-            orders.append(order)
+            if order:
+                orders.append(order)
 
         # Handle existing positions not in target list: liquidate (treat target as 0)
         target_set = {_to_lb_symbol(t.upper().strip()) for t in target_tickers}

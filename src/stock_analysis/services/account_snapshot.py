@@ -101,8 +101,8 @@ def get_account_snapshot(
 
 
 def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
-    """Compatibility with old interface: always returns real account snapshot."""
-    return [get_account_snapshot(env="real")]
+    """Get account snapshots for multiple environments."""
+    return [get_account_snapshot(env=env) for env in envs]
 
 
 def get_quotes(
