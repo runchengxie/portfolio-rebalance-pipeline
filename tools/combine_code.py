@@ -30,7 +30,7 @@ EXCLUDE_DIRS_EXACT: set[str] = {
     "logs",
     "renv",
     "docs_extra",
-    #     "tools",
+    "tools",
     "tests",
 #     "examples",
 }

@@ -57,14 +57,11 @@ def validate_ai_file(path: Path) -> list[str]:
         issues.append(f"{path}: source should be 'ai_pick'")
 
     # file name consistency
-    try:
-        trade_date = str(data.get("trade_date", ""))
-        if path.stem != trade_date:
-            issues.append(
-                f"{path}: file name/date mismatch (stem={path.stem} trade_date={trade_date})"
-            )
-    except Exception:
-        pass
+    trade_date: str = str(data.get("trade_date", ""))
+    if path.stem != trade_date:
+        issues.append(
+            f"{path}: file name/date mismatch (stem={path.stem} trade_date={trade_date})"
+        )
 
     params = data.get("params", {}) if isinstance(data.get("params"), dict) else {}
     top_n = params.get("top_n")
@@ -156,4 +153,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
