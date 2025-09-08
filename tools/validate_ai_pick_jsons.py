@@ -62,7 +62,9 @@ def validate_ai_file(path: Path) -> list[str]:
             f"{path}: file name/date mismatch (stem={path.stem} trade_date={trade_date})"
         )
 
-    params: dict[str, Any] = data.get("params", {}) if isinstance(data.get("params"), dict) else {}
+    params: dict[str, Any] = (
+        data.get("params", {}) if isinstance(data.get("params"), dict) else {}
+    )
     top_n = params.get("top_n")
     raw_picks = data.get("picks", [])
     picks: list[dict[str, Any]] = raw_picks if isinstance(raw_picks, list) else []

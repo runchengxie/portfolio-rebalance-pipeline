@@ -54,10 +54,12 @@ def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) ->
         ]
         if indexes_path.exists():
             commands.append(f".read {indexes_path.as_posix()}")
-        commands.extend([
-            "PRAGMA journal_mode=WAL;",
-            "PRAGMA synchronous=NORMAL;",
-        ])
+        commands.extend(
+            [
+                "PRAGMA journal_mode=WAL;",
+                "PRAGMA synchronous=NORMAL;",
+            ]
+        )
 
         # Execute SQLite commands
         cmd = ["sqlite3", str(db_path)]
@@ -212,14 +214,18 @@ def main(
                 de = pd.to_datetime(date_end) if date_end else None
 
                 # Determine if filters are provided; if so, skip CLI fast path
-                has_filters = (wl is not None and len(wl) > 0) or (ds is not None) or (
-                    de is not None
+                has_filters = (
+                    (wl is not None and len(wl) > 0)
+                    or (ds is not None)
+                    or (de is not None)
                 )
 
                 cli_success = False
                 if not has_filters and _check_sqlite3_cli() and schema_sql.exists():
                     print("    - SQLite CLI available, attempting fast import...")
-                    cli_success = _import_prices_with_cli(price_csv, DB_PATH, schema_sql)
+                    cli_success = _import_prices_with_cli(
+                        price_csv, DB_PATH, schema_sql
+                    )
 
                 if not cli_success:
                     if has_filters:

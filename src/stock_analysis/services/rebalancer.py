@@ -112,6 +112,7 @@ class RebalanceService:
         recomputed_total = cash_usd + float(total_pos_value_recomp)
 
         snapshot_total = float(account_snapshot.total_portfolio_value or 0.0)
+
         # Consider snapshot reliable if close (within 1%) to recomputed_total and no obviously unpriced holdings
         def _close(a: float, b: float) -> bool:
             if a <= 0 and b <= 0:
@@ -119,7 +120,11 @@ class RebalanceService:
             denom = max(1.0, abs(b))
             return abs(a - b) <= 0.01 * denom
 
-        if snapshot_total > 0 and _close(snapshot_total, recomputed_total) and not any_zero_priced:
+        if (
+            snapshot_total > 0
+            and _close(snapshot_total, recomputed_total)
+            and not any_zero_priced
+        ):
             effective_total = snapshot_total
         else:
             effective_total = recomputed_total
@@ -147,7 +152,9 @@ class RebalanceService:
             fractional_cap_lt1=float(fees_cfg.get("fractional_cap_lt1", 0.99) or 0.0),
             sell_reg_fees_bps=float(fees_cfg.get("sell_reg_fees_bps", 0.0) or 0.0),
         )
-        frac_cfg = (cfg.get("fractional_preview") or {}) if isinstance(cfg, dict) else {}
+        frac_cfg = (
+            (cfg.get("fractional_preview") or {}) if isinstance(cfg, dict) else {}
+        )
         frac_enable = bool(frac_cfg.get("enable", True))
         frac_step = Decimal(str(frac_cfg.get("default_step", 0.001)))
 
@@ -181,9 +188,9 @@ class RebalanceService:
             # Create target position (conservative execution: integer shares/lot), but calculate target fractional shares for display
             target_qty_frac = Decimal(0)
             if price > 0 and frac_enable:
-                target_qty_frac = (Decimal(target_value_per_stock) / Decimal(price)).quantize(
-                    frac_step, rounding=ROUND_HALF_UP
-                )
+                target_qty_frac = (
+                    Decimal(target_value_per_stock) / Decimal(price)
+                ).quantize(frac_step, rounding=ROUND_HALF_UP)
             target_position = Position(
                 symbol=lb_symbol,
                 quantity=target_qty,
@@ -234,7 +241,7 @@ class RebalanceService:
             orders.append(order)
 
         # Handle existing positions not in target list: liquidate (treat target as 0)
-        target_set = { _to_lb_symbol(t.upper().strip()) for t in target_tickers }
+        target_set = {_to_lb_symbol(t.upper().strip()) for t in target_tickers}
         for sym, cur in current_positions_map.items():
             if sym in target_set:
                 continue
@@ -250,7 +257,13 @@ class RebalanceService:
             px = float((quotes or {}).get(sym, cur.last_price or 0.0))
             # Add 0 row to target positions for diff view
             target_positions.append(
-                Position(symbol=sym, quantity=0, last_price=px, estimated_value=0.0, env=self.env)
+                Position(
+                    symbol=sym,
+                    quantity=0,
+                    last_price=px,
+                    estimated_value=0.0,
+                    env=self.env,
+                )
             )
             o = Order(
                 symbol=sym,

@@ -281,7 +281,9 @@ def main(*, export_json: bool = True, export_excel: bool = True):
             print(
                 f"  - 调仓日 {trade_date.date()}: 符合条件的股票数量 ({num_eligible_stocks}) 首次超过250，从现在开始进行选股。"
             )
-            selection_started = True  # Set flag to True, will continue stock selection from now on
+            selection_started = (
+                True  # Set flag to True, will continue stock selection from now on
+            )
 
         # If df_agg_scores is empty or selection flag not enabled, print info and skip
         if df_agg_scores.empty or not selection_started:
@@ -322,7 +324,9 @@ def main(*, export_json: bool = True, export_excel: bool = True):
                         {
                             "ticker": str(row["Ticker"]).upper().strip(),
                             "rank": int(i + 1),
-                            "avg_factor_score": round(float(row["avg_factor_score"]), 6),
+                            "avg_factor_score": round(
+                                float(row["avg_factor_score"]), 6
+                            ),
                             "num_reports": int(row["num_reports"]),
                         }
                     )
@@ -405,7 +409,9 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         ax.grid(True)
         ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
-        y_max = max(260, df_stats["count"].max() * 1.1)  # Ensure threshold line is visible
+        y_max = max(
+            260, df_stats["count"].max() * 1.1
+        )  # Ensure threshold line is visible
         ax.set_ylim(bottom=0, top=y_max)
         fig.tight_layout()
         chart_output_file = OUTPUT_FILE_BASE.with_suffix(".png")

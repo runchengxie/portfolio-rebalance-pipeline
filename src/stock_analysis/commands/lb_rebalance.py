@@ -68,7 +68,9 @@ def run_lb_rebalance(
 
         client = LongPortClient(env=env)
         # Get account snapshot (without quotes, will fetch all at once later)
-        account_snapshot = get_account_snapshot(env=env, include_quotes=False, client=client)
+        account_snapshot = get_account_snapshot(
+            env=env, include_quotes=False, client=client
+        )
 
         # Fetch quotes all at once: target stocks + existing positions
         target_syms = {t.strip().upper() for t in tickers}
@@ -91,7 +93,9 @@ def run_lb_rebalance(
             total_mv = sum(float(p.estimated_value) for p in account_snapshot.positions)
             account_snapshot.total_market_value = total_mv
             if not account_snapshot.total_portfolio_value:
-                account_snapshot.total_portfolio_value = float(account_snapshot.cash_usd) + total_mv
+                account_snapshot.total_portfolio_value = (
+                    float(account_snapshot.cash_usd) + total_mv
+                )
 
         # Initialize rebalance service
         rebalance_service = RebalanceService(env=env, client=client)

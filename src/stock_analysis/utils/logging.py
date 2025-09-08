@@ -3,6 +3,7 @@
 
 Provides unified logging configuration functionality.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,7 +41,7 @@ def setup_logging(
         name: Logger name
         filename: Optional log file name
         level: Log level, defaults to logging.INFO
-    
+
     Returns:
         Configured logger instance
     """
@@ -74,13 +75,13 @@ def setup_logging(
 
 def get_logger(name: str) -> logging.Logger:
     """Get logger for backward compatibility.
-    
+
     Only configures console output if no filename provided.
     For file output, call setup_logging(name, 'xxx.log') first.
-    
+
     Args:
         name: Logger name
-        
+
     Returns:
         Logger instance
     """

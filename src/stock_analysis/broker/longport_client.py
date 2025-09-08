@@ -112,7 +112,9 @@ class LongPortClient:
     Provides a unified interface to access LongPort's trading and quote functionality.
     """
 
-    def __init__(self, env: str | None = None, limits: BrokerLimits | None = None, config=None):
+    def __init__(
+        self, env: str | None = None, limits: BrokerLimits | None = None, config=None
+    ):
         """Initialize LongPort client.
 
         Args:
@@ -205,10 +207,12 @@ class LongPortClient:
             bars[i.symbol] = (px, getattr(i, "timestamp", "") or "")
         return bars
 
-    def portfolio_snapshot(self) -> tuple[float, dict[str, int], float | None, str | None]:
+    def portfolio_snapshot(
+        self,
+    ) -> tuple[float, dict[str, int], float | None, str | None]:
         """
         Get account snapshot including cash and position information.
-        
+
         Returns:
             Tuple of (cash_usd, stock_position_map, net_assets, base_currency)
             - cash_usd: USD available cash only (no FX conversion)
@@ -255,7 +259,9 @@ class LongPortClient:
                     or []
                 )
                 for ci in ci_list:
-                    ccy = str(getattr(ci, "currency", "") or getattr(ci, "ccy", "")).upper()
+                    ccy = str(
+                        getattr(ci, "currency", "") or getattr(ci, "ccy", "")
+                    ).upper()
                     # prefer available_cash > cash > withdraw_cash
                     raw_amt = (
                         getattr(ci, "available_cash", None)
@@ -288,7 +294,8 @@ class LongPortClient:
 
             if totals:
                 logger.debug(
-                    "现金分币种: " + ", ".join(f"{k}={v:.2f}" for k, v in totals.items())
+                    "现金分币种: "
+                    + ", ".join(f"{k}={v:.2f}" for k, v in totals.items())
                 )
             # USD direct bucket
             cash_usd = totals.get("USD", 0.0)
@@ -316,7 +323,12 @@ class LongPortClient:
 
                 if cash_usd == 0.0:
                     # Some SDKs expose top-level fields on a single object; attempt a last resort
-                    for name in ("available_cash", "cash", "withdraw_cash", "total_cash"):
+                    for name in (
+                        "available_cash",
+                        "cash",
+                        "withdraw_cash",
+                        "total_cash",
+                    ):
                         v = getattr(asset, name, None)
                         if v is None:
                             continue
@@ -451,7 +463,7 @@ class LongPortClient:
     def fund_positions(self) -> dict[str, tuple[float, float, str]]:
         """
         Get fund position information.
-        
+
         Returns:
             Fund position mapping: { symbol => (holding_units, current_nav, currency) }
             - symbol: Fund code/ISIN returned by LongPort
@@ -688,7 +700,11 @@ class LongPortClient:
                 raise RuntimeError(
                     f"{symbol_formatted} 数量需为最小交易单位 {lot} 的整数倍"
                 )
-            px = float(est_px) if est_px is not None else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
+            px = (
+                float(est_px)
+                if est_px is not None
+                else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
+            )
             notional = px * qty
             if notional > self.limits.max_notional_per_order:
                 raise RuntimeError(
@@ -710,7 +726,11 @@ class LongPortClient:
         self._check_lot(symbol_formatted, qty)
         if qty > self.limits.max_qty_per_order:
             raise RuntimeError(f"超过单笔数量上限 {self.limits.max_qty_per_order}")
-        px = float(est_px) if est_px is not None else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
+        px = (
+            float(est_px)
+            if est_px is not None
+            else self.quote_last([symbol]).get(symbol_formatted, (0.0, ""))[0]
+        )
         notional = px * qty
         if notional > self.limits.max_notional_per_order:
             raise RuntimeError(

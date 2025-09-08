@@ -26,17 +26,21 @@ def run_export(
         )
         if direction == "excel-to-json":
             written = export_excel_to_json(
-                source, Path(excel) if excel else None, Path(json_root) if json_root else None, overwrite
+                source,
+                Path(excel) if excel else None,
+                Path(json_root) if json_root else None,
+                overwrite,
             )
             logger.info(f"导出完成：写入 {written} 个JSON文件")
             return 0
         else:
             sheets = export_json_to_excel(
-                source, Path(json_root) if json_root else None, Path(excel) if excel else None
+                source,
+                Path(json_root) if json_root else None,
+                Path(excel) if excel else None,
             )
             logger.info(f"导出完成：写入 {sheets} 个工作表")
             return 0
     except Exception as e:
         logger.error(f"导出失败：{e}")
         return 1
-

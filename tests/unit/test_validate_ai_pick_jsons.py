@@ -125,4 +125,3 @@ def test_validate_prelim_missing_warning(tmp_path: Path) -> None:
 
     issues = mod.validate_ai_file(ai_path)
     assert any("preliminary candidates not found" in s for s in issues), issues
-

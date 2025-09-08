@@ -32,7 +32,7 @@ EXCLUDE_DIRS_EXACT: set[str] = {
     "docs_extra",
     "tools",
     "tests",
-#     "examples",
+    #     "examples",
 }
 
 # Directory name patterns to exclude (e.g., any directory ending with .egg-info)

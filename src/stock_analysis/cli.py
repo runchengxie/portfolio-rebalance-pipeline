@@ -198,9 +198,7 @@ def create_parser() -> argparse.ArgumentParser:
     gen_parser.add_argument(
         "--date-start", type=str, help="起始日期（YYYY-MM-DD，可选）"
     )
-    gen_parser.add_argument(
-        "--date-end", type=str, help="结束日期（YYYY-MM-DD，可选）"
-    )
+    gen_parser.add_argument("--date-end", type=str, help="结束日期（YYYY-MM-DD，可选）")
     gen_parser.add_argument(
         "--out",
         type=str,
@@ -335,6 +333,7 @@ def main() -> int:
             )
         elif args.command == "gen-whitelist":
             from .commands.gen_whitelist import run_gen_whitelist
+
             return run_gen_whitelist(
                 getattr(args, "source", "preliminary"),
                 getattr(args, "excel", None),
@@ -344,6 +343,7 @@ def main() -> int:
             )
         elif args.command == "lb-quote":
             from .commands.lb_quote import run_lb_quote
+
             return run_lb_quote(args.tickers)
         elif args.command == "lb-rebalance":
             from .commands.lb_rebalance import run_lb_rebalance
@@ -359,6 +359,7 @@ def main() -> int:
             )
         elif args.command == "lb-account":
             from .commands.lb_account import run_lb_account
+
             return run_lb_account(
                 only_funds=getattr(args, "funds", False),
                 only_positions=getattr(args, "positions", False),

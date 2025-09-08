@@ -53,7 +53,9 @@ class AIStockPick(BaseModel):
     ticker: str = Field(description="Stock ticker symbol")
     company_name: str = Field(description="Company name")
     confidence_score: int = Field(
-        description="AI comprehensive confidence score for the stock (integer 1-10)", ge=1, le=10
+        description="AI comprehensive confidence score for the stock (integer 1-10)",
+        ge=1,
+        le=10,
     )
     reasoning: str = Field(description="Detailed analysis, no length limit")
 
@@ -192,7 +194,9 @@ class KeyPool:
                 )
                 for s in self.slots:
                     s.next_ok_at = self.project_cooldown_until
-                print(f"  🚨 Detected project-level rate limiting, global cooldown {cooldown:.1f} seconds")
+                print(
+                    f"  🚨 Detected project-level rate limiting, global cooldown {cooldown:.1f} seconds"
+                )
             return
 
         # Key-level backoff/circuit breaking
@@ -218,7 +222,9 @@ def call_with_pool(keypool, do_call, max_retries=6):
                     f"  Retry successful (attempt {attempt}, using {slot.name}, took {elapsed_time:.2f}s)"
                 )
             else:
-                print(f"  API call successful (using {slot.name}, took {elapsed_time:.2f}s)")
+                print(
+                    f"  API call successful (using {slot.name}, took {elapsed_time:.2f}s)"
+                )
             return resp
         except Exception as e:
             keypool.report_failure(slot, e)
@@ -379,7 +385,13 @@ def parse_response_robust(response):
 
 
 # --- Function to Process Single Quarter ---
-def process_one_sheet(sheet_name, df_companies, keypool, export_excel: bool = True, export_json: bool = True):
+def process_one_sheet(
+    sheet_name,
+    df_companies,
+    keypool,
+    export_excel: bool = True,
+    export_json: bool = True,
+):
     """Process stock data from a single worksheet"""
     try:
         # Read candidate stocks for this quarter
@@ -565,7 +577,12 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         futures = []
         for sheet_name in pending_sheets:
             future = executor.submit(
-                process_one_sheet, sheet_name, df_companies, keypool, export_excel, export_json
+                process_one_sheet,
+                sheet_name,
+                df_companies,
+                keypool,
+                export_excel,
+                export_json,
             )
             futures.append(future)
 

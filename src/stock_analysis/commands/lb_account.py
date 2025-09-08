@@ -35,7 +35,9 @@ def run_lb_account(
         if fmt == "json":
             output = render_multiple_account_snapshots_json(snapshots)
         else:
-            output = render_multiple_account_snapshots(snapshots, only_funds, only_positions)
+            output = render_multiple_account_snapshots(
+                snapshots, only_funds, only_positions
+            )
 
         print(output)
 

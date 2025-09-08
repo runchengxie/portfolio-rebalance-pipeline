@@ -15,7 +15,9 @@ from stock_analysis import cli
 from stock_analysis.models import AccountSnapshot, Position
 
 
-def make_snapshot(cash: float, positions: list[tuple[str, int, float]]) -> AccountSnapshot:
+def make_snapshot(
+    cash: float, positions: list[tuple[str, int, float]]
+) -> AccountSnapshot:
     pos = [
         Position(symbol=s, quantity=q, last_price=p, estimated_value=q * p, env="real")
         for s, q, p in positions
@@ -31,7 +33,10 @@ class TestLBAccountTableOutput:
             "stock_analysis.commands.lb_account.get_account_snapshot",
             return_value=snap,
         ):
-            assert cli.run_lb_account(only_funds=False, only_positions=False, fmt="table") == 0
+            assert (
+                cli.run_lb_account(only_funds=False, only_positions=False, fmt="table")
+                == 0
+            )
 
         out = capsys.readouterr().out
         assert "现金" in out and "持仓" in out and "AAPL.US" in out
@@ -42,7 +47,9 @@ class TestLBAccountTableOutput:
             "stock_analysis.commands.lb_account.get_account_snapshot",
             return_value=snap,
         ):
-            result = cli.run_lb_account(only_funds=False, only_positions=False, fmt="table")
+            result = cli.run_lb_account(
+                only_funds=False, only_positions=False, fmt="table"
+            )
 
         assert result == 0
         out = capsys.readouterr().out
@@ -56,7 +63,9 @@ class TestLBAccountTableOutput:
             "stock_analysis.commands.lb_account.get_account_snapshot",
             return_value=snap,
         ):
-            result = cli.run_lb_account(only_funds=True, only_positions=False, fmt="table")
+            result = cli.run_lb_account(
+                only_funds=True, only_positions=False, fmt="table"
+            )
 
         assert result == 0
         out = capsys.readouterr().out
@@ -69,7 +78,9 @@ class TestLBAccountTableOutput:
             "stock_analysis.commands.lb_account.get_account_snapshot",
             return_value=snap,
         ):
-            result = cli.run_lb_account(only_funds=False, only_positions=True, fmt="table")
+            result = cli.run_lb_account(
+                only_funds=False, only_positions=True, fmt="table"
+            )
 
         assert result == 0
         out = capsys.readouterr().out
@@ -83,7 +94,9 @@ class TestLBAccountTableOutput:
             "stock_analysis.commands.lb_account.get_account_snapshot",
             return_value=snap,
         ):
-            result = cli.run_lb_account(only_funds=False, only_positions=False, fmt="table")
+            result = cli.run_lb_account(
+                only_funds=False, only_positions=False, fmt="table"
+            )
 
         assert result == 0
         out = capsys.readouterr().out
@@ -166,11 +179,12 @@ class TestLBAccountParameterValidation:
             "stock_analysis.commands.lb_account.get_account_snapshot",
             return_value=snap,
         ):
-            result = cli.run_lb_account(only_funds=True, only_positions=True, fmt="table")
+            result = cli.run_lb_account(
+                only_funds=True, only_positions=True, fmt="table"
+            )
 
         assert result == 0
         out = capsys.readouterr().out
         assert "现金(USD)" in out
         assert "Symbol" not in out
         assert "AAPL.US" not in out
-

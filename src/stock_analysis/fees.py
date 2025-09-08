@@ -44,4 +44,3 @@ def estimate_fees(
         )
 
     return float(commission + platform + reg), float(frac_hint)
-

@@ -20,7 +20,7 @@ def _fmt_money(v: float) -> str:
 
 
 def _fmt_pct(v: float) -> str:
-    return f"{v*100:,.2f}%"
+    return f"{v * 100:,.2f}%"
 
 
 def _is_fund_symbol(symbol: str) -> bool:
@@ -103,14 +103,14 @@ def _diffstat(
     return added, removed, increased, decreased
 
 
-def render_rebalance_diff(
-    result: RebalanceResult, before: AccountSnapshot
-) -> str:
+def render_rebalance_diff(result: RebalanceResult, before: AccountSnapshot) -> str:
     lines: list[str] = []
 
     # Top summary card
     b = _bucketize(before)
-    after_b, total_fees = _bucketize_after(before.cash_usd, result.target_positions, result.orders)
+    after_b, total_fees = _bucketize_after(
+        before.cash_usd, result.target_positions, result.orders
+    )
     total_before = b.total
     total_after = after_b.total if after_b.total > 0 else result.total_portfolio_value
 
@@ -128,9 +128,7 @@ def render_rebalance_diff(
     lines.append(
         f"Funds:  {_fmt_money(b.funds)} → {_fmt_money(after_b.funds)}  (Δ {_fmt_money(after_b.funds - b.funds)})"
     )
-    lines.append(
-        f"Total:  {_fmt_money(total_before)} → {_fmt_money(total_after)}"
-    )
+    lines.append(f"Total:  {_fmt_money(total_before)} → {_fmt_money(total_after)}")
     if total_fees and total_fees > 0:
         lines.append(f"Fees:   {_fmt_money(total_fees)}")
         lines.append(f"Cash After Fees: {_fmt_money(after_b.cash)}")
@@ -147,11 +145,17 @@ def render_rebalance_diff(
     lines.append("")
 
     # Per-position diffs
-    lines.append("Symbol    Before(%)  Before($,sh)      →   After(%)   After($,sh)    Target(frac)  Rounded  Δfrac  Est.Fees  Action")
+    lines.append(
+        "Symbol    Before(%)  Before($,sh)      →   After(%)   After($,sh)    Target(frac)  Rounded  Δfrac  Est.Fees  Action"
+    )
     lines.append("-" * 90)
     # Use total_after or result.total_portfolio_value for weights
-    denom_before = total_before if total_before > 0 else max(1.0, result.total_portfolio_value)
-    denom_after = total_after if total_after > 0 else max(1.0, result.total_portfolio_value)
+    denom_before = (
+        total_before if total_before > 0 else max(1.0, result.total_portfolio_value)
+    )
+    denom_after = (
+        total_after if total_after > 0 else max(1.0, result.total_portfolio_value)
+    )
     all_syms = sorted(set(cur_map) | set(tgt_map))
     for s in all_syms:
         cur = cur_map.get(s)
@@ -172,7 +176,11 @@ def render_rebalance_diff(
         else:
             action = "HOLD"
         # Find order info for preview columns
-        ords = [o for o in result.orders if o.symbol.replace(".US", "") == s.replace(".US", "")]
+        ords = [
+            o
+            for o in result.orders
+            if o.symbol.replace(".US", "") == s.replace(".US", "")
+        ]
         ord0 = ords[0] if ords else None
         target_frac = getattr(ord0, "target_qty_frac", None)
         rounded = getattr(ord0, "rounded_target_qty", None)
@@ -196,12 +204,15 @@ def render_rebalance_diff(
     else:
         sell_first = sorted(
             result.orders,
-            key=lambda o: (0 if o.side.upper() == "SELL" else 1, -(o.price or 0) * o.quantity),
+            key=lambda o: (
+                0 if o.side.upper() == "SELL" else 1,
+                -(o.price or 0) * o.quantity,
+            ),
         )
         for od in sell_first:
             est_amt = (od.price or 0.0) * float(od.quantity)
             lines.append(
-                f"{od.side:4s} {od.symbol[:8]:8s} {od.quantity:>6} @ {('MKT' if not od.price else _fmt_money(od.price)):<8} est { _fmt_money(est_amt)}"
+                f"{od.side:4s} {od.symbol[:8]:8s} {od.quantity:>6} @ {('MKT' if not od.price else _fmt_money(od.price)):<8} est {_fmt_money(est_amt)}"
             )
 
     return "\n".join(lines)

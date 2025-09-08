@@ -61,7 +61,9 @@ def get_account_snapshot(
         # Fund positions -> Position (using NAV as price)
         fund_map = client.fund_positions()
         for fsymbol, (units, nav, _ccy) in fund_map.items():
-            qty_int = int(units)  # Position.quantity is int; can be extended to float for more precision
+            qty_int = int(
+                units
+            )  # Position.quantity is int; can be extended to float for more precision
             positions.append(
                 Position(
                     symbol=fsymbol,

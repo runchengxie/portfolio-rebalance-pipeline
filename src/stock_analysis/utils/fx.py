@@ -82,4 +82,3 @@ def to_usd(amount: float, ccy: str) -> float | None:
         return float(amount) * float(rate)
     except Exception:
         return None
-

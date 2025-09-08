@@ -122,7 +122,10 @@ def export_excel_to_json(
             }
 
         import json as _json
-        out_path.write_text(_json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        out_path.write_text(
+            _json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         written += 1
 
     print(f"[export] Wrote {written} JSON files under {out_root}")
@@ -186,7 +189,9 @@ def export_json_to_excel(
                 for p in picks:
                     if "confidence" in p and "confidence_score" not in p:
                         try:
-                            p["confidence_score"] = int(round(float(p["confidence"]) * 10))
+                            p["confidence_score"] = int(
+                                round(float(p["confidence"]) * 10)
+                            )
                         except Exception:
                             p["confidence_score"] = 0
                     if "rationale" in p and "reasoning" not in p:
@@ -242,14 +247,31 @@ def validate_exports(
             payload = payload.to_dict(orient="records")[0]
 
         if source == "preliminary":
-            json_tickers = [str(r.get("ticker", "")).upper().strip() for r in payload.get("rows", [])]
-            excel_tickers = [str(x).upper().strip() for x in df.get("Ticker", pd.Series(dtype=str)).tolist()]
+            json_tickers = [
+                str(r.get("ticker", "")).upper().strip()
+                for r in payload.get("rows", [])
+            ]
+            excel_tickers = [
+                str(x).upper().strip()
+                for x in df.get("Ticker", pd.Series(dtype=str)).tolist()
+            ]
         else:
-            json_tickers = [str(r.get("ticker", "")).upper().strip() for r in payload.get("picks", [])]
-            col = "ticker" if "ticker" in df.columns else ("Ticker" if "Ticker" in df.columns else None)
-            excel_tickers = [str(x).upper().strip() for x in (df[col].tolist() if col else [])]
+            json_tickers = [
+                str(r.get("ticker", "")).upper().strip()
+                for r in payload.get("picks", [])
+            ]
+            col = (
+                "ticker"
+                if "ticker" in df.columns
+                else ("Ticker" if "Ticker" in df.columns else None)
+            )
+            excel_tickers = [
+                str(x).upper().strip() for x in (df[col].tolist() if col else [])
+            ]
 
-        if set(json_tickers) != set(excel_tickers) or len(json_tickers) != len(excel_tickers):
+        if set(json_tickers) != set(excel_tickers) or len(json_tickers) != len(
+            excel_tickers
+        ):
             ok = False
             only_in_json = sorted(set(json_tickers) - set(excel_tickers))
             only_in_excel = sorted(set(excel_tickers) - set(json_tickers))
