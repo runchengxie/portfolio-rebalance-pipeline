@@ -35,6 +35,8 @@ def run_lb_rebalance(
         int: Exit code (0 indicates success)
     """
     try:
+        # Validate LongPort dependency early so tests can patch import
+        __import__("stock_analysis.broker.longport_client")
         # Force use REAL environment; without --execute it's dry run preview
         env = "real"
         if dry_run:
@@ -144,7 +146,15 @@ def run_lb_rebalance(
             rebalance_service.close()
 
     except ImportError as e:
+        # Standardized error reporting to stderr to aid tests and UX
+        import sys
+
         logger.error(f"无法导入必要模块: {e}")
+        print(f"Failed to import LongPort module: {e}", file=sys.stderr)
+        print(
+            "Please ensure the 'longport' package is installed: pip install longport",
+            file=sys.stderr,
+        )
         return 1
     except Exception as e:
         logger.error(f"仓位调整失败：{e}")

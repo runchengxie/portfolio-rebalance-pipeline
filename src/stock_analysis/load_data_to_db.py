@@ -11,16 +11,15 @@ import pandas as pd
 from .utils.paths import DATA_DIR, DB_PATH  # ← 用已有模块，别重复造轮子
 
 
-def _resolve_path(path_or_callable) -> Path:
-    """Resolve path constants that may be provided as callables.
+def _resolve_path(path_candidate):
+    """Return a usable Path whether given a Path or a callable returning one.
 
-    Some unit tests patch ``DATA_DIR``/``DB_PATH`` with callables (e.g.
-    ``MagicMock``).  During testing the patched object should be invoked to
-    return the actual ``Path``.  At runtime these values are plain ``Path``
-    instances and are returned unchanged.
+    Some tests patch ``DB_PATH``/``DATA_DIR`` with ``MagicMock`` objects whose
+    ``return_value`` provides the actual ``Path``.  Allow both styles by
+    resolving callables to their return values.
     """
 
-    return Path(path_or_callable()) if callable(path_or_callable) else Path(path_or_callable)
+    return path_candidate() if callable(path_candidate) else path_candidate
 
 
 def tidy_ticker(col: pd.Series) -> pd.Series:
@@ -118,7 +117,7 @@ def _load_csv_in_chunks(
     ):
         if "Ticker" in df.columns:
             df["Ticker"] = tidy_ticker(df["Ticker"])
-            df = df.dropna(subset=["Ticker"])
+            df.dropna(subset=["Ticker"], inplace=True)
 
         # Financial statement field renaming logic
         if table in {"balance_sheet", "cash_flow", "income"}:
@@ -149,7 +148,12 @@ def _load_csv_in_chunks(
 
             df = df.drop_duplicates(subset=["Ticker", "Date"], keep="last")
 
-        df.to_sql(table, con, if_exists="replace" if first else "append", index=False)
+        df.to_sql(
+            table,
+            con=con,
+            if_exists="replace" if first else "append",
+            index=False,
+        )
         first = False
         rows += len(df)
     return rows
@@ -172,8 +176,9 @@ def main(
         date_start: Optional start date (YYYY-MM-DD) for price import
         date_end: Optional end date (YYYY-MM-DD) for price import
     """
-    data_dir = _resolve_path(DATA_DIR)
-    db_path = _resolve_path(DB_PATH)
+    db_path: Path = _resolve_path(DB_PATH)
+    data_dir: Path = _resolve_path(DATA_DIR)
+    
 
     print(f"Creating SQLite database at: {db_path}")
     with sqlite3.connect(db_path) as con:
@@ -213,6 +218,10 @@ def main(
             preferred = sql_dir / "schema_prices.sql"
             fallback = sql_dir / "schema.sql"
             schema_sql = preferred if preferred.exists() else fallback
+            if not schema_sql.exists():
+                alt_schema = data_dir.parent / "schema.sql"
+                if alt_schema.exists():
+                    schema_sql = alt_schema
 
             if price_csv.exists():
                 # Check file size, prioritize CLI import for large files
