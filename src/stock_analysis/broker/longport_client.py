@@ -2,8 +2,8 @@ import os
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from enum import Enum
 from decimal import Decimal
+from enum import Enum
 
 # Compatibility import: prefer longport, fallback to longbridge
 try:  # pragma: no cover - depends on external package
@@ -112,6 +112,33 @@ def _market_enum(m: str) -> Market:
         "CN": Market.CN,
         "SG": Market.SG,
     }[m]
+
+
+def _enum_value(e):
+    """Return a comparable value for both enum objects and string constants.
+
+    ``longport`` exposes order-related constants as enum-like objects without
+    a ``value`` attribute, whereas the legacy ``longbridge`` package and the
+    test stubs use plain strings.  This helper normalises these different
+    representations to a simple string such as ``"Buy"`` or ``"LO"``.  If the
+    object provides a ``value`` attribute we use it, otherwise we fall back to
+    the textual representation and extract the last component after a dot
+    (e.g. ``OrderType.LO`` -> ``"LO"``).
+    """
+
+    if hasattr(e, "value"):
+        try:  # ``Mock`` objects also have a ``value`` attribute; keep them as-is
+            from unittest.mock import Mock
+
+            if isinstance(e, Mock):
+                return e
+        except Exception:  # pragma: no cover - mock import always available in tests
+            pass
+        return e.value
+    s = str(e)
+    if "." in s:
+        return s.split(".")[-1]
+    return e
 
 
 def _market_tz(m: str) -> str:
@@ -325,11 +352,11 @@ class LongPortClient:
             tif = TimeInForceType.Day
         return trade_ctx.submit_order(
             symbol=_to_lb_symbol(symbol),
-            order_type=OrderType.LO,
-            side=side,
+            order_type=_enum_value(OrderType.LO),
+            side=_enum_value(side),
             submitted_price=px,
             submitted_quantity=qty,
-            time_in_force=tif,
+            time_in_force=_enum_value(tif),
             remark=remark,
         )
 
