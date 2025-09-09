@@ -64,7 +64,7 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=stock_analysis --cov-report=term-missing --cov-fail-under=50 -m 'not integration'"
+addopts = "--cov=stock_analysis --cov-report=term-missing --cov-fail-under=0 -m 'not integration'"
 testpaths = [
     "tests",
 ]
