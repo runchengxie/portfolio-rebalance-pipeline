@@ -11,8 +11,8 @@ from .commands.ai_pick import run_ai_pick  # noqa: F401
 from .commands.backtest import run_backtest  # noqa: F401
 from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
 from .commands.lb_account import run_lb_account  # noqa: F401
-from .commands.load_data import run_load_data  # noqa: F401
 from .commands.lb_config import run_lb_config  # noqa: F401
+from .commands.load_data import run_load_data  # noqa: F401
 
 
 def run_lb_quote(tickers: list[str]) -> int:  # type: ignore[override]
