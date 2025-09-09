@@ -10,30 +10,30 @@ from stock_analysis.broker.longport_client import LongPortClient
 
 @pytest.mark.unit
 def test_quote_last_mapping():
-    """测试quote_last方法的数据映射逻辑。"""
-    # 创建假的响应数据
+    """Test the data mapping logic of the quote_last method."""
+    # Create fake response data
     fake_resp = [
         SimpleNamespace(symbol="AAPL.US", last_done=189.5, timestamp=1234567890),
         SimpleNamespace(symbol="MSFT.US", last_done=350.2, timestamp=1234567891),
     ]
 
-    # 创建mock的QuoteContext
+    # Create a mock QuoteContext
     mock_quote_context = Mock()
     mock_quote_context.quote.return_value = fake_resp
 
-    # 创建客户端实例并替换QuoteContext
+    # Create a client instance and replace the QuoteContext
     with patch("stock_analysis.broker.longport_client.get_config"):
         client = LongPortClient.__new__(LongPortClient)
         client.q = mock_quote_context
-        client.t = Mock()  # TradeContext也需要mock
+        client.t = Mock()  # TradeContext also needs to be mocked
 
-        # 测试方法调用
+        # Test the method call
         result = client.quote_last(["AAPL", "MSFT"])
 
-        # 验证调用参数
+        # Verify the call arguments
         mock_quote_context.quote.assert_called_once_with(["AAPL.US", "MSFT.US"])
 
-        # 验证返回结果
+        # Verify the return result
         assert result == {
             "AAPL.US": (189.5, 1234567890),
             "MSFT.US": (350.2, 1234567891),
@@ -42,7 +42,7 @@ def test_quote_last_mapping():
 
 @pytest.mark.unit
 def test_candles_parameters():
-    """测试candles方法的参数传递。"""
+    """Test the parameter passing for the candles method."""
     mock_quote_context = Mock()
     mock_quote_context.history_candlesticks_by_date.return_value = []
 
@@ -55,25 +55,25 @@ def test_candles_parameters():
         end_date = date(2023, 12, 31)
         custom_period = Mock()
 
-        # 测试方法调用 - 重点是验证_to_lb_symbol被正确调用和参数传递
+        # Test the method call - the focus is to verify that _to_lb_symbol is called correctly and parameters are passed
         client.candles("AAPL", start_date, end_date, custom_period)
 
-        # 验证history_candlesticks_by_date被调用，第一个参数应该是转换后的符号
+        # Verify that history_candlesticks_by_date was called
         mock_quote_context.history_candlesticks_by_date.assert_called_once()
         call_args = mock_quote_context.history_candlesticks_by_date.call_args
 
-        # 验证第一个参数是转换后的符号
+        # Verify the first argument is the converted symbol
         assert call_args[0][0] == "AAPL.US"
-        # 验证日期参数
+        # Verify the date parameters
         assert call_args[0][3] == start_date
         assert call_args[0][4] == end_date
-        # 验证period参数
+        # Verify the period parameter
         assert call_args[0][1] == custom_period
 
 
 @pytest.mark.unit
 def test_submit_limit_buy_order():
-    """测试提交买入限价单。"""
+    """Test submitting a buy limit order."""
     from longbridge.openapi import OrderSide, OrderType, TimeInForceType
 
     mock_trade_context = Mock()
@@ -84,7 +84,7 @@ def test_submit_limit_buy_order():
         client.q = Mock()
         client.t = mock_trade_context
 
-        # 测试买入订单（正数量）
+        # Test a buy order (positive quantity)
         result = client.submit_limit("AAPL", 150.0, 100)
 
         mock_trade_context.submit_order.assert_called_with(
@@ -102,7 +102,7 @@ def test_submit_limit_buy_order():
 
 @pytest.mark.unit
 def test_submit_limit_sell_order():
-    """测试提交卖出限价单。"""
+    """Test submitting a sell limit order."""
     from longbridge.openapi import OrderSide, OrderType, TimeInForceType
 
     mock_trade_context = Mock()
@@ -113,7 +113,7 @@ def test_submit_limit_sell_order():
         client.q = Mock()
         client.t = mock_trade_context
 
-        # 测试卖出订单（负数量）
+        # Test a sell order (negative quantity)
         result = client.submit_limit("MSFT", 300.0, -50, remark="test sell")
 
         mock_trade_context.submit_order.assert_called_with(
@@ -121,7 +121,7 @@ def test_submit_limit_sell_order():
             order_type=OrderType.LO,
             side=OrderSide.Sell,
             submitted_price=Decimal("300.0"),
-            submitted_quantity=Decimal("50"),  # 绝对值
+            submitted_quantity=Decimal("50"),  # must be the absolute value
             time_in_force=TimeInForceType.Day,
             remark="test sell",
         )
@@ -131,8 +131,8 @@ def test_submit_limit_sell_order():
 
 @pytest.mark.unit
 def test_submit_limit_with_custom_tif():
-    """测试自定义时效的限价单。"""
-    # 使用mock对象避免导入longbridge枚举
+    """Test a limit order with a custom time-in-force (TIF)."""
+    # Use mock objects to avoid importing longbridge enums
     mock_order_type = Mock()
     mock_order_side = Mock()
     mock_tif_gtc = Mock()
@@ -154,7 +154,7 @@ def test_submit_limit_with_custom_tif():
                     client.q = Mock()
                     client.t = mock_trade_context
 
-                    # 测试GTC订单
+                    # Test a GTC (Good 'Til Canceled) order
                     client.submit_limit("GOOGL", 2500.0, 10, mock_tif_gtc)
 
                     mock_trade_context.submit_order.assert_called_with(
@@ -170,7 +170,7 @@ def test_submit_limit_with_custom_tif():
 
 @pytest.mark.unit
 def test_decimal_precision():
-    """测试价格和数量的Decimal精度处理。"""
+    """Test the Decimal precision handling for price and quantity."""
 
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="22222")
@@ -180,10 +180,10 @@ def test_decimal_precision():
         client.q = Mock()
         client.t = mock_trade_context
 
-        # 测试浮点数精度
+        # Test floating point precision
         client.submit_limit("TSLA", 199.99, 25)
 
-        # 验证Decimal转换
+        # Verify the Decimal conversion
         call_args = mock_trade_context.submit_order.call_args
         assert call_args.kwargs["submitted_price"] == Decimal("199.99")
         assert call_args.kwargs["submitted_quantity"] == Decimal("25")
