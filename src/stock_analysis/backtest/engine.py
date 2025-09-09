@@ -27,6 +27,7 @@ class PointInTimeStrategy(bt.Strategy):
         ("portfolios", None),
         ("use_logging", True),  # Control whether to use logging or print
         ("logger_name", "strategy"),
+        ("log_level", None),
     )
 
     def __init__(self):
@@ -38,7 +39,9 @@ class PointInTimeStrategy(bt.Strategy):
 
         # Initialize logger
         self.strategy_logger = StrategyLogger(
-            use_logging=self.p.use_logging, logger_name=self.p.logger_name
+            use_logging=self.p.use_logging,
+            logger_name=self.p.logger_name,
+            level=self.p.log_level,
         )
 
     def log(self, txt, dt=None):
@@ -166,16 +169,32 @@ class BuyAndHoldStrategy(bt.Strategy):
 
     params = (
         ("target_percent", 0.99),
+        ("use_logging", True),
+        ("logger_name", "benchmark"),
+        ("log_level", None),
     )
 
     def __init__(self):
         self.bought = False
+        self.timeline = self.datas[0]
+        self.strategy_logger = StrategyLogger(
+            use_logging=self.p.use_logging,
+            logger_name=self.p.logger_name,
+            level=self.p.log_level,
+        )
+
+    def log(self, txt: str) -> None:
+        dt = self.timeline.datetime.date(0)
+        self.strategy_logger.log(txt, dt)
 
     def next(self):
         data = self.datas[0]
 
         # Initial purchase
         if not self.bought:
+            self.log(
+                f"Initial buy to target {self.p.target_percent:.2%} for {data._name}"
+            )
             self.order_target_percent(target=self.p.target_percent)
             self.bought = True
             return
@@ -188,8 +207,14 @@ class BuyAndHoldStrategy(bt.Strategy):
                 dividend_value = dividend[0]
                 if dividend_value > 0:
                     cash = position.size * dividend_value
+                    self.log(
+                        f"Dividend received for {data._name}: {cash:.2f}"
+                    )
                     self.broker.add_cash(cash)
                     # Maintain target percent to reinvest available cash
+                    self.log(
+                        f"Reinvesting dividends to maintain target {self.p.target_percent:.2%}"
+                    )
                     self.order_target_percent(target=self.p.target_percent)
 
 
@@ -202,6 +227,7 @@ def run_quarterly_backtest(
     use_logging: bool = True,
     add_observers: bool = False,
     add_annual_return: bool = False,
+    log_level: int | None = None,
 ) -> tuple[pd.Series, dict[str, Any]]:
     """Run quarterly rebalancing backtest
 
@@ -232,7 +258,11 @@ def run_quarterly_backtest(
 
     # Add strategy
     cerebro.addstrategy(
-        PointInTimeStrategy, portfolios=portfolios, use_logging=use_logging
+        PointInTimeStrategy,
+        portfolios=portfolios,
+        use_logging=use_logging,
+        logger_name="strategy",
+        log_level=log_level,
     )
 
     # Add analyzers
@@ -299,7 +329,12 @@ def run_quarterly_backtest(
 
 
 def run_benchmark_backtest(
-    data: pd.DataFrame, initial_cash: float, ticker: str = "SPY"
+    data: pd.DataFrame,
+    initial_cash: float,
+    ticker: str = "SPY",
+    *,
+    target_percent: float = 0.99,
+    log_level: int | None = None,
 ) -> tuple[pd.Series, dict[str, Any]]:
     """Run benchmark backtest (buy and hold)
 
@@ -320,7 +355,13 @@ def run_benchmark_backtest(
     bt_feed = DividendPandasData(dataname=data, openinterest=None, name=ticker)
     cerebro.adddata(bt_feed)
 
-    cerebro.addstrategy(BuyAndHoldStrategy)
+    cerebro.addstrategy(
+        BuyAndHoldStrategy,
+        target_percent=target_percent,
+        use_logging=True,
+        logger_name="benchmark",
+        log_level=log_level,
+    )
 
     # Add analyzers
     cerebro.addanalyzer(bt.analyzers.TimeReturn, _name="time_return")
