@@ -11,6 +11,18 @@ import pandas as pd
 from .utils.paths import DATA_DIR, DB_PATH  # ← 用已有模块，别重复造轮子
 
 
+def _resolve_path(path_or_callable) -> Path:
+    """Resolve path constants that may be provided as callables.
+
+    Some unit tests patch ``DATA_DIR``/``DB_PATH`` with callables (e.g.
+    ``MagicMock``).  During testing the patched object should be invoked to
+    return the actual ``Path``.  At runtime these values are plain ``Path``
+    instances and are returned unchanged.
+    """
+
+    return Path(path_or_callable()) if callable(path_or_callable) else Path(path_or_callable)
+
+
 def tidy_ticker(col: pd.Series) -> pd.Series:
     """Data cleaning function: standardize stock symbols"""
     return (
@@ -160,17 +172,20 @@ def main(
         date_start: Optional start date (YYYY-MM-DD) for price import
         date_end: Optional end date (YYYY-MM-DD) for price import
     """
-    print(f"Creating SQLite database at: {DB_PATH}")
-    with sqlite3.connect(DB_PATH) as con:
+    data_dir = _resolve_path(DATA_DIR)
+    db_path = _resolve_path(DB_PATH)
+
+    print(f"Creating SQLite database at: {db_path}")
+    with sqlite3.connect(db_path) as con:
         _fast_pragmas(con, fast=True)
 
         # Financial statement data
         if not only_prices:
             print("Processing financial statements...")
             files = {
-                "balance_sheet": DATA_DIR / "us-balance-ttm.csv",
-                "cash_flow": DATA_DIR / "us-cashflow-ttm.csv",
-                "income": DATA_DIR / "us-income-ttm.csv",
+                "balance_sheet": data_dir / "us-balance-ttm.csv",
+                "cash_flow": data_dir / "us-cashflow-ttm.csv",
+                "income": data_dir / "us-income-ttm.csv",
             }
 
             # Define data types to reduce SQLite type inference overhead
@@ -192,9 +207,9 @@ def main(
             print("Skipping price data import due to SKIP_PRICES=1")
         else:
             print("Processing price data...")
-            price_csv = DATA_DIR / "us-shareprices-daily.csv"
+            price_csv = data_dir / "us-shareprices-daily.csv"
             # Schema file (prefer schema_prices.sql, compatible with old schema.sql) located in project root
-            sql_dir = DATA_DIR.parent / "sql"
+            sql_dir = data_dir.parent / "sql"
             preferred = sql_dir / "schema_prices.sql"
             fallback = sql_dir / "schema.sql"
             schema_sql = preferred if preferred.exists() else fallback
@@ -224,7 +239,7 @@ def main(
                 if not has_filters and _check_sqlite3_cli() and schema_sql.exists():
                     print("    - SQLite CLI available, attempting fast import...")
                     cli_success = _import_prices_with_cli(
-                        price_csv, DB_PATH, schema_sql
+                        price_csv, db_path, schema_sql
                     )
 
                 if not cli_success:
