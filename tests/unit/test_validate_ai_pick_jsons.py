@@ -31,15 +31,18 @@ def _write_json(p: Path, obj: Any) -> None:
     p.write_text(__import__("json").dumps(obj, ensure_ascii=False, indent=2), "utf-8")
 
 
-def test_validate_subset_ok(tmp_path: Path) -> None:
+def test_validate_subset_ok(tmp_path: Path, monkeypatch) -> None:
     mod = _import_validator()
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "AI_DIR", tmp_path / "ai_pick")
+    monkeypatch.setattr(mod, "PRELIM_DIR", tmp_path / "preliminary")
 
     trade_date = "2099-01-02"
     year = trade_date[:4]
 
     # Prepare preliminary candidates
     prelim_rows = [{"ticker": "AAPL"}, {"ticker": "MSFT"}, {"ticker": "GOOGL"}]
-    prelim_path = PROJECT_ROOT / "outputs" / "preliminary" / year / f"{trade_date}.json"
+    prelim_path = mod.PRELIM_DIR / year / f"{trade_date}.json"
     _write_json(prelim_path, {"rows": prelim_rows})
 
     # Prepare AI picks that are a subset of prelim
@@ -58,21 +61,24 @@ def test_validate_subset_ok(tmp_path: Path) -> None:
         "params": {"top_n": len(ai_picks)},
         "picks": ai_picks,
     }
-    ai_path = PROJECT_ROOT / "outputs" / "ai_pick" / year / f"{trade_date}.json"
+    ai_path = mod.AI_DIR / year / f"{trade_date}.json"
     _write_json(ai_path, ai_obj)
 
     issues = mod.validate_ai_file(ai_path)
     assert issues == [], f"Unexpected issues: {issues}"
 
 
-def test_validate_extra_ticker_error(tmp_path: Path) -> None:
+def test_validate_extra_ticker_error(tmp_path: Path, monkeypatch) -> None:
     mod = _import_validator()
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "AI_DIR", tmp_path / "ai_pick")
+    monkeypatch.setattr(mod, "PRELIM_DIR", tmp_path / "preliminary")
 
     trade_date = "2099-01-03"
     year = trade_date[:4]
 
     # Preliminary only includes AAPL
-    prelim_path = PROJECT_ROOT / "outputs" / "preliminary" / year / f"{trade_date}.json"
+    prelim_path = mod.PRELIM_DIR / year / f"{trade_date}.json"
     _write_json(prelim_path, {"rows": [{"ticker": "AAPL"}]})
 
     # AI picks include AAPL and an extra outside prelim
@@ -91,7 +97,7 @@ def test_validate_extra_ticker_error(tmp_path: Path) -> None:
         "params": {"top_n": len(ai_picks)},
         "picks": ai_picks,
     }
-    ai_path = PROJECT_ROOT / "outputs" / "ai_pick" / year / f"{trade_date}.json"
+    ai_path = mod.AI_DIR / year / f"{trade_date}.json"
     _write_json(ai_path, ai_obj)
 
     issues = mod.validate_ai_file(ai_path)
@@ -99,8 +105,11 @@ def test_validate_extra_ticker_error(tmp_path: Path) -> None:
     assert any("not in preliminary candidates" in s for s in issues), issues
 
 
-def test_validate_prelim_missing_warning(tmp_path: Path) -> None:
+def test_validate_prelim_missing_warning(tmp_path: Path, monkeypatch) -> None:
     mod = _import_validator()
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "AI_DIR", tmp_path / "ai_pick")
+    monkeypatch.setattr(mod, "PRELIM_DIR", tmp_path / "preliminary")
 
     trade_date = "2099-01-04"
     year = trade_date[:4]
@@ -120,15 +129,18 @@ def test_validate_prelim_missing_warning(tmp_path: Path) -> None:
         "params": {"top_n": len(ai_picks)},
         "picks": ai_picks,
     }
-    ai_path = PROJECT_ROOT / "outputs" / "ai_pick" / year / f"{trade_date}.json"
+    ai_path = mod.AI_DIR / year / f"{trade_date}.json"
     _write_json(ai_path, ai_obj)
 
     issues = mod.validate_ai_file(ai_path)
     assert any("preliminary candidates not found" in s for s in issues), issues
 
 
-def test_filename_trade_date_mismatch(tmp_path: Path) -> None:
+def test_filename_trade_date_mismatch(tmp_path: Path, monkeypatch) -> None:
     mod = _import_validator()
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "AI_DIR", tmp_path / "ai_pick")
+    monkeypatch.setattr(mod, "PRELIM_DIR", tmp_path / "preliminary")
 
     file_date = "2099-01-05"
     trade_date = "2099-01-06"  # intentionally different from file name
@@ -149,7 +161,7 @@ def test_filename_trade_date_mismatch(tmp_path: Path) -> None:
         "params": {"top_n": len(ai_picks)},
         "picks": ai_picks,
     }
-    ai_path = PROJECT_ROOT / "outputs" / "ai_pick" / year / f"{file_date}.json"
+    ai_path = mod.AI_DIR / year / f"{file_date}.json"
     _write_json(ai_path, ai_obj)
 
     issues = mod.validate_ai_file(ai_path)
