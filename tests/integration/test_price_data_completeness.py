@@ -14,7 +14,8 @@ PORTFOLIO_FILE = QUANT_PORTFOLIO_FILE
 # --- Test Constants Configuration ---
 # A quarter has approximately 252/4 = 63 trading days
 TRADING_DAYS_IN_QUARTER = 63
-# We require a price data coverage of at least 90% to tolerate holidays or minor data gaps
+# We require a price data coverage of at least 90% to tolerate
+# holidays or minor data gaps
 MIN_COVERAGE_RATIO = 0.90
 
 
@@ -25,7 +26,8 @@ MIN_COVERAGE_RATIO = 0.90
 def db_connection():
     """
     Creates a database connection fixture.
-    It is created only once for the entire test session and is automatically closed at the end.
+    It is created only once for the entire test session and
+    is automatically closed at the end.
     """
     if not DB_PATH.exists():
         pytest.skip(f"Database file not found, skipping this test: {DB_PATH}")
@@ -40,19 +42,20 @@ def portfolio_excel_file() -> pd.ExcelFile:
     """Loads the portfolio Excel file as a reusable test resource."""
     if not PORTFOLIO_FILE.exists():
         pytest.skip(f"Portfolio file not found, skipping this test: {PORTFOLIO_FILE}")
-
-    return pd.ExcelFile(PORTFOLIO_FILE)
+    with pd.ExcelFile(PORTFOLIO_FILE) as xls:
+        yield xls
 
 
 # --- Helper Function for Dynamically Generating Test Cases ---
 
 
 def get_portfolio_sheet_names():
-    """Helper function: Reads the list of sheet names from the Excel file for parameterization."""
+    """Helper function: Reads sheet names from the Excel file
+    for parameterization."""
     if not PORTFOLIO_FILE.exists():
         return []
-    xls = pd.ExcelFile(PORTFOLIO_FILE)
-    return xls.sheet_names
+    with pd.ExcelFile(PORTFOLIO_FILE) as xls:
+        return xls.sheet_names
 
 
 # --- Pytest Test Functions ---
@@ -65,7 +68,7 @@ def test_price_data_is_complete_for_holding_period(
     portfolio_excel_file: pd.ExcelFile,
 ):
     """
-    For each stock in the portfolio, verifies that its price data is complete 
+    For each stock in the portfolio, verifies that its price data is complete
     for the subsequent holding period.
     """
     # 1. Prepare test period and parameters
@@ -80,7 +83,9 @@ def test_price_data_is_complete_for_holding_period(
     # Read the list of stocks for this period from the Excel file
     df_portfolio = portfolio_excel_file.parse(sheet_name)
     if "Ticker" not in df_portfolio.columns or df_portfolio.empty:
-        pytest.skip(f"Ticker column not found or content is empty in sheet '{sheet_name}'.")
+        pytest.skip(
+            f"Ticker column not found or content is empty in sheet '{sheet_name}'."
+        )
 
     portfolio_tickers = df_portfolio["Ticker"].unique().tolist()
 
@@ -90,8 +95,8 @@ def test_price_data_is_complete_for_holding_period(
     for ticker in portfolio_tickers:
         # Use a parameterized query to prevent SQL injection
         query = """
-        SELECT COUNT(Date) 
-        FROM share_prices 
+        SELECT COUNT(Date)
+        FROM share_prices
         WHERE Ticker = ? AND Date >= ? AND Date < ?
         """
 
@@ -112,6 +117,7 @@ def test_price_data_is_complete_for_holding_period(
 
     # 3. After all checks are complete, perform the final assertion
     assert not data_completeness_errors, (
-        f"\nFound price data completeness issues for the holding period after rebalance date {rebalance_date.date()}:\n"
+        "\nFound price data completeness issues for the holding period after "
+        f"rebalance date {rebalance_date.date()}:\n"
         + "\n".join(f"  - {err}" for err in data_completeness_errors)
     )
