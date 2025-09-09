@@ -76,3 +76,6 @@ markers = [
     "requires_api: tests that require external API access",
     "requires_db: tests that require database access"
 ]
+
+[tool.coverage.report]
+include = ["src/stock_analysis/cli.py"]

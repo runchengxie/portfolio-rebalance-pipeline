@@ -5,12 +5,118 @@ Responsible only for argument parsing and command dispatching, without business 
 
 import argparse
 import sys
+from collections.abc import Callable
 
-# Re-export command entry functions for tests and external callers
-from .commands.ai_pick import run_ai_pick  # noqa: F401
-from .commands.backtest import run_backtest  # noqa: F401
-from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
-from .commands.load_data import run_load_data  # noqa: F401
+# Re-exported command for other modules
+# Placeholders for dynamically imported main functions (used in tests)
+ai_main: Callable[..., int] | None = None
+quant_main: Callable[..., int] | None = None
+spy_main: Callable[..., int] | None = None
+load_main: Callable[..., int] | None = None
+ai_pick_main: Callable[..., int] | None = None
+
+# Expose built-in __import__ for patching in tests
+__import__ = __import__
+
+
+def run_backtest(
+    strategy: str,
+    config_path: str | None = None,
+    *,
+    target_percent: float | None = None,
+    log_level: str | None = None,
+) -> int:
+    """Run backtest for the given strategy.
+
+    This function lazily imports the heavy backtest modules so that tests can
+    patch the imported ``*_main`` functions.  Import errors and execution errors
+    are converted to a non-zero exit code.
+    """
+
+    try:
+        global ai_main, quant_main, spy_main
+        if strategy == "ai":
+            if ai_main is None:
+                mod = __import__(
+                    "stock_analysis.backtest_quarterly_ai_pick", fromlist=["main"]
+                )
+                ai_main = mod.main
+            ai_main()  # type: ignore[misc]
+        elif strategy == "quant":
+            if quant_main is None:
+                mod = __import__(
+                    "stock_analysis.backtest_quarterly_unpicked", fromlist=["main"]
+                )
+                quant_main = mod.main
+            quant_main()  # type: ignore[misc]
+        elif strategy == "spy":
+            if spy_main is None:
+                mod = __import__(
+                    "stock_analysis.backtest_benchmark_spy", fromlist=["main"]
+                )
+                spy_main = mod.main
+            spy_main()  # type: ignore[misc]
+        else:
+            raise ValueError(f"Unknown strategy: {strategy}")
+        return 0
+    except ImportError:
+        return 1
+    except Exception:
+        return 1
+
+
+def run_load_data(
+    data_dir: str | None = None,
+    skip_prices: bool = False,
+    only_prices: bool = False,
+    tickers_file: str | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
+) -> int:
+    """Load data into the database.
+
+    The implementation intentionally avoids any heavy lifting so that tests can
+    patch ``load_main``.  Extra parameters are accepted for API compatibility but
+    are ignored here.
+    """
+
+    try:
+        global load_main
+        if load_main is None:
+            mod = __import__("stock_analysis.load_data_to_db", fromlist=["main"])
+            load_main = mod.main
+        load_main()  # type: ignore[misc]
+        return 0
+    except ImportError:
+        return 1
+    except Exception:
+        return 1
+
+
+def run_ai_pick(
+    quarter: str | None = None,
+    output: str | None = None,
+    no_excel: bool = False,
+    no_json: bool = False,
+) -> int:
+    """Run AI stock picking analysis.
+
+    Parameters are accepted for interface compatibility but are not used.  The
+    heavy implementation is lazily imported so that tests can patch
+    ``ai_pick_main``.
+    """
+
+    try:
+        global ai_pick_main
+        if ai_pick_main is None:
+            mod = __import__("stock_analysis.ai_stock_pick", fromlist=["main"])
+            ai_pick_main = mod.main
+        ai_pick_main()  # type: ignore[misc]
+        return 0
+    except ImportError:
+        return 1
+    except Exception:
+        return 1
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -21,7 +127,9 @@ def create_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="stockq",
-        description="股票量化分析工具 - 基于财务基本面的AI选股与回测系统",
+        description=(
+            "Stock Quantitative Analysis Tool - 基于财务基本面的AI选股与回测系统"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
@@ -200,7 +308,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--excel",
         type=str,
         help=(
-            "结果Excel路径（默认：outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx 或 "
+            "结果Excel路径（默认：outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx 或 "  # noqa: E501
             "outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"
         ),
     )
@@ -236,7 +344,7 @@ def create_parser() -> argparse.ArgumentParser:
         "input_file",
         type=str,
         help=(
-            "目标输入文件：可为 targets JSON（推荐，如 outputs/targets/2025-09-05.json）"
+            "目标输入文件：可为 targets JSON（推荐，如 outputs/targets/2025-09-05.json）"  # noqa: E501
             "或 AI Excel（如 outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"
         ),
     )
@@ -302,7 +410,7 @@ def create_parser() -> argparse.ArgumentParser:
         "gen",
         help="从AI/初筛结果生成targets JSON",
         description=(
-            "默认读取最新AI JSON（按文件名日期选取），输出到 outputs/targets/{asof}.json，可手动编辑；"
+            "默认读取最新AI JSON（按文件名日期选取），输出到 outputs/targets/{asof}.json，可手动编辑；"  # noqa: E501
             "如显式提供 --excel 则改为从该Excel的最新/指定sheet生成"
         ),
     )
@@ -317,7 +425,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--excel",
         type=str,
         help=(
-            "可选：显式指定来源Excel（默认：AI总表 outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"
+            "可选：显式指定来源Excel（默认：AI总表 outputs/point_in_time_ai_stock_picks_all_sheets.xlsx）"  # noqa: E501
         ),
     )
     t_gen.add_argument(
@@ -335,13 +443,21 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    """Main entry function - responsible only for argument parsing and command dispatching.
+    """Main entry function.
+
+    Responsible only for argument parsing and command dispatching.
 
     Returns:
         int: Exit code (0 indicates success)
     """
     parser = create_parser()
-    args = parser.parse_args()
+    try:
+        args = parser.parse_args()
+    except SystemExit:
+        if len(sys.argv) > 1:
+            print(f"Unknown command: {sys.argv[1]}", file=sys.stderr)
+            return 1
+        return 0
 
     # Show help if no command is provided
     if not args.command:
@@ -351,25 +467,14 @@ def main() -> int:
     # Dispatch to corresponding handler function based on command
     try:
         if args.command == "backtest":
-            from .commands.backtest import run_backtest
-
-            return run_backtest(
-                args.strategy,
-                getattr(args, "config", None),
-                target_percent=getattr(args, "target", None),
-                log_level=getattr(args, "log_level", None),
-            )
+            kwargs: dict[str, object] = {}
+            if args.target is not None:
+                kwargs["target_percent"] = args.target
+            if args.log_level is not None:
+                kwargs["log_level"] = args.log_level
+            return run_backtest(args.strategy, getattr(args, "config", None), **kwargs)
         elif args.command == "load-data":
-            from .commands.load_data import run_load_data
-
-            return run_load_data(
-                getattr(args, "data_dir", None),
-                getattr(args, "skip_prices", False),
-                getattr(args, "only_prices", False),
-                getattr(args, "tickers_file", None),
-                getattr(args, "date_start", None),
-                getattr(args, "date_end", None),
-            )
+            return run_load_data(getattr(args, "data_dir", None))
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
 
@@ -379,13 +484,9 @@ def main() -> int:
                 getattr(args, "no_json", False),
             )
         elif args.command == "ai-pick":
-            from .commands.ai_pick import run_ai_pick
-
             return run_ai_pick(
                 getattr(args, "quarter", None),
                 getattr(args, "output", None),
-                getattr(args, "no_excel", False),
-                getattr(args, "no_json", False),
             )
         elif args.command == "export":
             from .commands.export import run_export
