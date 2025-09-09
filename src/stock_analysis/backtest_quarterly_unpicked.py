@@ -1,8 +1,17 @@
 import sys
 import time
+import datetime
 
-from .backtest.engine import generate_report, run_quarterly_backtest
-from .backtest.prep import load_portfolios, load_price_feeds
+from .backtest.engine import (
+    generate_report,
+    run_quarterly_backtest,
+    run_benchmark_backtest,
+)
+from .backtest.prep import (
+    load_portfolios,
+    load_price_feeds,
+    load_spy_data,
+)
 from .utils.config import get_backtest_period, get_initial_cash
 from .utils.paths import (
     DB_PATH,
@@ -84,6 +93,18 @@ def main():
         add_annual_return=False,  # Unselected version does not add annual return analyzer
     )
 
+    # Prepare SPY benchmark
+    spy_value = None
+    try:
+        start_dt = datetime.datetime.combine(BACKTEST_START_DATE, datetime.time())
+        end_dt = datetime.datetime.combine(BACKTEST_END_DATE, datetime.time())
+        spy_data = load_spy_data(DB_PATH, start_dt, end_dt)
+        spy_value, _ = run_benchmark_backtest(
+            data=spy_data, initial_cash=initial_cash, ticker="SPY"
+        )
+    except Exception as e:
+        print(f"[WARN] SPY benchmark skipped: {e}")
+
     # Generate report
     output_png = OUTPUTS_DIR / "quarterly_strategy_returns.png"
     generate_report(
@@ -91,6 +112,8 @@ def main():
         title="Quarterly Point-in-Time Strategy Backtest Results",
         portfolio_value=portfolio_value,
         output_png=output_png,
+        benchmark_value=spy_value,
+        benchmark_label="SPY",
     )
 
 
