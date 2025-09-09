@@ -35,29 +35,33 @@ except Exception:  # pragma: no cover
 
 from .commands.lb_account import run_lb_account  # noqa: F401
 from .commands.lb_config import run_lb_config  # noqa: F401
+from .commands.load_data import run_load_data  # noqa: F401
 
-try:  # pragma: no cover
-    from .commands.lb_quote import run_lb_quote  # noqa: F401
-except Exception:  # pragma: no cover
+# Forwarders for quote/rebalance to support test patching and lazy import
+def run_lb_quote(tickers: list[str]) -> int:  # type: ignore[override]
+    """Forwarder for lb-quote with lazy import."""
+    from .commands.lb_quote import run_lb_quote as _run_lb_quote
 
-    def run_lb_quote(*args, **kwargs):  # type: ignore[override]
-        raise ImportError("lb_quote dependencies are not installed")
-
-
-try:  # pragma: no cover
-    from .commands.lb_rebalance import run_lb_rebalance  # noqa: F401
-except Exception:  # pragma: no cover
-
-    def run_lb_rebalance(*args, **kwargs):  # type: ignore[override]
-        raise ImportError("lb_rebalance dependencies are not installed")
+    return _run_lb_quote(tickers)
 
 
-try:  # pragma: no cover
-    from .commands.load_data import run_load_data  # noqa: F401
-except Exception:  # pragma: no cover
+def run_lb_rebalance(
+    input_file: str,
+    account: str = "main",
+    dry_run: bool = True,
+    env: str = "real",
+    target_gross_exposure: float = 1.0,
+) -> int:  # type: ignore[override]
+    """Forwarder for lb-rebalance with lazy import."""
+    from .commands.lb_rebalance import run_lb_rebalance as _run_lb_rebalance
 
-    def run_load_data(*args, **kwargs):  # type: ignore[override]
-        raise ImportError("load_data dependencies are not installed")
+    return _run_lb_rebalance(
+        input_file,
+        account,
+        dry_run,
+        env,
+        target_gross_exposure,
+    )
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -465,12 +469,8 @@ def main() -> int:
                 getattr(args, "out", None),
             )
         elif args.command == "lb-quote":
-            from .commands.lb_quote import run_lb_quote
-
             return run_lb_quote(args.tickers)
         elif args.command == "lb-rebalance":
-            from .commands.lb_rebalance import run_lb_rebalance
-
             # If --execute is specified, disable dry-run mode
             dry_run = not getattr(args, "execute", False)
             return run_lb_rebalance(
@@ -481,16 +481,12 @@ def main() -> int:
                 getattr(args, "target_gross_exposure", 1.0),
             )
         elif args.command == "lb-account":
-            from .commands.lb_account import run_lb_account
-
             return run_lb_account(
                 only_funds=getattr(args, "funds", False),
                 only_positions=getattr(args, "positions", False),
                 fmt=getattr(args, "format", "table"),
             )
         elif args.command == "lb-config":
-            from .commands.lb_config import run_lb_config
-
             return run_lb_config(getattr(args, "show", True))
         elif args.command == "targets":
             from .commands.targets import run_targets_gen
@@ -527,3 +523,29 @@ def app() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+def run_lb_quote(tickers: list[str]) -> int:  # type: ignore[override]
+    """Forwarder for lb_quote to support test patching and lazy import."""
+    from .commands.lb_quote import run_lb_quote as _run_lb_quote
+
+    return _run_lb_quote(tickers)
+
+
+def run_lb_rebalance(
+    input_file: str,
+    account: str = "main",
+    dry_run: bool = True,
+    env: str = "real",
+    target_gross_exposure: float = 1.0,
+) -> int:  # type: ignore[override]
+    """Forwarder for lb_rebalance to support test patching and lazy import."""
+    from .commands.lb_rebalance import run_lb_rebalance as _run_lb_rebalance
+
+    return _run_lb_rebalance(
+        input_file,
+        account,
+        dry_run,
+        env,
+        target_gross_exposure,
+    )
