@@ -19,7 +19,7 @@ EXCLUDE_DIRS_EXACT: set[str] = {
     ".pytest_cache",
     ".ruff_cache",
     "cache",
-    #     "outputs",
+    "outputs",
     ".vscode",
     ".idea",
     "venv",
