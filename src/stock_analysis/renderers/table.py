@@ -16,15 +16,15 @@ def render_quotes(quotes: list[Quote]) -> str:
         str: Formatted table string
     """
     if not quotes:
-        return "无报价数据"
+        return "No quote data"
 
     lines = []
-    lines.append("实时报价:")
+    lines.append("Real-time quotes:")
     lines.append("-" * 50)
 
     for quote in quotes:
         lines.append(
-            f"{quote.symbol:12} | 价格: {quote.price:>10.2f} | 时间: {quote.timestamp}"
+            f"{quote.symbol:12} | Price: {quote.price:>10.2f} | Time: {quote.timestamp}"
         )
 
     return "\n".join(lines)
@@ -51,16 +51,16 @@ def render_account_snapshot(
 
     # Fund information
     if not only_positions:
-        lines.append(f"\n[{snapshot.env.upper()}] 现金(USD): ${snapshot.cash_usd:,.2f}")
+        lines.append(f"\n[{snapshot.env.upper()}] Cash (USD): ${snapshot.cash_usd:,.2f}")
         if not only_funds:
-            lines.append(f"持仓市值: ${snapshot.total_market_value:,.2f}")
-            lines.append(f"总资产: ${snapshot.total_portfolio_value:,.2f}")
+            lines.append(f"Positions value: ${snapshot.total_market_value:,.2f}")
+            lines.append(f"Total assets: ${snapshot.total_portfolio_value:,.2f}")
 
     # Position information
     if not only_funds:
         if snapshot.positions:
             if not only_positions:
-                lines.append("\n持仓详情:")
+                lines.append("\nPositions:")
             lines.append("Symbol        Qty        Last       Est.Value")
             lines.append("-" * 50)
 
@@ -71,7 +71,7 @@ def render_account_snapshot(
                 )
         else:
             if not only_positions:
-                lines.append("\n无持仓")
+                lines.append("\nNo positions held")
 
     return "\n".join(lines)
 
@@ -92,7 +92,7 @@ def render_multiple_account_snapshots(
         str: Formatted table string
     """
     if not snapshots:
-        return "无账户数据"
+        return "No account data"
 
     lines = []
     for snapshot in snapshots:
@@ -113,17 +113,19 @@ def render_rebalance_plan(result: RebalanceResult) -> str:
     lines = []
 
     # Title
-    mode = "干跑模式" if result.dry_run else "实际执行模式"
-    lines.append(f"\n=== {mode} - {result.sheet_name} 差额调仓 ===")
+    mode = "Dry Run" if result.dry_run else "Execution Mode"
+    lines.append(f"\n=== {mode} - {result.sheet_name} Rebalance Summary ===")
     lines.append("-" * 80)
 
     # Account overview
-    lines.append(f"总资产: ${result.total_portfolio_value:,.2f}")
-    lines.append(f"等权重分配: 每只股票目标市值 ${result.target_value_per_stock:,.2f}")
+    lines.append(f"Total assets: ${result.total_portfolio_value:,.2f}")
+    lines.append(
+        f"Equal weight allocation: target value per stock ${result.target_value_per_stock:,.2f}"
+    )
     lines.append("-" * 80)
 
     # Rebalance details header
-    lines.append("Symbol   | 当前价格 | 当前持仓 | 目标持仓 | 差额    | 操作")
+    lines.append("Symbol   | Last Price | Current Qty | Target Qty | Delta   | Action")
     lines.append("-" * 80)
 
     # Build current positions mapping
@@ -148,9 +150,9 @@ def render_rebalance_plan(result: RebalanceResult) -> str:
         if order:
             action = f"{order.side} {order.quantity}"
         elif abs(delta_qty) > 0:
-            action = "跳过（差额太小）"
+            action = "Skip (too small delta)"
         else:
-            action = "无变化"
+            action = "No change"
 
         lines.append(
             f"{target_pos.symbol[:8]:8s} | {target_pos.last_price:8.2f} | "
@@ -158,13 +160,13 @@ def render_rebalance_plan(result: RebalanceResult) -> str:
         )
 
     # Order summary
-    lines.append(f"\n总计处理 {len(result.orders)} 个订单")
+    lines.append(f"\nProcessed {len(result.orders)} orders")
 
     if result.dry_run:
-        lines.append("\n注意：这是干跑模式，未实际下单")
-        lines.append("使用 --execute 参数可实际执行交易")
+        lines.append("\nNote: this is a dry run, no orders were placed")
+        lines.append("Use --execute to place real orders")
     else:
-        lines.append("\n警告：已实际下单，请检查券商账户确认执行情况")
+        lines.append("\nWarning: orders have been placed, please check your brokerage account")
 
     return "\n".join(lines)
 
@@ -179,10 +181,10 @@ def render_orders(orders: list[Order]) -> str:
         str: Formatted table string
     """
     if not orders:
-        return "无订单数据"
+        return "No order data"
 
     lines = []
-    lines.append("订单详情:")
+    lines.append("Order details:")
     lines.append("Symbol   | Side | Qty    | Price    | Status   | Order ID")
     lines.append("-" * 65)
 
@@ -196,6 +198,6 @@ def render_orders(orders: list[Order]) -> str:
         )
 
         if order.error_message:
-            lines.append(f"  -> 错误: {order.error_message}")
+            lines.append(f"  -> Error: {order.error_message}")
 
     return "\n".join(lines)

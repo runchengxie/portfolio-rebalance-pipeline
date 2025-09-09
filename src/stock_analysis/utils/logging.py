@@ -54,8 +54,8 @@ def setup_logging(
 
     formatter = logging.Formatter(_DEFAULT_FMT, datefmt=_DEFAULT_DATEFMT)
 
-    # Create console handler
-    sh = logging.StreamHandler(stream=sys.stdout)
+    # Create console handler (write to stderr for error capture in tests)
+    sh = logging.StreamHandler(stream=sys.stderr)
     sh.setLevel(level)
     sh.setFormatter(formatter)
     logger.addHandler(sh)

@@ -3,10 +3,14 @@
 Provides business logic for account snapshots, returning structured data.
 """
 
-from ..broker.longport_client import LongPortClient
+from typing import TYPE_CHECKING
+
 from ..models import AccountSnapshot, Position, Quote
 from ..utils.fx import to_usd
 from ..utils.logging import get_logger
+
+if TYPE_CHECKING:  # pragma: no cover - for type checking only
+    from ..broker.longport_client import LongPortClient
 
 logger = get_logger(__name__)
 
@@ -15,7 +19,7 @@ def get_account_snapshot(
     env: str = "real",
     include_quotes: bool = True,
     pre_quotes: dict[str, tuple[float, str]] | None = None,
-    client: LongPortClient | None = None,
+    client: "LongPortClient | None" = None,
 ) -> AccountSnapshot:
     """Get account snapshot
 
@@ -31,6 +35,8 @@ def get_account_snapshot(
     try:
         created_here = False
         if client is None:
+            from ..broker.longport_client import LongPortClient  # Import lazily
+
             client = LongPortClient(env=env)
             created_here = True
         cash_usd, stock_position_map, net_assets, base_ccy = client.portfolio_snapshot()
@@ -95,9 +101,12 @@ def get_account_snapshot(
             base_currency=str(base_ccy).upper() if base_ccy else None,
         )
 
+    except ImportError as e:  # Surface missing dependency clearly
+        logger.error(f"Failed to import LongPort module: {e}")
+        raise
     except Exception as e:
-        logger.error(f"无法获取账户数据: {e}")
-        raise RuntimeError(f"账户数据获取失败: {e}") from e
+        logger.error(f"Failed to get account data: {e}")
+        raise RuntimeError(f"Failed to get account data: {e}") from e
 
 
 def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
@@ -106,7 +115,7 @@ def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
 
 
 def get_quotes(
-    symbols: list[str], client: LongPortClient | None = None
+    symbols: list[str], client: "LongPortClient | None" = None
 ) -> dict[str, Quote]:
     """Get stock quotes
 
@@ -123,6 +132,8 @@ def get_quotes(
     try:
         created_here = False
         if client is None:
+            from ..broker.longport_client import LongPortClient  # Import lazily
+
             client = LongPortClient()
             created_here = True
         quote_data = client.quote_last(symbols)
@@ -137,6 +148,9 @@ def get_quotes(
 
         return quotes
 
+    except ImportError as e:  # pragma: no cover - same reason as above
+        logger.error(f"Failed to import LongPort module: {e}")
+        raise
     except Exception as e:
-        logger.error(f"获取报价失败: {e}")
+        logger.error(f"Failed to get quotes: {e}")
         raise
