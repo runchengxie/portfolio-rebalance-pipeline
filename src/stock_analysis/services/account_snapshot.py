@@ -104,9 +104,12 @@ def get_account_snapshot(
             base_currency=str(base_ccy).upper() if base_ccy else None,
         )
 
+    except ImportError as e:  # Surface missing dependency clearly
+        logger.error(f"Failed to import LongPort module: {e}")
+        raise
     except Exception as e:
-        logger.error(f"无法获取账户数据: {e}")
-        raise RuntimeError(f"账户数据获取失败: {e}") from e
+        logger.error(f"Failed to get account data: {e}")
+        raise RuntimeError(f"Failed to get account data: {e}") from e
 
 
 def get_multiple_account_snapshots(envs: list[str]) -> list[AccountSnapshot]:
@@ -148,6 +151,9 @@ def get_quotes(
 
         return quotes
 
+    except ImportError as e:  # pragma: no cover - same reason as above
+        logger.error(f"Failed to import LongPort module: {e}")
+        raise
     except Exception as e:
-        logger.error(f"获取报价失败: {e}")
+        logger.error(f"Failed to get quotes: {e}")
         raise

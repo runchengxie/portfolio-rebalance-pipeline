@@ -3,11 +3,12 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+import os
 
 # Compatibility import: prefer longport, fallback to longbridge
-try:
+try:  # pragma: no cover - depends on external package
     from longport.openapi import Config, Market, QuoteContext, TradeContext
-except ImportError:
+except ImportError:  # pragma: no cover - executed when longport not available
     from longbridge.openapi import Config, Market, QuoteContext, TradeContext
 
 # Timezone support (Python 3.9+), fallback to local time determination when unavailable
