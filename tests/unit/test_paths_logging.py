@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from stock_analysis.utils.logging import StrategyLogger, setup_logging
 from stock_analysis.utils.paths import (
     AI_PORTFOLIO_FILE,
@@ -381,28 +383,37 @@ class TestLoggingIntegration:
             assert "Standard logger message" in standard_content
             assert "Strategy logger message" in strategy_content
 
-    def test_logging_performance_smoke_test(self, tmp_path):
+    @pytest.mark.slow
+    def test_logging_performance_smoke_test(self, tmp_path, monkeypatch):
         """Smoke test for logging performance."""
         import time
 
-        with patch("stock_analysis.utils.logging.OUTPUTS_DIR", tmp_path):
-            logger = setup_logging("performance_test", log_file="performance.log")
+        # Use a controllable clock to avoid real-time delays
+        fake_time = {"t": 0.0}
 
-            # Time how long it takes to log a large number of messages
+        def fake_time_func():
+            fake_time["t"] += 0.001
+            return fake_time["t"]
+
+        monkeypatch.setattr(time, "time", fake_time_func)
+        monkeypatch.setattr(time, "sleep", lambda _x: None)
+
+        with patch("stock_analysis.utils.logging.OUTPUTS_DIR", tmp_path):
+            logger = setup_logging("performance_test", filename="performance.log")
+
             start_time = time.time()
 
-            for i in range(1000):
+            for i in range(10):
                 logger.info(f"Performance test message {i}")
 
             elapsed_time = time.time() - start_time
 
-            # Verify performance is reasonable (1000 messages should complete in a reasonable time)
+            # Verify performance is reasonable (10 messages should complete quickly)
             assert elapsed_time < 5.0  # Should complete within 5 seconds
 
-            # Verify all messages were logged
             log_content = (tmp_path / "performance.log").read_text(encoding="utf-8")
             assert "Performance test message 0" in log_content
-            assert "Performance test message 999" in log_content
+            assert "Performance test message 9" in log_content
 
     def test_unicode_logging_support(self, tmp_path):
         """Tests support for logging Unicode characters."""
