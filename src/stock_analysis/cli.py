@@ -504,7 +504,15 @@ def run_lb_account(
     fmt: str = "table",
 ) -> int:  # type: ignore[override]
     """Forwarder for lb_account with lazy import."""
-    from .commands.lb_account import run_lb_account as _run_lb_account
+    try:
+        from .commands.lb_account import run_lb_account as _run_lb_account
+    except ImportError:
+        print(
+            "Failed to import LongPort module. Please install it via "
+            "'pip install longport'",
+            file=sys.stderr,
+        )
+        return 1
 
     return _run_lb_account(
         only_funds=only_funds,
