@@ -3,36 +3,32 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
-
 import stock_analysis.cli as cli
 
 
 @pytest.mark.unit
 def test_cli_dispatch_lb_quote(monkeypatch):
-    """Test that the CLI dispatches the lb-quote command to the run_lb_quote function."""
-    # Create a probe function to record calls
+    """Test CLI dispatch of lb-quote to run_lb_quote."""
     called = {}
 
     def fake_run_lb_quote(tickers):
         called["tickers"] = tickers
         return 0
 
-    # Replace the real function
-    monkeypatch.setattr(cli, "run_lb_quote", fake_run_lb_quote)
+    monkeypatch.setattr(
+        "stock_analysis.commands.lb_quote.run_lb_quote", fake_run_lb_quote
+    )
 
-    # Simulate command-line arguments
-    test_args = ["prog", "lb-quote", "AAPL", "MSFT"]
-    with patch.object(sys, "argv", test_args):
-        # Directly test the dispatch logic
-        result = cli.run_lb_quote(["AAPL", "MSFT"])
+    with patch.object(sys, "argv", ["stockq", "lb-quote", "AAPL", "MSFT"]):
+        result = cli.main()
 
-        assert result == 0
-        assert called["tickers"] == ["AAPL", "MSFT"]
+    assert result == 0
+    assert called["tickers"] == ["AAPL", "MSFT"]
 
 
 @pytest.mark.unit
 def test_cli_dispatch_lb_rebalance(monkeypatch):
-    """Test that the CLI dispatches the lb-rebalance command to the run_lb_rebalance function."""
+    """Test CLI dispatch of lb-rebalance to run_lb_rebalance."""
     called = {}
 
     def fake_run_lb_rebalance(input_file, account="main", dry_run=True, env="real"):
@@ -132,7 +128,9 @@ def test_main_unknown_command():
         with patch("builtins.print") as mock_print:
             result = cli.main()
             assert result == 1
-            mock_print.assert_called_with("Unknown command: unknown-command", file=sys.stderr)
+            mock_print.assert_called_with(
+                "Unknown command: unknown-command", file=sys.stderr
+            )
 
 
 @pytest.mark.unit
