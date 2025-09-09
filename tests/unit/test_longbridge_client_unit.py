@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
-
 from stock_analysis.broker.longport_client import LongPortClient
 
 
@@ -55,7 +54,8 @@ def test_candles_parameters():
         end_date = date(2023, 12, 31)
         custom_period = Mock()
 
-        # Test the method call - the focus is to verify that _to_lb_symbol is called correctly and parameters are passed
+        # Test the method call - the focus is to verify that _to_lb_symbol is
+        # called correctly and parameters are passed
         client.candles("AAPL", start_date, end_date, custom_period)
 
         # Verify that history_candlesticks_by_date was called
@@ -189,3 +189,28 @@ def test_decimal_precision():
         assert call_args.kwargs["submitted_quantity"] == Decimal("25")
         assert isinstance(call_args.kwargs["submitted_price"], Decimal)
         assert isinstance(call_args.kwargs["submitted_quantity"], Decimal)
+
+
+@pytest.mark.unit
+def test_portfolio_snapshot_basic(monkeypatch):
+    cash_info = SimpleNamespace(currency="HKD", available_cash=2000.0)
+    asset_obj = SimpleNamespace(
+        cash_infos=[cash_info], net_assets=2000.0, currency="HKD"
+    )
+    pos1 = SimpleNamespace(symbol="AAPL.US", quantity=10, market="US")
+    pos2 = SimpleNamespace(symbol="TSLA.US", quantity=5, market="US")
+    mock_trade = Mock()
+    mock_trade.asset.return_value = [asset_obj]
+    mock_trade.stock_positions.return_value = [pos1, pos2]
+
+    client = LongPortClient.__new__(LongPortClient)
+    client.trade = mock_trade
+    client.quote = Mock()
+
+    monkeypatch.setenv("FX_HKD_USD", "0.25")
+
+    cash_usd, pos_map, net_assets, base_ccy = client.portfolio_snapshot()
+    assert cash_usd == pytest.approx(500.0)
+    assert pos_map == {"AAPL.US": 10, "TSLA.US": 5}
+    assert net_assets == 2000.0
+    assert base_ccy == "HKD"

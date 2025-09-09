@@ -1,6 +1,9 @@
 from unittest.mock import patch
 
+import pytest
 from stock_analysis.services import account_snapshot
+
+pytestmark = pytest.mark.unit
 
 
 def test_get_multiple_account_snapshots():
