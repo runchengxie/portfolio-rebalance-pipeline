@@ -36,6 +36,7 @@ def run_lb_quote(tickers: list[str]) -> int:
     except ImportError as e:
         logger.error(f"无法导入LongPort模块: {e}")
         logger.error("请确保已安装 longport 包：pip install longport")
+        print(f"Error importing LongPort module: {e}")
         return 1
     except Exception as e:
         logger.error(f"获取报价失败：{e}")
