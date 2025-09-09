@@ -1,9 +1,9 @@
-"""测试CLI与可执行脚本基本功能模块
+"""Module for testing the basic functionality of the CLI and executable scripts.
 
-测试CLI和可执行脚本的烟雾测试，包括：
-- CLI入口点stockq的--help可运行
-- backtest_quarterly_*和backtest_benchmark_spy的-m module烟雾测试
-- 在临时SQLite + 极小CSV上跑一步就退出
+This includes smoke tests for the CLI and executable scripts, covering:
+- The CLI entry point `stockq --help` can be run.
+- Smoke tests for `backtest_quarterly_*` and `backtest_benchmark_spy` using the `-m module` flag.
+- Runs a single step and exits using a temporary SQLite database and a minimal CSV file.
 """
 
 import subprocess
@@ -23,32 +23,32 @@ from stock_analysis.cli import (
 
 
 class TestCLIParser:
-    """测试CLI参数解析器"""
+    """Tests the CLI argument parser."""
 
     def test_create_parser(self):
-        """测试创建参数解析器"""
+        """Tests the creation of the argument parser."""
         parser = create_parser()
 
         assert parser.prog == "stockq"
-        assert "股票量化分析工具" in parser.description
+        assert "Stock Quantitative Analysis Tool" in parser.description
 
     def test_help_command(self, capsys):
-        """测试--help命令"""
+        """Tests the --help command."""
         parser = create_parser()
 
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["--help"])
 
-        # --help应该以退出码0退出
+        # --help should exit with code 0.
         assert exc_info.value.code == 0
 
-        # 验证帮助信息被输出
+        # Verify that the help message is printed to stdout.
         captured = capsys.readouterr()
         assert "stockq" in captured.out
-        assert "股票量化分析工具" in captured.out
+        assert "Stock Quantitative Analysis Tool" in captured.out
 
     def test_version_command(self, capsys):
-        """测试--version命令"""
+        """Tests the --version command."""
         parser = create_parser()
 
         with pytest.raises(SystemExit) as exc_info:
@@ -60,17 +60,17 @@ class TestCLIParser:
         assert "stockq 0.1.0" in captured.out
 
     def test_backtest_subcommand_parsing(self):
-        """测试backtest子命令解析"""
+        """Tests the parsing of the backtest subcommand."""
         parser = create_parser()
 
-        # 测试有效的策略参数
+        # Test valid strategy arguments.
         for strategy in ["ai", "quant", "spy"]:
             args = parser.parse_args(["backtest", strategy])
             assert args.command == "backtest"
             assert args.strategy == strategy
 
     def test_backtest_with_config(self):
-        """测试带配置文件的backtest命令"""
+        """Tests the backtest command with a config file."""
         parser = create_parser()
 
         args = parser.parse_args(["backtest", "ai", "--config", "/path/to/config.yaml"])
@@ -79,25 +79,25 @@ class TestCLIParser:
         assert args.config == "/path/to/config.yaml"
 
     def test_load_data_subcommand(self):
-        """测试load-data子命令"""
+        """Tests the load-data subcommand."""
         parser = create_parser()
 
         args = parser.parse_args(["load-data"])
         assert args.command == "load-data"
 
-        # 测试带数据目录参数
+        # Test with the data directory argument.
         args = parser.parse_args(["load-data", "--data-dir", "/custom/data"])
         assert args.command == "load-data"
         assert args.data_dir == "/custom/data"
 
     def test_ai_pick_subcommand(self):
-        """测试ai-pick子命令"""
+        """Tests the ai-pick subcommand."""
         parser = create_parser()
 
         args = parser.parse_args(["ai-pick"])
         assert args.command == "ai-pick"
 
-        # 测试带参数
+        # Test with arguments.
         args = parser.parse_args(
             ["ai-pick", "--quarter", "2024-Q1", "--output", "result.xlsx"]
         )
@@ -106,7 +106,7 @@ class TestCLIParser:
         assert args.output == "result.xlsx"
 
     def test_invalid_strategy(self):
-        """测试无效策略参数"""
+        """Tests an invalid strategy argument."""
         parser = create_parser()
 
         with pytest.raises(SystemExit):
@@ -114,11 +114,11 @@ class TestCLIParser:
 
 
 class TestCLIFunctions:
-    """测试CLI功能函数"""
+    """Tests the CLI command functions."""
 
     @patch("stock_analysis.cli.ai_main")
     def test_run_backtest_ai(self, mock_ai_main):
-        """测试运行AI回测"""
+        """Tests running the AI backtest."""
         mock_ai_main.return_value = None
 
         result = run_backtest("ai")
@@ -128,7 +128,7 @@ class TestCLIFunctions:
 
     @patch("stock_analysis.cli.quant_main")
     def test_run_backtest_quant(self, mock_quant_main):
-        """测试运行量化回测"""
+        """Tests running the quant backtest."""
         mock_quant_main.return_value = None
 
         result = run_backtest("quant")
@@ -138,7 +138,7 @@ class TestCLIFunctions:
 
     @patch("stock_analysis.cli.spy_main")
     def test_run_backtest_spy(self, mock_spy_main):
-        """测试运行SPY回测"""
+        """Tests running the SPY backtest."""
         mock_spy_main.return_value = None
 
         result = run_backtest("spy")
@@ -147,7 +147,7 @@ class TestCLIFunctions:
         mock_spy_main.assert_called_once()
 
     def test_run_backtest_import_error(self):
-        """测试回测模块导入错误"""
+        """Tests handling of an ImportError when running a backtest."""
         with patch(
             "stock_analysis.cli.__import__", side_effect=ImportError("Module not found")
         ):
@@ -155,7 +155,7 @@ class TestCLIFunctions:
             assert result == 1
 
     def test_run_backtest_execution_error(self):
-        """测试回测执行错误"""
+        """Tests handling of an execution error during a backtest."""
         with patch(
             "stock_analysis.cli.ai_main", side_effect=Exception("Execution failed")
         ):
@@ -164,7 +164,7 @@ class TestCLIFunctions:
 
     @patch("stock_analysis.cli.load_main")
     def test_run_load_data_success(self, mock_load_main):
-        """测试成功运行数据加载"""
+        """Tests successful execution of data loading."""
         mock_load_main.return_value = None
 
         result = run_load_data()
@@ -174,7 +174,7 @@ class TestCLIFunctions:
 
     @patch("stock_analysis.cli.load_main")
     def test_run_load_data_with_custom_dir(self, mock_load_main):
-        """测试带自定义目录的数据加载"""
+        """Tests data loading with a custom directory."""
         mock_load_main.return_value = None
 
         result = run_load_data("/custom/data")
@@ -183,7 +183,7 @@ class TestCLIFunctions:
         mock_load_main.assert_called_once()
 
     def test_run_load_data_import_error(self):
-        """测试数据加载模块导入错误"""
+        """Tests handling of an ImportError in the data loading module."""
         with patch(
             "stock_analysis.cli.__import__", side_effect=ImportError("Module not found")
         ):
@@ -192,7 +192,7 @@ class TestCLIFunctions:
 
     @patch("stock_analysis.cli.ai_pick_main")
     def test_run_ai_pick_success(self, mock_ai_pick_main):
-        """测试成功运行AI选股"""
+        """Tests successful execution of AI stock picking."""
         mock_ai_pick_main.return_value = None
 
         result = run_ai_pick()
@@ -202,7 +202,7 @@ class TestCLIFunctions:
 
     @patch("stock_analysis.cli.ai_pick_main")
     def test_run_ai_pick_with_params(self, mock_ai_pick_main):
-        """测试带参数的AI选股"""
+        """Tests AI stock picking with parameters."""
         mock_ai_pick_main.return_value = None
 
         result = run_ai_pick(quarter="2024-Q1", output="output.xlsx")
@@ -211,7 +211,7 @@ class TestCLIFunctions:
         mock_ai_pick_main.assert_called_once()
 
     def test_run_ai_pick_import_error(self):
-        """测试AI选股模块导入错误"""
+        """Tests handling of an ImportError in the AI stock picking module."""
         with patch(
             "stock_analysis.cli.__import__", side_effect=ImportError("Module not found")
         ):
@@ -220,10 +220,10 @@ class TestCLIFunctions:
 
 
 class TestMainFunction:
-    """测试主函数"""
+    """Tests the main function."""
 
     def test_main_no_command(self, capsys):
-        """测试没有提供命令时显示帮助"""
+        """Tests that help is displayed when no command is provided."""
         with patch("sys.argv", ["stockq"]):
             result = main()
 
@@ -233,7 +233,7 @@ class TestMainFunction:
 
     @patch("stock_analysis.cli.run_backtest")
     def test_main_backtest_command(self, mock_run_backtest):
-        """测试主函数处理backtest命令"""
+        """Tests that the main function handles the backtest command."""
         mock_run_backtest.return_value = 0
 
         with patch("sys.argv", ["stockq", "backtest", "ai"]):
@@ -244,7 +244,7 @@ class TestMainFunction:
 
     @patch("stock_analysis.cli.run_load_data")
     def test_main_load_data_command(self, mock_run_load_data):
-        """测试主函数处理load-data命令"""
+        """Tests that the main function handles the load-data command."""
         mock_run_load_data.return_value = 0
 
         with patch("sys.argv", ["stockq", "load-data"]):
@@ -255,7 +255,7 @@ class TestMainFunction:
 
     @patch("stock_analysis.cli.run_ai_pick")
     def test_main_ai_pick_command(self, mock_run_ai_pick):
-        """测试主函数处理ai-pick命令"""
+        """Tests that the main function handles the ai-pick command."""
         mock_run_ai_pick.return_value = 0
 
         with patch("sys.argv", ["stockq", "ai-pick"]):
@@ -265,21 +265,21 @@ class TestMainFunction:
             mock_run_ai_pick.assert_called_once_with(None, None)
 
     def test_main_unknown_command(self, capsys):
-        """测试主函数处理未知命令"""
+        """Tests that the main function handles an unknown command."""
         with patch("sys.argv", ["stockq", "unknown"]):
             result = main()
 
             assert result == 1
             captured = capsys.readouterr()
-            assert "未知命令" in captured.err
+            assert "Unknown command" in captured.err
 
 
 class TestAppFunction:
-    """测试应用入口点函数"""
+    """Tests the application entry point function."""
 
     @patch("stock_analysis.cli.main")
     def test_app_calls_main_and_exits(self, mock_main):
-        """测试app函数调用main并退出"""
+        """Tests that the app function calls main and exits."""
         mock_main.return_value = 0
 
         with pytest.raises(SystemExit) as exc_info:
@@ -290,7 +290,7 @@ class TestAppFunction:
 
     @patch("stock_analysis.cli.main")
     def test_app_exits_with_error_code(self, mock_main):
-        """测试app函数以错误码退出"""
+        """Tests that the app function exits with an error code."""
         mock_main.return_value = 1
 
         with pytest.raises(SystemExit) as exc_info:
@@ -301,12 +301,12 @@ class TestAppFunction:
 
 
 class TestCLISmokeTests:
-    """CLI烟雾测试"""
+    """CLI Smoke Tests."""
 
     def test_stockq_help_smoke_test(self):
-        """stockq --help烟雾测试"""
+        """Smoke test for `stockq --help`."""
         try:
-            # 尝试运行stockq --help
+            # Try to run `stockq --help`.
             result = subprocess.run(
                 [
                     sys.executable,
@@ -318,16 +318,16 @@ class TestCLISmokeTests:
                 timeout=10,
             )
 
-            # --help应该以退出码0退出
+            # --help should exit with code 0.
             assert result.returncode == 0
             assert "stockq" in result.stdout
 
         except (subprocess.TimeoutExpired, FileNotFoundError):
-            # 如果环境不支持或超时，跳过测试
+            # If the environment doesn't support it or it times out, skip the test.
             pytest.skip("CLI smoke test skipped due to environment limitations")
 
     def test_stockq_version_smoke_test(self):
-        """stockq --version烟雾测试"""
+        """Smoke test for `stockq --version`."""
         try:
             result = subprocess.run(
                 [
@@ -347,7 +347,7 @@ class TestCLISmokeTests:
             pytest.skip("CLI smoke test skipped due to environment limitations")
 
     def test_module_execution_smoke_test(self):
-        """测试-m模块执行烟雾测试"""
+        """Smoke test for module execution via the `-m` flag."""
         modules_to_test = [
             "stock_analysis.backtest_quarterly_ai_pick",
             "stock_analysis.backtest_quarterly_unpicked",
@@ -356,7 +356,7 @@ class TestCLISmokeTests:
 
         for module in modules_to_test:
             try:
-                # 尝试导入模块（不实际执行main函数）
+                # Try to import the module (without actually running its main function).
                 result = subprocess.run(
                     [
                         sys.executable,
@@ -368,11 +368,11 @@ class TestCLISmokeTests:
                     timeout=5,
                 )
 
-                # 如果导入成功，说明模块结构正确
+                # If the import succeeds, it means the module structure is correct.
                 if result.returncode == 0:
                     assert "imported successfully" in result.stdout
                 else:
-                    # 记录导入失败的原因，但不让测试失败
+                    # Log the reason for the import failure, but don't fail the test.
                     print(f"Warning: Module {module} import failed: {result.stderr}")
 
             except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -380,19 +380,19 @@ class TestCLISmokeTests:
 
 
 class TestCLIIntegration:
-    """CLI集成测试"""
+    """CLI Integration Tests."""
 
     def test_cli_with_minimal_data(self, tmp_path):
-        """使用最小数据集的CLI集成测试"""
-        # 创建最小的测试数据
+        """Integration test for the CLI using a minimal dataset."""
+        # Create minimal test data.
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
-        # 创建最小的CSV文件
+        # Create a minimal CSV file.
         minimal_csv_content = "Date;Ticker;Open;High;Low;Close;Volume;Dividend\n2022-01-03;AAPL;177.83;182.88;177.71;182.01;104487900;0.0"
         (data_dir / "us-shareprices-daily.csv").write_text(minimal_csv_content)
 
-        # 创建最小的财务数据
+        # Create minimal financial data.
         balance_sheet_content = (
             "Ticker;Total Assets;Publish Date;Fiscal Year\nAAPL;100000;2022-01-01;2022"
         )
@@ -406,7 +406,7 @@ class TestCLIIntegration:
         )
         (data_dir / "us-income-ttm.csv").write_text(income_content)
 
-        # 模拟load-data命令
+        # Simulate the `load-data` command.
         with patch("stock_analysis.load_data_to_db.PROJECT_ROOT", tmp_path):
             with patch("stock_analysis.load_data_to_db.DATA_DIR", data_dir):
                 with patch(
@@ -414,32 +414,32 @@ class TestCLIIntegration:
                 ):
                     result = run_load_data(str(data_dir))
 
-                    # 应该成功执行（即使数据很少）
+                    # It should execute successfully (even with very little data).
                     assert result == 0
 
     def test_error_handling_integration(self):
-        """错误处理集成测试"""
-        # 测试各种错误情况
+        """Integration test for error handling."""
+        # Test various error scenarios.
         error_scenarios = [
-            ("backtest", "nonexistent_strategy"),  # 无效策略
-            ("load-data", "--data-dir", "/nonexistent/path"),  # 不存在的路径
+            ("backtest", "nonexistent_strategy"),  # Invalid strategy
+            ("load-data", "--data-dir", "/nonexistent/path"),  # Non-existent path
         ]
 
         for scenario in error_scenarios:
             with patch("sys.argv", ["stockq"] + list(scenario)):
                 try:
                     result = main()
-                    # 错误情况应该返回非零退出码
+                    # Error cases should return a non-zero exit code.
                     assert result != 0
                 except SystemExit:
-                    # 参数解析错误会导致SystemExit，这也是预期的
+                    # Argument parsing errors will raise SystemExit, which is also expected.
                     pass
 
     def test_cli_help_completeness(self):
-        """测试CLI帮助信息完整性"""
+        """Tests the completeness of the CLI help messages."""
         parser = create_parser()
 
-        # 验证所有子命令都有帮助信息
+        # Verify that all subcommands have help messages.
         subparsers_actions = [
             action
             for action in parser._actions
@@ -453,14 +453,14 @@ class TestCLIIntegration:
                 assert len(subparser.description) > 0
 
     def test_cli_argument_validation(self):
-        """测试CLI参数验证"""
+        """Tests CLI argument validation."""
         parser = create_parser()
 
-        # 测试必需参数
+        # Test required arguments.
         with pytest.raises(SystemExit):
-            parser.parse_args(["backtest"])  # 缺少strategy参数
+            parser.parse_args(["backtest"])  # Missing the 'strategy' argument.
 
-        # 测试有效参数组合
+        # Test valid argument combinations.
         valid_combinations = [
             ["backtest", "ai"],
             ["backtest", "quant", "--config", "config.yaml"],

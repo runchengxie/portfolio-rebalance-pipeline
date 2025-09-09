@@ -72,10 +72,8 @@ class PointInTimeStrategy(bt.Strategy):
                     f"Dividend received for {data._name}: {cash:.2f}"
                 )
                 self.broker.add_cash(cash)
-                pre_value = self.broker.getvalue() - cash
-                if pre_value > 0:
-                    weight = position.size * data.close[0] / pre_value
-                    self.order_target_percent(data=data, target=weight)
+                # Recommended default: accrue dividends as cash.
+                # Reinvestment happens naturally on scheduled rebalancing.
 
         if self.next_rebalance_date and current_date >= self.next_rebalance_date:
             self.log(
@@ -159,18 +157,40 @@ class PointInTimeStrategy(bt.Strategy):
 
 
 class BuyAndHoldStrategy(bt.Strategy):
-    """Buy and hold strategy
+    """Buy and hold strategy with dividend reinvestment into the same asset.
 
-    Used for benchmarking, such as SPY benchmark.
+    - On the first bar, invest a target percentage of equity (default 99%).
+    - On dividend days, book cash from dividends and maintain the target percent,
+      which effectively reinvests dividends into the same asset.
     """
+
+    params = (
+        ("target_percent", 0.99),
+    )
 
     def __init__(self):
         self.bought = False
 
     def next(self):
+        data = self.datas[0]
+
+        # Initial purchase
         if not self.bought:
-            self.order_target_percent(target=0.99)
+            self.order_target_percent(target=self.p.target_percent)
             self.bought = True
+            return
+
+        # Dividend handling: add cash, then keep target allocation to reinvest
+        position = self.getposition(data)
+        if position.size > 0:
+            dividend = getattr(data, "dividend", None)
+            if dividend is not None:
+                dividend_value = dividend[0]
+                if dividend_value > 0:
+                    cash = position.size * dividend_value
+                    self.broker.add_cash(cash)
+                    # Maintain target percent to reinvest available cash
+                    self.order_target_percent(target=self.p.target_percent)
 
 
 def run_quarterly_backtest(
