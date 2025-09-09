@@ -13,6 +13,13 @@ import backtrader as bt
 import pandas as pd
 
 
+class DividendPandasData(bt.feeds.PandasData):
+    """PandasData feed extended with dividend support."""
+
+    lines = ("dividend",)
+    params = (("dividend", "Dividend"),)
+
+
 def tidy_ticker(col: pd.Series) -> pd.Series:
     """Clean ticker symbols
 
@@ -105,7 +112,7 @@ def load_portfolios(
 
 def load_price_feeds(
     db_path: Path, tickers: set[str], start_date: datetime.date, end_date: datetime.date
-) -> dict[str, bt.feeds.PandasData]:
+) -> dict[str, DividendPandasData]:
     """Load price data from database and create Backtrader data feeds
 
     Args:
@@ -115,7 +122,7 @@ def load_price_feeds(
         end_date: End date
 
     Returns:
-        Dict[str, bt.feeds.PandasData]: Data feed dictionary with ticker symbols as keys
+        Dict[str, DividendPandasData]: Data feed dictionary with ticker symbols as keys
 
     Raises:
         FileNotFoundError: When database file does not exist
@@ -188,8 +195,8 @@ def load_price_feeds(
             group = group.dropna(subset=["Open", "High", "Low", "Close", "Volume"])
 
             if not group.empty:
-                # Create Backtrader data feed
-                bt_feed = bt.feeds.PandasData(
+                # Create Backtrader data feed with dividend support
+                bt_feed = DividendPandasData(
                     dataname=group, openinterest=None, name=ticker
                 )
                 data_feeds[ticker] = bt_feed

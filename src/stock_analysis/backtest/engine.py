@@ -14,6 +14,7 @@ import pandas as pd
 
 from ..utils.logging import StrategyLogger
 from ..utils.paths import OUTPUTS_DIR
+from .prep import DividendPandasData
 
 
 class PointInTimeStrategy(bt.Strategy):
@@ -55,6 +56,26 @@ class PointInTimeStrategy(bt.Strategy):
     def next(self):
         """Main strategy logic"""
         current_date = self.timeline.datetime.date(0)
+
+        # Process dividends for all held positions
+        for data in self.datas:
+            position = self.getposition(data)
+            if position.size <= 0:
+                continue
+            dividend = getattr(data, "dividend", None)
+            if dividend is None:
+                continue
+            dividend_value = dividend[0]
+            if dividend_value > 0:
+                cash = position.size * dividend_value
+                self.log(
+                    f"Dividend received for {data._name}: {cash:.2f}"
+                )
+                self.broker.add_cash(cash)
+                pre_value = self.broker.getvalue() - cash
+                if pre_value > 0:
+                    weight = position.size * data.close[0] / pre_value
+                    self.order_target_percent(data=data, target=weight)
 
         if self.next_rebalance_date and current_date >= self.next_rebalance_date:
             self.log(
@@ -275,8 +296,8 @@ def run_benchmark_backtest(
     cerebro = bt.Cerebro()
     cerebro.broker.set_cash(initial_cash)
 
-    # Prepare data feed
-    bt_feed = bt.feeds.PandasData(dataname=data, openinterest=None)
+    # Prepare data feed with dividend line support
+    bt_feed = DividendPandasData(dataname=data, openinterest=None, name=ticker)
     cerebro.adddata(bt_feed)
 
     cerebro.addstrategy(BuyAndHoldStrategy)
