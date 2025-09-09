@@ -1,10 +1,10 @@
-"""报告生成的smoke test
+"""Smoke test for report generation.
 
-测试回测报告生成功能：
-- PNG文件的创建和保存
-- 文件大小验证（非零大小）
-- 图表生成的基本功能
-- 错误情况的处理
+This module tests the backtest report generation functionality, covering:
+- Creation and saving of PNG files.
+- File size validation (non-zero size).
+- Basic functionality of chart generation.
+- Handling of error conditions.
 """
 
 from pathlib import Path
@@ -18,18 +18,18 @@ from stock_analysis.backtest.engine import generate_report
 
 @pytest.mark.unit
 class TestReportGeneration:
-    """测试报告生成的基本功能"""
+    """Tests the basic functionality of report generation."""
 
     def test_generate_report_creates_png_file(self, tmp_path):
-        """测试generate_report创建PNG文件"""
-        # 准备测试数据
+        """Tests that generate_report creates a PNG file."""
+        # Prepare test data
         output_png = tmp_path / "test_report.png"
 
-        # 创建模拟的投资组合价值序列
+        # Create a mock portfolio value series
         dates = pd.date_range("2023-01-01", periods=10, freq="D")
         portfolio_value = pd.Series([10000 + i * 100 for i in range(10)], index=dates)
 
-        # 创建模拟的指标字典
+        # Create a mock metrics dictionary
         metrics = {
             "start_date": dates[0].date(),
             "end_date": dates[-1].date(),
@@ -40,17 +40,17 @@ class TestReportGeneration:
             "max_drawdown": 0.05,
         }
 
-        # 模拟matplotlib的savefig方法
+        # Mock matplotlib's savefig method
         with patch("matplotlib.pyplot.savefig") as mock_savefig:
             with patch("matplotlib.pyplot.show"):
                 with patch("matplotlib.pyplot.style.use"):
                     with patch("matplotlib.pyplot.subplots") as mock_subplots:
-                        # 创建模拟的figure和axes
+                        # Create mock figure and axes
                         mock_fig = Mock()
                         mock_ax = Mock()
                         mock_subplots.return_value = (mock_fig, mock_ax)
 
-                        # 模拟pandas Series的plot方法
+                        # Mock the plot method of the pandas Series
                         mock_ax.yaxis.set_major_formatter = Mock()
                         mock_ax.set_title = Mock()
                         mock_ax.set_xlabel = Mock()
@@ -67,16 +67,16 @@ class TestReportGeneration:
                                     output_png=output_png,
                                 )
 
-                        # 验证savefig被调用
+                        # Verify that savefig was called
                         mock_savefig.assert_called_once_with(
                             output_png, dpi=300, bbox_inches="tight"
                         )
 
     def test_generate_report_with_benchmark(self, tmp_path):
-        """测试带基准的报告生成"""
+        """Tests report generation with a benchmark comparison."""
         output_png = tmp_path / "benchmark_report.png"
 
-        # 创建投资组合和基准数据
+        # Create portfolio and benchmark data
         dates = pd.date_range("2023-01-01", periods=5, freq="D")
         portfolio_value = pd.Series([10000, 10100, 10200, 10150, 10300], index=dates)
         benchmark_value = pd.Series([10000, 10050, 10100, 10080, 10120], index=dates)
@@ -99,7 +99,7 @@ class TestReportGeneration:
                         mock_ax = Mock()
                         mock_subplots.return_value = (mock_fig, mock_ax)
 
-                        # 模拟所有必要的方法
+                        # Mock all necessary methods
                         mock_ax.yaxis.set_major_formatter = Mock()
                         mock_ax.set_title = Mock()
                         mock_ax.set_xlabel = Mock()
@@ -121,11 +121,11 @@ class TestReportGeneration:
                                         benchmark_label="SPY",
                                     )
 
-                        # 验证savefig被调用
+                        # Verify that savefig was called
                         mock_savefig.assert_called_once()
 
     def test_generate_report_without_png_output(self, capsys):
-        """测试不保存PNG文件的报告生成"""
+        """Tests report generation without saving a PNG file."""
         dates = pd.date_range("2023-01-01", periods=3, freq="D")
         portfolio_value = pd.Series([10000, 10100, 10200], index=dates)
 
@@ -160,13 +160,13 @@ class TestReportGeneration:
                                     metrics=metrics,
                                     title="No PNG Test",
                                     portfolio_value=portfolio_value,
-                                    output_png=None,  # 不保存PNG
+                                    output_png=None,  # Do not save a PNG file
                                 )
 
-                        # 验证savefig未被调用
+                        # Verify that savefig was not called
                         mock_savefig.assert_not_called()
 
-        # 验证文本报告被打印
+        # Verify that the text report was printed to stdout
         captured = capsys.readouterr()
         assert "No PNG Test" in captured.out
         assert "Total Return:" in captured.out
@@ -175,14 +175,14 @@ class TestReportGeneration:
 
 @pytest.mark.unit
 class TestReportGenerationRealFiles:
-    """测试实际文件生成（使用真实的matplotlib）"""
+    """Tests actual file generation (using the real matplotlib)."""
 
-    @pytest.mark.integration  # 标记为integration测试，因为涉及实际文件操作
+    @pytest.mark.integration  # Mark as an integration test because it involves real file I/O
     def test_actual_png_file_creation(self, tmp_path):
-        """测试实际PNG文件的创建和大小验证"""
+        """Tests the actual creation and size validation of a PNG file."""
         output_png = tmp_path / "actual_test.png"
 
-        # 创建简单的测试数据
+        # Create simple test data
         dates = pd.date_range("2023-01-01", periods=5, freq="D")
         portfolio_value = pd.Series([10000, 10100, 10050, 10150, 10200], index=dates)
 
@@ -196,8 +196,8 @@ class TestReportGenerationRealFiles:
             "max_drawdown": 0.025,
         }
 
-        # 使用真实的matplotlib，但不显示图表
-        with patch("matplotlib.pyplot.show"):  # 阻止显示图表
+        # Use the real matplotlib, but don't show the plot
+        with patch("matplotlib.pyplot.show"):  # Prevent the plot from being displayed
             generate_report(
                 metrics=metrics,
                 title="Actual File Test",
@@ -205,14 +205,14 @@ class TestReportGenerationRealFiles:
                 output_png=output_png,
             )
 
-        # 验证文件被创建
+        # Verify the file was created
         assert output_png.exists(), f"PNG file was not created at {output_png}"
 
-        # 验证文件大小非零
+        # Verify the file size is not zero
         file_size = output_png.stat().st_size
         assert file_size > 0, f"PNG file is empty (size: {file_size} bytes)"
 
-        # 验证文件大小合理（至少几KB）
+        # Verify the file size is reasonable (at least a few KB)
         assert file_size > 1000, f"PNG file seems too small (size: {file_size} bytes)"
 
         print(f"Generated PNG file: {output_png} (size: {file_size} bytes)")
@@ -220,10 +220,10 @@ class TestReportGenerationRealFiles:
 
 @pytest.mark.unit
 class TestReportGenerationErrorHandling:
-    """测试报告生成的错误处理"""
+    """Tests error handling during report generation."""
 
     def test_matplotlib_import_error(self):
-        """测试matplotlib导入错误的处理"""
+        """Tests the handling of a matplotlib ImportError."""
         dates = pd.date_range("2023-01-01", periods=3, freq="D")
         portfolio_value = pd.Series([10000, 10100, 10200], index=dates)
 
@@ -237,7 +237,7 @@ class TestReportGenerationErrorHandling:
             "max_drawdown": 0.01,
         }
 
-        # 模拟matplotlib导入错误
+        # Simulate a matplotlib import error
         with patch(
             "matplotlib.pyplot.style.use",
             side_effect=ImportError("No module named 'matplotlib'"),
@@ -251,8 +251,8 @@ class TestReportGenerationErrorHandling:
                 )
 
     def test_file_permission_error(self, tmp_path):
-        """测试文件权限错误的处理"""
-        # 创建一个只读目录
+        """Tests the handling of a file permission error."""
+        # Create a read-only directory to trigger a permission error
         readonly_dir = tmp_path / "readonly"
         readonly_dir.mkdir()
         output_png = readonly_dir / "test.png"
@@ -270,7 +270,7 @@ class TestReportGenerationErrorHandling:
             "max_drawdown": 0.01,
         }
 
-        # 模拟文件保存错误
+        # Simulate a file saving error
         with patch(
             "matplotlib.pyplot.savefig",
             side_effect=PermissionError("Permission denied"),
@@ -291,7 +291,7 @@ class TestReportGenerationErrorHandling:
 
                         with patch.object(portfolio_value, "plot", return_value=None):
                             with patch("matplotlib.pyplot.tight_layout"):
-                                # 应该抛出权限错误
+                                # This should raise a PermissionError
                                 with pytest.raises(PermissionError):
                                     generate_report(
                                         metrics=metrics,
@@ -301,8 +301,8 @@ class TestReportGenerationErrorHandling:
                                     )
 
     def test_invalid_data_handling(self):
-        """测试无效数据的处理"""
-        # 空的投资组合价值序列
+        """Tests handling of invalid or empty data."""
+        # An empty portfolio value series
         empty_portfolio = pd.Series([], dtype=float)
 
         metrics = {
@@ -331,7 +331,7 @@ class TestReportGenerationErrorHandling:
 
                     with patch.object(empty_portfolio, "plot", return_value=None):
                         with patch("matplotlib.pyplot.tight_layout"):
-                            # 应该能处理空数据而不崩溃
+                            # The function should handle empty data without crashing
                             generate_report(
                                 metrics=metrics,
                                 title="Empty Data Test",
@@ -342,10 +342,10 @@ class TestReportGenerationErrorHandling:
 
 @pytest.mark.unit
 class TestReportTextOutput:
-    """测试报告文本输出"""
+    """Tests the text output of the report."""
 
     def test_report_text_content(self, capsys):
-        """测试报告文本内容的正确性"""
+        """Tests the correctness of the report's text content."""
         dates = pd.date_range("2023-01-01", periods=3, freq="D")
         portfolio_value = pd.Series([10000, 10500, 11000], index=dates)
 
@@ -385,13 +385,13 @@ class TestReportTextOutput:
         captured = capsys.readouterr()
         output = captured.out
 
-        # 验证关键信息被正确显示
+        # Verify that key information is displayed correctly
         assert "Text Content Test" in output
         assert "2023-01-01" in output
         assert "2023-01-03" in output
-        assert "10,000" in output  # 初始值
-        assert "11,000" in output  # 最终值
-        assert "10.00%" in output  # 总收益
-        assert "25.00%" in output  # 年化收益
-        # 最大回撤可能有不同格式，只检查基本存在
-        assert "Max Drawdown" in output or "最大回撤" in output
+        assert "10,000" in output  # Initial value
+        assert "11,000" in output  # Final value
+        assert "10.00%" in output  # Total return
+        assert "25.00%" in output  # Annualized return
+        # Max drawdown might have different formatting, so just check for its presence
+        assert "Max Drawdown" in output

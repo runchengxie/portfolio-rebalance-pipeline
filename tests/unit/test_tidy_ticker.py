@@ -1,11 +1,11 @@
-"""tidy_ticker 函数的单元测试
+"""Unit tests for the tidy_ticker function.
 
-测试数据清洗函数的核心功能：
-- 大小写标准化
-- 空白字符处理
-- 后缀去除（_DELISTED等）
-- 空值处理
-- 幂等性验证
+Tests the core functionality of the data cleaning function:
+- Case normalization
+- Whitespace handling
+- Suffix removal (e.g., _DELISTED)
+- Null value handling
+- Idempotency validation
 """
 
 import pandas as pd
@@ -18,36 +18,36 @@ from stock_analysis.load_data_to_db import tidy_ticker
 @pytest.mark.parametrize(
     "raw,expect",
     [
-        # 用户提供的基础测试用例
+        # Basic test cases provided by the user
         ([" aapl ", "MSFT_DELISTED", "", None], ["AAPL", "MSFT", pd.NA, pd.NA]),
         (["\tspy\n", "googl_delisted", "Se  "], ["SPY", "GOOGL", "SE"]),
-        # 扩展测试用例
-        # 测试各种空白字符
+        # Extended test cases
+        # Test various whitespace characters
         (["  AMZN  ", "\t\nTSLA\r\n", "   "], ["AMZN", "TSLA", pd.NA]),
-        # 测试大小写混合
+        # Test mixed case
         (["AaPl", "mSfT", "GoOgL"], ["AAPL", "MSFT", "GOOGL"]),
-        # 测试各种DELISTED后缀
+        # Test various _DELISTED suffixes
         (
             ["AAPL_DELISTED", "msft_delisted", "GOOGL_Delisted"],
             ["AAPL", "MSFT", "GOOGL"],
         ),
-        # 测试混合情况
+        # Test combined cases (whitespace, case, and suffix)
         (
             [" aapl_delisted ", "\tMSFT_DELISTED\n", "  googl  "],
             ["AAPL", "MSFT", "GOOGL"],
         ),
-        # 测试边界情况
-        (["A", "AB", "ABC"], ["A", "AB", "ABC"]),  # 短股票代码
-        (["BERKSHIRE.A", "BRK.B"], ["BERKSHIRE.A", "BRK.B"]),  # 包含点号
-        # 测试空值的各种形式
+        # Test edge cases
+        (["A", "AB", "ABC"], ["A", "AB", "ABC"]),  # Short ticker symbols
+        (["BERKSHIRE.A", "BRK.B"], ["BERKSHIRE.A", "BRK.B"]),  # Containing dots
+        # Test various forms of null values
         (["", "   ", "\t\n", None], [pd.NA, pd.NA, pd.NA, pd.NA]),
     ],
 )
 def test_tidy_ticker_basic(raw, expect):
-    """测试tidy_ticker的基本功能"""
+    """Tests the basic functionality of tidy_ticker."""
     out = tidy_ticker(pd.Series(raw)).tolist()
 
-    # 处理pd.NA的比较
+    # Handle comparison with pd.NA
     for i, (actual, expected) in enumerate(zip(out, expect, strict=False)):
         if pd.isna(expected):
             assert pd.isna(actual), f"Index {i}: expected NA, got {actual}"
@@ -57,19 +57,19 @@ def test_tidy_ticker_basic(raw, expect):
 
 @pytest.mark.unit
 def test_tidy_ticker_idempotent():
-    """测试tidy_ticker的幂等性：tidy(tidy(x)) == tidy(x)"""
-    # 用户提供的测试用例
+    """Tests the idempotency of tidy_ticker: tidy(tidy(x)) == tidy(x)."""
+    # User-provided test case
     s = pd.Series([" amzn_deListed ", "  "])
     once = tidy_ticker(s)
     twice = tidy_ticker(once)
     pd.testing.assert_series_equal(once, twice, check_names=False)
 
-    # 扩展的幂等性测试
+    # Extended idempotency tests
     test_cases = [
         [" AAPL ", "MSFT_delisted", "", "GOOGL", None],
         ["\tTSLA\n", "amzn_DELISTED", "   ", "NVDA"],
         ["already_clean", "ALSO_CLEAN", "clean_delisted"],
-        # 已经清洗过的数据
+        # Already cleaned data
         ["AAPL", "MSFT", "GOOGL"],
     ]
 
@@ -88,36 +88,36 @@ def test_tidy_ticker_idempotent():
 
 @pytest.mark.unit
 class TestTidyTickerProperties:
-    """测试tidy_ticker的性质"""
+    """Tests the properties of the tidy_ticker function."""
 
     def test_only_affects_whitespace_case_suffix(self):
-        """测试函数只影响空白、大小写和后缀，不改变其他字符"""
-        # 包含特殊字符但不应被改变的股票代码
+        """Tests that the function only affects whitespace, case, and the specified suffix, without altering other characters."""
+        # Ticker symbols containing special characters that should not be changed
         test_cases = [
-            "BRK.A",  # 点号应保留
-            "BRK-B",  # 连字符应保留
-            "SOME123",  # 数字应保留
-            "ABC&DEF",  # 特殊符号应保留（除了处理的后缀）
+            "BRK.A",  # Dot should be preserved
+            "BRK-B",  # Hyphen should be preserved
+            "SOME123",  # Numbers should be preserved
+            "ABC&DEF",  # Special symbols should be preserved (except for the handled suffix)
         ]
 
         for case in test_cases:
-            # 添加需要清理的元素
+            # Add elements that require cleaning
             dirty = f"  {case.lower()}_delisted  "
             cleaned = tidy_ticker(pd.Series([dirty]))[0]
 
-            # 应该得到大写的原始字符（去掉后缀）
+            # The result should be the original characters in uppercase (with suffix removed)
             expected = case.upper()
             assert cleaned == expected, f"Expected {expected}, got {cleaned}"
 
     def test_preserves_series_length(self):
-        """测试函数保持Series长度不变"""
+        """Tests that the function preserves the length of the Series."""
         test_series = pd.Series(["AAPL", " MSFT ", "googl_delisted", "", None, "\t\n"])
 
         result = tidy_ticker(test_series)
         assert len(result) == len(test_series)
 
     def test_handles_empty_series(self):
-        """测试处理空Series"""
+        """Tests handling of an empty Series."""
         empty_series = pd.Series([], dtype="object")
         result = tidy_ticker(empty_series)
 
@@ -125,7 +125,7 @@ class TestTidyTickerProperties:
         assert result.dtype == "string"
 
     def test_consistent_output_type(self):
-        """测试输出类型的一致性"""
+        """Tests for consistent output data type."""
         test_cases = [
             ["AAPL", "MSFT"],
             [" aapl ", "msft_delisted"],
@@ -138,7 +138,7 @@ class TestTidyTickerProperties:
             assert result.dtype == "string", f"Wrong dtype for case {case}"
 
     def test_delisted_suffix_variations(self):
-        """测试各种DELISTED后缀的处理"""
+        """Tests the handling of various _DELISTED suffix casings."""
         variations = [
             "AAPL_DELISTED",
             "aapl_delisted",
@@ -149,17 +149,17 @@ class TestTidyTickerProperties:
 
         results = tidy_ticker(pd.Series(variations))
 
-        # 所有变体都应该清理为"AAPL"
+        # All variations should be cleaned to "AAPL"
         for result in results:
             assert result == "AAPL", f"Failed to clean delisted suffix: {result}"
 
     def test_no_false_positive_delisted_removal(self):
-        """测试不会错误地移除非后缀的DELISTED字符串"""
-        # 这些不应该被当作后缀处理
+        """Tests that the function does not incorrectly remove 'DELISTED' when it is not a suffix."""
+        # These should not be treated as suffixes
         false_positives = [
-            "DELISTED_CORP",  # 前缀，不是后缀
-            "SOME_DELISTED_CO",  # 中间，不是后缀
-            "DELISTED",  # 整个名称，不是后缀
+            "DELISTED_CORP",  # Prefix, not a suffix
+            "SOME_DELISTED_CO",  # In the middle, not a suffix
+            "DELISTED",  # The entire name, not a suffix
         ]
 
         results = tidy_ticker(pd.Series(false_positives))
@@ -171,52 +171,52 @@ class TestTidyTickerProperties:
 
 @pytest.mark.unit
 class TestTidyTickerEdgeCases:
-    """测试边界情况和异常情况"""
+    """Tests edge cases and exceptional scenarios."""
 
     def test_very_long_ticker(self):
-        """测试很长的股票代码"""
+        """Tests a very long ticker symbol."""
         long_ticker = "A" * 50 + "_DELISTED"
         result = tidy_ticker(pd.Series([long_ticker]))[0]
         assert result == "A" * 50
 
     def test_unicode_characters(self):
-        """测试Unicode字符的处理"""
+        """Tests the handling of Unicode characters."""
         unicode_tickers = ["AAPL™", "MSFT®", "GOOGL©"]
         results = tidy_ticker(pd.Series(unicode_tickers))
 
-        # Unicode字符应该被保留并转为大写
+        # Unicode characters should be preserved
         expected = ["AAPL™", "MSFT®", "GOOGL©"]
         for result, expect in zip(results, expected, strict=False):
             assert result == expect
 
     def test_multiple_underscores(self):
-        """测试多个下划线的情况"""
+        """Tests cases with multiple underscores."""
         test_cases = [
-            "AAPL__DELISTED",  # 双下划线
-            "AAPL_TEST_DELISTED",  # 中间有下划线
-            "AAPL_DELISTED_",  # 后面还有下划线
+            "AAPL__DELISTED",  # Double underscore
+            "AAPL_TEST_DELISTED",  # Underscore in the middle
+            "AAPL_DELISTED_",  # Trailing underscore
         ]
 
         results = tidy_ticker(pd.Series(test_cases))
 
-        # 只有结尾的_DELISTED应该被移除
+        # Only the trailing _DELISTED should be removed
         expected = ["AAPL_", "AAPL_TEST", "AAPL_DELISTED_"]
         for result, expect in zip(results, expected, strict=False):
             assert result == expect, f"Expected {expect}, got {result}"
 
     def test_mixed_data_types_in_series(self):
-        """测试Series中混合数据类型的处理"""
-        # 虽然实际使用中应该都是字符串，但测试健壮性
+        """Tests handling of a Series with mixed data types."""
+        # Although the series should ideally contain only strings in practice, this tests robustness.
         mixed_series = pd.Series(["AAPL", None, "", 123, "MSFT_delisted"])
 
-        # 函数应该能处理而不崩溃
+        # The function should handle this without crashing.
         result = tidy_ticker(mixed_series)
         assert len(result) == 5
 
-        # 检查字符串元素被正确处理
+        # Check that string elements are processed correctly.
         assert result.iloc[0] == "AAPL"
         assert pd.isna(result.iloc[1])
         assert pd.isna(result.iloc[2])
-        # 数字会被转换为字符串
+        # Numbers will be converted to strings.
         assert result.iloc[3] == "123"
         assert result.iloc[4] == "MSFT"
