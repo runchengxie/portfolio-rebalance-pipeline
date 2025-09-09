@@ -11,40 +11,8 @@ from .commands.ai_pick import run_ai_pick  # noqa: F401
 from .commands.backtest import run_backtest  # noqa: F401
 from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
 from .commands.lb_account import run_lb_account  # noqa: F401
-from .commands.load_data import run_load_data  # noqa: F401
 from .commands.lb_config import run_lb_config  # noqa: F401
-
-
-def run_lb_quote(tickers: list[str]) -> int:  # type: ignore[override]
-    """Wrapper for lb_quote command with lazy import."""
-    from .commands.lb_quote import run_lb_quote as _run_lb_quote
-
-    return _run_lb_quote(tickers)
-
-
-def run_lb_rebalance(
-    input_file: str,
-    account: str = "main",
-    dry_run: bool = True,
-    env: str = "real",
-    target_gross_exposure: float = 1.0,
-) -> int:  # type: ignore[override]
-    """Wrapper for lb_rebalance command with lazy import.
-
-    Raises ImportError if LongPort dependencies are missing.
-    """
-    try:
-        from .commands.lb_rebalance import run_lb_rebalance as _run_lb_rebalance
-    except ImportError as e:  # pragma: no cover - missing broker deps
-        raise ImportError("LongPort client library is not installed") from e
-
-    return _run_lb_rebalance(
-        input_file,
-        account,
-        dry_run,
-        env,
-        target_gross_exposure,
-    )
+from .commands.load_data import run_load_data  # noqa: F401
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -62,7 +30,7 @@ def create_parser() -> argparse.ArgumentParser:
   stockq --help                    显示帮助信息
   stockq preliminary               运行量化初筛选股
   stockq backtest ai               运行AI选股回测
-  stockq backtest quant            运行量化初选回测  
+  stockq backtest quant            运行量化初选回测
   stockq backtest spy              运行SPY基准回测
   stockq load-data                 加载数据到数据库
   stockq ai-pick                   运行AI选股分析
@@ -504,3 +472,29 @@ def app() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+def run_lb_quote(tickers: list[str]) -> int:  # type: ignore[override]
+    """Forwarder for lb_quote to support test patching and lazy import."""
+    from .commands.lb_quote import run_lb_quote as _run_lb_quote
+
+    return _run_lb_quote(tickers)
+
+
+def run_lb_rebalance(
+    input_file: str,
+    account: str = "main",
+    dry_run: bool = True,
+    env: str = "real",
+    target_gross_exposure: float = 1.0,
+) -> int:  # type: ignore[override]
+    """Forwarder for lb_rebalance to support test patching and lazy import."""
+    from .commands.lb_rebalance import run_lb_rebalance as _run_lb_rebalance
+
+    return _run_lb_rebalance(
+        input_file,
+        account,
+        dry_run,
+        env,
+        target_gross_exposure,
+    )
