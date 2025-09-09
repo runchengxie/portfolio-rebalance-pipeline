@@ -460,18 +460,6 @@ def main() -> int:
         return 1
 
 
-def app() -> None:
-    """Application entry point (for scripts configuration in pyproject.toml).
-
-    This function is the actual entry point for the stockq command in pyproject.toml.
-    """
-    sys.exit(main())
-
-
-if __name__ == "__main__":
-    app()
-
-
 def run_lb_quote(tickers: list[str]) -> int:  # type: ignore[override]
     """Forwarder for lb_quote to support test patching and lazy import."""
     from .commands.lb_quote import run_lb_quote as _run_lb_quote
@@ -526,3 +514,18 @@ def run_lb_config(show: bool = True) -> int:  # type: ignore[override]
     from .commands.lb_config import run_lb_config as _run_lb_config
 
     return _run_lb_config(show)
+
+
+def app() -> None:
+    """Application entry point for the ``stockq`` console script.
+
+    The entry point is defined after the helper forwarders so that when this
+    module is executed as ``python -m stock_analysis.cli``, all required
+    functions are already bound before :func:`main` dispatches to them.
+    """
+
+    sys.exit(main())
+
+
+if __name__ == "__main__":
+    app()
