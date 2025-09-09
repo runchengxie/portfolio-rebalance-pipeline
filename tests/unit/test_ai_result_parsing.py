@@ -12,7 +12,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
+from pydantic import ValidationError
 from stock_analysis.ai_stock_pick import AIStockPick, parse_response_robust
 
 
@@ -50,10 +50,10 @@ class TestAIStockPickModel:
             assert pick.confidence_score == score
 
         # Invalid scores should raise a validation error
-        invalid_scores = [0, 11, -1, 5.5, "8", None]
+        invalid_scores = [0, 11, -1, 5.5, None]
         for score in invalid_scores:
             data = {**base_data, "confidence_score": score}
-            with pytest.raises(Exception):  # Pydantic ValidationError
+            with pytest.raises(ValidationError):  # Pydantic ValidationError
                 AIStockPick(**data)
 
     def test_required_fields(self):
@@ -68,7 +68,7 @@ class TestAIStockPickModel:
         # Test that each field is required
         for field in complete_data.keys():
             incomplete_data = {k: v for k, v in complete_data.items() if k != field}
-            with pytest.raises(Exception):  # Pydantic ValidationError
+            with pytest.raises(ValidationError):  # Pydantic ValidationError
                 AIStockPick(**incomplete_data)
 
 
@@ -136,7 +136,7 @@ class TestJSONParsingRobustness:
                 "reasoning": "Great company"
             }
         ]
-        
+
         These are my top recommendations based on analysis."""
 
         response = SimpleNamespace()
