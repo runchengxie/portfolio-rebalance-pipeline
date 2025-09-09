@@ -1,10 +1,10 @@
-"""测试回测引擎核心行为模块
+"""Tests for the core behavior of the backtesting engine module.
 
-测试 backtest.engine 中的回测引擎核心功能，包括：
-- 再平衡日对齐：仅在每个rebalance日调仓，持有到下季起点
-- 现金初始化与累计价值曲线输出不为空
-- 支持可选基准绘制的参数传递
-- 无数据/部分股票无数据时的降级与日志告警
+Tests the core functionality of the backtesting engine in backtest.engine, including:
+- Rebalance date alignment: Rebalancing only on each rebalance day and holding until the start of the next quarter.
+- Cash initialization and ensuring the cumulative value curve output is not empty.
+- Support for passing parameters for optional benchmark plotting.
+- Graceful degradation and logging warnings when there is no data or partial stock data is missing.
 """
 
 import datetime
@@ -23,20 +23,20 @@ from stock_analysis.backtest.engine import (
 
 
 class TestPointInTimeStrategy:
-    """测试时点策略类"""
+    """Tests for the PointInTimeStrategy class."""
 
     def create_mock_data_feed(
         self, ticker: str, dates: list, prices: list
     ) -> bt.feeds.PandasData:
-        """创建模拟数据源
+        """Creates a mock data feed.
 
         Args:
-            ticker: 股票代码
-            dates: 日期列表
-            prices: 价格列表
+            ticker: The stock ticker.
+            dates: A list of dates.
+            prices: A list of prices.
 
         Returns:
-            bt.feeds.PandasData: Backtrader数据源
+            bt.feeds.PandasData: A Backtrader data feed.
         """
         data = pd.DataFrame(
             {
@@ -53,23 +53,23 @@ class TestPointInTimeStrategy:
         return bt.feeds.PandasData(dataname=data, name=ticker)
 
     def test_rebalance_date_alignment(self):
-        """测试再平衡日期对齐逻辑"""
-        # 创建测试投资组合
+        """Tests the rebalance date alignment logic."""
+        # Create a test portfolio.
         portfolios = {
             datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["AAPL", "MSFT"]}),
             datetime.date(2022, 4, 1): pd.DataFrame({"Ticker": ["GOOGL", "TSLA"]}),
             datetime.date(2022, 7, 1): pd.DataFrame({"Ticker": ["AMZN", "META"]}),
         }
 
-        # 创建策略实例
+        # Create a strategy instance.
         strategy = PointInTimeStrategy()
         strategy.p.portfolios = portfolios
         strategy.p.use_logging = False
 
-        # 初始化策略
+        # Initialize the strategy.
         strategy.__init__()
 
-        # 验证再平衡日期排序
+        # Verify the sorting of rebalance dates.
         expected_dates = [
             datetime.date(2022, 1, 3),
             datetime.date(2022, 4, 1),
@@ -77,12 +77,12 @@ class TestPointInTimeStrategy:
         ]
         assert strategy.rebalance_dates == expected_dates
 
-        # 验证初始状态
+        # Verify the initial state.
         assert strategy.next_rebalance_idx == 0
         assert strategy.next_rebalance_date == datetime.date(2022, 1, 3)
 
     def test_get_next_rebalance_date(self):
-        """测试获取下一个再平衡日期的逻辑"""
+        """Tests the logic for getting the next rebalance date."""
         portfolios = {
             datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["AAPL"]}),
             datetime.date(2022, 4, 1): pd.DataFrame({"Ticker": ["MSFT"]}),
@@ -92,34 +92,34 @@ class TestPointInTimeStrategy:
         strategy.p.portfolios = portfolios
         strategy.__init__()
 
-        # 初始状态
+        # Initial state.
         assert strategy.next_rebalance_date == datetime.date(2022, 1, 3)
 
-        # 移动到下一个日期
+        # Move to the next date.
         strategy.next_rebalance_idx = 1
         strategy.get_next_rebalance_date()
         assert strategy.next_rebalance_date == datetime.date(2022, 4, 1)
 
-        # 超出范围
+        # Out of bounds.
         strategy.next_rebalance_idx = 2
         strategy.get_next_rebalance_date()
         assert strategy.next_rebalance_date is None
 
     def test_missing_tickers_handling(self):
-        """测试缺失股票代码的处理逻辑"""
+        """Tests the handling of missing tickers."""
         portfolios = {
             datetime.date(2022, 1, 3): pd.DataFrame(
                 {"Ticker": ["AAPL", "MISSING_TICKER"]}
             )
         }
 
-        # 创建模拟策略环境
+        # Create a mock strategy environment.
         strategy = PointInTimeStrategy()
         strategy.p.portfolios = portfolios
         strategy.p.use_logging = False
         strategy.__init__()
 
-        # 模拟数据源（只有AAPL）
+        # Mock data feed (only AAPL).
         mock_data_aapl = MagicMock()
         mock_data_aapl._name = "AAPL"
 
@@ -127,7 +127,7 @@ class TestPointInTimeStrategy:
         strategy.timeline = mock_data_aapl
         strategy.timeline.datetime.date.return_value = datetime.date(2022, 1, 3)
 
-        # 模拟getdatabyname方法
+        # Mock the getdatabyname method.
         def mock_getdatabyname(name):
             if name == "AAPL":
                 return mock_data_aapl
@@ -137,10 +137,10 @@ class TestPointInTimeStrategy:
         strategy.getposition = MagicMock(return_value=MagicMock(size=0))
         strategy.order_target_percent = MagicMock()
 
-        # 执行策略逻辑
+        # Execute the strategy logic.
         strategy.next()
 
-        # 验证日志记录了缺失的股票
+        # Verify that the log records the missing stock.
         assert len(strategy.rebalance_log) == 1
         log_entry = strategy.rebalance_log[0]
         assert log_entry["model_tickers"] == 2
@@ -148,7 +148,7 @@ class TestPointInTimeStrategy:
         assert "MISSING_TICKER" in log_entry["missing_tickers_list"]
 
     def test_all_cash_period_handling(self):
-        """测试全现金期间的处理（所有股票都缺失数据）"""
+        """Tests handling of all-cash periods (when data for all stocks is missing)."""
         portfolios = {
             datetime.date(2022, 1, 3): pd.DataFrame(
                 {"Ticker": ["MISSING1", "MISSING2"]}
@@ -160,7 +160,7 @@ class TestPointInTimeStrategy:
         strategy.p.use_logging = False
         strategy.__init__()
 
-        # 模拟没有匹配的数据源
+        # Mock a scenario with no matching data feeds.
         mock_timeline = MagicMock()
         mock_timeline.datetime.date.return_value = datetime.date(2022, 1, 3)
         mock_timeline._name = "TIMELINE"
@@ -169,55 +169,55 @@ class TestPointInTimeStrategy:
         strategy.timeline = mock_timeline
         strategy.getdatabyname = MagicMock(return_value=None)
 
-        # 执行策略逻辑
+        # Execute the strategy logic.
         strategy.next()
 
-        # 验证进入全现金期间
+        # Verify that the strategy enters an all-cash period.
         assert len(strategy.rebalance_log) == 1
         log_entry = strategy.rebalance_log[0]
         assert log_entry["available_tickers"] == 0
         assert log_entry["model_tickers"] == 2
 
-        # 验证移动到下一个再平衡日期
+        # Verify that it moves to the next rebalance date.
         assert strategy.next_rebalance_idx == 1
         assert strategy.next_rebalance_date is None
 
 
 class TestBuyAndHoldStrategy:
-    """测试买入并持有策略"""
+    """Tests the BuyAndHoldStrategy."""
 
     def test_single_purchase_logic(self):
-        """测试单次购买逻辑"""
+        """Tests the single purchase logic."""
         strategy = BuyAndHoldStrategy()
         strategy.__init__()
 
-        # 模拟order_target_percent方法
+        # Mock the order_target_percent method.
         strategy.order_target_percent = MagicMock()
 
-        # 初始状态
+        # Initial state.
         assert not strategy.bought
 
-        # 第一次调用next()
+        # First call to next().
         strategy.next()
         assert strategy.bought
         strategy.order_target_percent.assert_called_once_with(target=0.99)
 
-        # 第二次调用next()应该不再购买
+        # The second call to next() should not result in another purchase.
         strategy.order_target_percent.reset_mock()
         strategy.next()
         strategy.order_target_percent.assert_not_called()
 
 
 class TestRunQuarterlyBacktest:
-    """测试季度回测运行函数"""
+    """Tests for the run_quarterly_backtest function."""
 
     def create_test_data_feeds(self) -> dict:
-        """创建测试数据源"""
+        """Creates test data feeds."""
         dates = pd.date_range("2022-01-01", "2022-12-31", freq="D")
 
         data_feeds = {}
         for ticker in ["AAPL", "MSFT", "GOOGL"]:
-            # 创建模拟价格数据（随时间上涨）
+            # Create mock price data (increasing over time).
             base_price = {"AAPL": 150, "MSFT": 300, "GOOGL": 2500}[ticker]
             prices = [base_price * (1 + 0.001 * i) for i in range(len(dates))]
 
@@ -238,8 +238,8 @@ class TestRunQuarterlyBacktest:
         return data_feeds
 
     def test_successful_backtest_execution(self):
-        """测试成功的回测执行"""
-        # 创建测试投资组合
+        """Tests successful backtest execution."""
+        # Create a test portfolio.
         portfolios = {
             datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["AAPL", "MSFT"]}),
             datetime.date(2022, 7, 1): pd.DataFrame({"Ticker": ["GOOGL", "MSFT"]}),
@@ -250,7 +250,7 @@ class TestRunQuarterlyBacktest:
         start_date = datetime.date(2022, 1, 1)
         end_date = datetime.date(2022, 12, 31)
 
-        # 运行回测
+        # Run the backtest.
         portfolio_value, metrics = run_quarterly_backtest(
             portfolios=portfolios,
             data_feeds=data_feeds,
@@ -260,15 +260,15 @@ class TestRunQuarterlyBacktest:
             use_logging=False,
         )
 
-        # 验证返回值
+        # Verify the return values.
         assert isinstance(portfolio_value, pd.Series)
         assert isinstance(metrics, dict)
 
-        # 验证投资组合价值序列不为空
+        # Verify the portfolio value series is not empty.
         assert len(portfolio_value) > 0
-        assert portfolio_value.iloc[0] == initial_cash  # 初始值
+        assert portfolio_value.iloc[0] == initial_cash  # Initial value.
 
-        # 验证指标字典包含必要字段
+        # Verify that the metrics dictionary contains the required fields.
         required_fields = [
             "start_date",
             "end_date",
@@ -281,14 +281,14 @@ class TestRunQuarterlyBacktest:
         for field in required_fields:
             assert field in metrics
 
-        # 验证指标值的合理性
+        # Verify the reasonableness of the metric values.
         assert metrics["initial_value"] == initial_cash
         assert metrics["final_value"] > 0
         assert metrics["start_date"] == start_date
         assert metrics["end_date"] == end_date
 
     def test_cash_initialization(self):
-        """测试现金初始化"""
+        """Tests cash initialization."""
         portfolios = {datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["AAPL"]})}
 
         data_feeds = self.create_test_data_feeds()
@@ -303,13 +303,13 @@ class TestRunQuarterlyBacktest:
             use_logging=False,
         )
 
-        # 验证初始现金设置正确
+        # Verify that the initial cash is set correctly.
         assert metrics["initial_value"] == initial_cash
         assert portfolio_value.iloc[0] == initial_cash
 
     def test_empty_portfolio_handling(self):
-        """测试空投资组合的处理"""
-        # 空投资组合字典
+        """Tests the handling of an empty portfolio."""
+        # Empty portfolio dictionary.
         portfolios = {}
         data_feeds = self.create_test_data_feeds()
 
@@ -322,18 +322,18 @@ class TestRunQuarterlyBacktest:
             use_logging=False,
         )
 
-        # 应该仍然返回有效结果（全现金策略）
+        # Should still return valid results (an all-cash strategy).
         assert isinstance(portfolio_value, pd.Series)
         assert isinstance(metrics, dict)
         assert len(portfolio_value) > 0
 
     def test_add_observers_parameter(self):
-        """测试添加观察器参数"""
+        """Tests the add_observers parameter."""
         portfolios = {datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["AAPL"]})}
 
         data_feeds = self.create_test_data_feeds()
 
-        # 测试添加观察器
+        # Test adding observers.
         portfolio_value, metrics = run_quarterly_backtest(
             portfolios=portfolios,
             data_feeds=data_feeds,
@@ -344,17 +344,17 @@ class TestRunQuarterlyBacktest:
             add_observers=True,
         )
 
-        # 应该正常执行
+        # Should execute normally.
         assert isinstance(portfolio_value, pd.Series)
         assert isinstance(metrics, dict)
 
     def test_add_annual_return_parameter(self):
-        """测试添加年化收益分析器参数"""
+        """Tests the add_annual_return analyzer parameter."""
         portfolios = {datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["AAPL"]})}
 
         data_feeds = self.create_test_data_feeds()
 
-        # 测试添加年化收益分析器
+        # Test adding the annual return analyzer.
         portfolio_value, metrics = run_quarterly_backtest(
             portfolios=portfolios,
             data_feeds=data_feeds,
@@ -365,16 +365,16 @@ class TestRunQuarterlyBacktest:
             add_annual_return=True,
         )
 
-        # 应该包含年化收益数据
+        # The metrics should include annual return data.
         assert "annual_returns" in metrics
         assert isinstance(metrics["annual_returns"], dict)
 
 
 class TestRunBenchmarkBacktest:
-    """测试基准回测运行函数"""
+    """Tests the run_benchmark_backtest function."""
 
     def create_spy_data(self) -> pd.DataFrame:
-        """创建SPY测试数据"""
+        """Creates test data for SPY."""
         dates = pd.date_range("2022-01-01", "2022-12-31", freq="D")
         base_price = 400.0
         prices = [base_price * (1 + 0.0005 * i) for i in range(len(dates))]
@@ -392,7 +392,7 @@ class TestRunBenchmarkBacktest:
         )
 
     def test_benchmark_backtest_execution(self):
-        """测试基准回测执行"""
+        """Tests benchmark backtest execution."""
         spy_data = self.create_spy_data()
         initial_cash = 100000.0
 
@@ -400,15 +400,15 @@ class TestRunBenchmarkBacktest:
             data=spy_data, initial_cash=initial_cash, ticker="SPY"
         )
 
-        # 验证返回值
+        # Verify the return values.
         assert isinstance(portfolio_value, pd.Series)
         assert isinstance(metrics, dict)
 
-        # 验证投资组合价值序列
+        # Verify the portfolio value series.
         assert len(portfolio_value) > 0
         assert portfolio_value.iloc[0] == initial_cash
 
-        # 验证指标
+        # Verify the metrics.
         required_fields = [
             "start_date",
             "end_date",
@@ -425,24 +425,24 @@ class TestRunBenchmarkBacktest:
         assert metrics["final_value"] > 0
 
     def test_custom_ticker(self):
-        """测试自定义股票代码"""
+        """Tests using a custom ticker."""
         data = self.create_spy_data()
 
         portfolio_value, metrics = run_benchmark_backtest(
             data=data, initial_cash=50000.0, ticker="QQQ"
         )
 
-        # 应该正常执行，ticker参数主要用于日志显示
+        # Should execute normally; the ticker parameter is mainly for display in logs.
         assert isinstance(portfolio_value, pd.Series)
         assert isinstance(metrics, dict)
         assert metrics["initial_value"] == 50000.0
 
 
 class TestGenerateReport:
-    """测试报告生成函数"""
+    """Tests the generate_report function."""
 
     def create_test_metrics(self) -> dict:
-        """创建测试指标数据"""
+        """Creates test metrics data."""
         return {
             "start_date": datetime.date(2022, 1, 1),
             "end_date": datetime.date(2022, 12, 31),
@@ -454,7 +454,7 @@ class TestGenerateReport:
         }
 
     def create_test_portfolio_value(self) -> pd.Series:
-        """创建测试投资组合价值序列"""
+        """Creates a test portfolio value series."""
         dates = pd.date_range("2022-01-01", "2022-12-31", freq="M")
         values = [100000 * (1 + 0.015 * i) for i in range(len(dates))]
         return pd.Series(values, index=dates)
@@ -462,25 +462,25 @@ class TestGenerateReport:
     @patch("matplotlib.pyplot.show")
     @patch("matplotlib.pyplot.savefig")
     def test_basic_report_generation(self, mock_savefig, mock_show):
-        """测试基本报告生成"""
+        """Tests basic report generation."""
         metrics = self.create_test_metrics()
         portfolio_value = self.create_test_portfolio_value()
 
-        # 测试基本报告生成（不保存文件）
+        # Test basic report generation (without saving to a file).
         generate_report(
             metrics=metrics,
             title="Test Strategy Backtest",
             portfolio_value=portfolio_value,
         )
 
-        # 验证图表显示被调用
+        # Verify that the plot show function was called.
         mock_show.assert_called_once()
         mock_savefig.assert_not_called()
 
     @patch("matplotlib.pyplot.show")
     @patch("matplotlib.pyplot.savefig")
     def test_report_with_file_output(self, mock_savefig, mock_show, tmp_path):
-        """测试带文件输出的报告生成"""
+        """Tests report generation with file output."""
         metrics = self.create_test_metrics()
         portfolio_value = self.create_test_portfolio_value()
         output_path = tmp_path / "test_report.png"
@@ -492,19 +492,19 @@ class TestGenerateReport:
             output_png=output_path,
         )
 
-        # 验证文件保存被调用
+        # Verify that the savefig function was called.
         mock_savefig.assert_called_once_with(output_path, dpi=300, bbox_inches="tight")
         mock_show.assert_called_once()
 
     @patch("matplotlib.pyplot.show")
     @patch("matplotlib.pyplot.savefig")
     def test_report_with_benchmark(self, mock_savefig, mock_show):
-        """测试带基准的报告生成"""
+        """Tests report generation with a benchmark."""
         metrics = self.create_test_metrics()
         portfolio_value = self.create_test_portfolio_value()
 
-        # 创建基准数据
-        benchmark_value = self.create_test_portfolio_value() * 0.9  # 稍低的基准表现
+        # Create benchmark data.
+        benchmark_value = self.create_test_portfolio_value() * 0.9  # Slightly lower benchmark performance.
 
         generate_report(
             metrics=metrics,
@@ -514,22 +514,22 @@ class TestGenerateReport:
             benchmark_label="SPY Benchmark",
         )
 
-        # 验证图表显示被调用
+        # Verify that the plot show function was called.
         mock_show.assert_called_once()
 
 
 class TestEngineIntegration:
-    """回测引擎集成测试"""
+    """Integration tests for the backtest engine."""
 
     def test_end_to_end_backtest_flow(self):
-        """端到端回测流程测试"""
-        # 1. 准备测试数据
+        """Tests the end-to-end backtest workflow."""
+        # 1. Prepare test data.
         portfolios = {
             datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["AAPL", "MSFT"]}),
             datetime.date(2022, 7, 1): pd.DataFrame({"Ticker": ["GOOGL"]}),
         }
 
-        # 2. 创建数据源
+        # 2. Create data feeds.
         dates = pd.date_range("2022-01-01", "2022-12-31", freq="D")
         data_feeds = {}
 
@@ -551,7 +551,7 @@ class TestEngineIntegration:
 
             data_feeds[ticker] = bt.feeds.PandasData(dataname=data, name=ticker)
 
-        # 3. 运行季度回测
+        # 3. Run the quarterly backtest.
         portfolio_value, metrics = run_quarterly_backtest(
             portfolios=portfolios,
             data_feeds=data_feeds,
@@ -561,7 +561,7 @@ class TestEngineIntegration:
             use_logging=False,
         )
 
-        # 4. 运行基准回测
+        # 4. Run the benchmark backtest.
         spy_data = pd.DataFrame(
             {
                 "Open": [400] * len(dates),
@@ -578,19 +578,19 @@ class TestEngineIntegration:
             data=spy_data, initial_cash=100000.0, ticker="SPY"
         )
 
-        # 5. 验证结果
+        # 5. Verify the results.
         assert isinstance(portfolio_value, pd.Series)
         assert isinstance(benchmark_value, pd.Series)
         assert len(portfolio_value) > 0
         assert len(benchmark_value) > 0
 
-        # 验证指标合理性
+        # Verify the reasonableness of the metrics.
         assert metrics["final_value"] > 0
         assert benchmark_metrics["final_value"] > 0
-        assert metrics["total_return"] != 0  # 应该有收益变化
+        assert metrics["total_return"] != 0  # There should be a change in returns.
         assert benchmark_metrics["total_return"] != 0
 
-        # 6. 测试报告生成（不实际显示）
+        # 6. Test report generation (without actually showing the plot).
         with patch("matplotlib.pyplot.show"):
             generate_report(
                 metrics=metrics,

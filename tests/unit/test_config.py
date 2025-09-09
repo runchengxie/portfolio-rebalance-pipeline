@@ -1,10 +1,10 @@
-"""测试配置读取模块
+"""Tests for the configuration reading module.
 
-测试 utils/config.py 中的配置读取逻辑，包括：
-- period_mode=fixed/dynamic 的时间区间计算
-- 日期字符串与 date 对象的处理
-- buffer 月/日逻辑
-- 统一资金 vs 分策略资金的两种配置格式
+This file tests the configuration reading logic in utils/config.py, including:
+- Time period calculation for period_mode=fixed/dynamic.
+- Handling of date strings and date objects.
+- Logic for buffer months/days.
+- Two configuration formats for initial cash: unified vs. per-strategy.
 """
 
 import datetime
@@ -19,11 +19,11 @@ from stock_analysis.utils.config import get_backtest_period, get_initial_cash, l
 
 
 class TestLoadCfg:
-    """测试配置文件加载"""
+    """Tests for loading configuration files."""
 
     def test_load_cfg_with_config_dir_yaml(self, tmp_path):
-        """测试优先读取 config/config.yaml"""
-        # 创建临时配置文件
+        """Test that config/config.yaml is read with priority."""
+        # Create a temporary configuration file
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         config_file = config_dir / "config.yaml"
@@ -40,7 +40,7 @@ class TestLoadCfg:
         with open(config_file, "w", encoding="utf-8") as f:
             yaml.dump(config_data, f)
 
-        # Mock 项目根目录
+        # Mock the project root directory
         with patch("stock_analysis.utils.config.Path") as mock_path:
             mock_path(__file__).resolve.return_value.parents = [
                 None,
@@ -54,8 +54,8 @@ class TestLoadCfg:
             assert config["backtest"]["initial_cash"] == 500000
 
     def test_load_cfg_fallback_to_root_yaml(self, tmp_path):
-        """测试回退到项目根的 config.yaml"""
-        # 只在项目根创建配置文件
+        """Test fallback to config.yaml in the project root."""
+        # Create a configuration file only in the project root
         config_file = tmp_path / "config.yaml"
 
         config_data = {
@@ -82,9 +82,9 @@ class TestLoadCfg:
             assert config["backtest"]["buffer"]["months"] == 6
 
     def test_load_cfg_no_config_file(self):
-        """测试无配置文件时使用默认配置"""
+        """Test using default configuration when no config file is found."""
         with patch("stock_analysis.utils.config.Path") as mock_path:
-            # Mock 不存在的路径
+            # Mock a non-existent path
             mock_path(__file__).resolve.return_value.parents = [
                 None,
                 None,
@@ -99,10 +99,10 @@ class TestLoadCfg:
             assert config["backtest"]["initial_cash"] == 1000000
 
     def test_load_cfg_yaml_parse_error(self, tmp_path):
-        """测试 YAML 解析错误时的降级处理"""
+        """Test graceful degradation when a YAML parsing error occurs."""
         config_file = tmp_path / "config.yaml"
 
-        # 写入无效的 YAML
+        # Write invalid YAML content
         with open(config_file, "w", encoding="utf-8") as f:
             f.write("invalid: yaml: content: [")
 
@@ -115,16 +115,16 @@ class TestLoadCfg:
             ]
 
             config = load_cfg()
-            # 应该返回默认配置
+            # It should return the default configuration
             assert config["backtest"]["period_mode"] == "dynamic"
             assert isinstance(config["backtest"]["initial_cash"], dict)
 
 
 class TestGetBacktestPeriod:
-    """测试回测时间区间计算"""
+    """Tests for backtest period calculation."""
 
     def test_fixed_mode_with_string_dates(self):
-        """测试固定模式下的字符串日期解析"""
+        """Test parsing string dates in fixed mode."""
         config_data = {
             "backtest": {
                 "period_mode": "fixed",
@@ -140,7 +140,7 @@ class TestGetBacktestPeriod:
             assert end == datetime.date(2025, 7, 2)
 
     def test_fixed_mode_with_date_objects(self):
-        """测试固定模式下的 date 对象处理"""
+        """Test handling of date objects in fixed mode."""
         config_data = {
             "backtest": {
                 "period_mode": "fixed",
@@ -156,12 +156,12 @@ class TestGetBacktestPeriod:
             assert end == datetime.date(2024, 12, 31)
 
     def test_dynamic_mode_with_buffer(self):
-        """测试动态模式下的缓冲时间计算"""
+        """Test buffer time calculation in dynamic mode."""
         config_data = {
             "backtest": {"period_mode": "dynamic", "buffer": {"months": 3, "days": 10}}
         }
 
-        # 模拟投资组合数据
+        # Mock portfolio data
         portfolios = {
             datetime.date(2022, 1, 1): ["AAPL", "MSFT"],
             datetime.date(2022, 4, 1): ["GOOGL", "TSLA"],
@@ -176,7 +176,7 @@ class TestGetBacktestPeriod:
             assert end == expected_end
 
     def test_dynamic_mode_without_portfolios(self):
-        """测试动态模式下缺少投资组合数据时的异常"""
+        """Test exception when portfolio data is missing in dynamic mode."""
         config_data = {"backtest": {"period_mode": "dynamic"}}
 
         with patch("stock_analysis.utils.config.load_cfg", return_value=config_data):
@@ -186,11 +186,11 @@ class TestGetBacktestPeriod:
                 get_backtest_period()
 
     def test_dynamic_mode_default_buffer(self):
-        """测试动态模式下默认缓冲时间"""
+        """Test default buffer time in dynamic mode."""
         config_data = {
             "backtest": {
                 "period_mode": "dynamic"
-                # 没有 buffer 配置，应使用默认值
+                # No buffer is configured, so default values should be used.
             }
         }
 
@@ -205,10 +205,10 @@ class TestGetBacktestPeriod:
 
 
 class TestGetInitialCash:
-    """测试初始资金获取"""
+    """Tests for getting initial cash."""
 
     def test_unified_cash_format(self):
-        """测试统一资金格式"""
+        """Test the unified cash format."""
         config_data = {"backtest": {"initial_cash": 1500000}}
 
         with patch("stock_analysis.utils.config.load_cfg", return_value=config_data):
@@ -217,7 +217,7 @@ class TestGetInitialCash:
             assert get_initial_cash("spy") == 1500000.0
 
     def test_strategy_specific_cash_format(self):
-        """测试分策略资金格式"""
+        """Test the per-strategy cash format."""
         config_data = {
             "backtest": {
                 "initial_cash": {"ai": 2000000, "quant": 1500000, "spy": 500000}
@@ -230,28 +230,28 @@ class TestGetInitialCash:
             assert get_initial_cash("spy") == 500000.0
 
     def test_strategy_specific_with_missing_strategy(self):
-        """测试分策略格式下缺少指定策略时的默认值"""
+        """Test the default value when a specific strategy is missing in the per-strategy format."""
         config_data = {
             "backtest": {
                 "initial_cash": {
                     "ai": 2000000,
                     "spy": 500000,
-                    # 缺少 "quant" 策略
+                    # The "quant" strategy is missing
                 }
             }
         }
 
         with patch("stock_analysis.utils.config.load_cfg", return_value=config_data):
             assert get_initial_cash("ai") == 2000000.0
-            assert get_initial_cash("quant") == 1000000.0  # 默认值
+            assert get_initial_cash("quant") == 1000000.0  # Default value
             assert get_initial_cash("spy") == 500000.0
 
     def test_no_initial_cash_config(self):
-        """测试无初始资金配置时的默认值"""
+        """Test the default value when initial_cash is not configured."""
         config_data = {
             "backtest": {
                 "period_mode": "fixed"
-                # 没有 initial_cash 配置
+                # No initial_cash configuration
             }
         }
 
@@ -262,15 +262,15 @@ class TestGetInitialCash:
 
 
 class TestConfigIntegration:
-    """集成测试：使用真实配置文件格式"""
+    """Integration tests using realistic configuration file formats."""
 
     def test_real_config_format_fixed_mode(self, tmp_path):
-        """测试真实配置文件格式 - 固定模式"""
+        """Test a realistic configuration file format - fixed mode."""
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         config_file = config_dir / "config.yaml"
 
-        # 使用与 template.yaml 相似的真实格式
+        # Use a realistic format similar to template.yaml
         config_content = """
 backtest:
   period_mode: fixed
@@ -293,17 +293,17 @@ backtest:
                 tmp_path,
             ]
 
-            # 测试时间区间
+            # Test the time period
             start, end = get_backtest_period()
             assert start == datetime.date(2021, 4, 2)
             assert end == datetime.date(2025, 7, 2)
 
-            # 测试统一资金
+            # Test unified cash
             assert get_initial_cash("ai") == 1000000.0
             assert get_initial_cash("spy") == 1000000.0
 
     def test_real_config_format_dynamic_mode(self, tmp_path):
-        """测试真实配置文件格式 - 动态模式"""
+        """Test a realistic configuration file format - dynamic mode."""
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         config_file = config_dir / "config.yaml"
@@ -331,7 +331,7 @@ backtest:
                 tmp_path,
             ]
 
-            # 测试动态时间区间
+            # Test dynamic time period
             portfolios = {
                 datetime.date(2022, 3, 1): ["AAPL"],
                 datetime.date(2022, 9, 1): ["MSFT"],
@@ -342,7 +342,7 @@ backtest:
             expected_end = datetime.date(2022, 9, 1) + relativedelta(months=6, days=15)
             assert end == expected_end
 
-            # 测试分策略资金
+            # Test per-strategy cash
             assert get_initial_cash("ai") == 1000000.0
             assert get_initial_cash("quant") == 1000000.0
             assert get_initial_cash("spy") == 1000000.0

@@ -3,172 +3,172 @@ from datetime import date, timedelta
 
 import pytest
 
-# 尝试导入longport，如果失败则跳过所有测试
+# Try to import longport, skip all tests if it fails
 longport = pytest.importorskip("longport")
 
 from stock_analysis.broker.longport_client import LongPortClient, get_config
 
 
 def check_longport_credentials():
-    """检查LongPort API凭据是否配置。"""
+    """Check if LongPort API credentials are configured."""
     required_vars = ["LONGPORT_APP_KEY", "LONGPORT_APP_SECRET", "LONGPORT_ACCESS_TOKEN"]
     return all(os.getenv(var) for var in required_vars)
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not check_longport_credentials(), reason="LongPort API凭据未配置，跳过集成测试"
+    not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
 def test_get_config_from_env():
-    """测试从环境变量获取LongPort配置。"""
+    """Test getting LongPort configuration from environment variables."""
     config = get_config()
     assert config is not None
-    # 不直接检查凭据内容，只验证配置对象创建成功
+    # Do not directly check credential content, only verify successful creation of the config object
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not check_longport_credentials(), reason="LongPort API凭据未配置，跳过集成测试"
+    not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
 def test_longport_client_initialization():
-    """测试LongPortClient初始化。"""
+    """Test LongPortClient initialization."""
     try:
         client = LongPortClient()
         assert client.cfg is not None
         assert client.q is not None
         assert client.t is not None
     except Exception as e:
-        pytest.fail(f"LongPortClient初始化失败: {e}")
+        pytest.fail(f"LongPortClient initialization failed: {e}")
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not check_longport_credentials(), reason="LongPort API凭据未配置，跳过集成测试"
+    not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
 def test_quote_last_real_api():
-    """测试真实API获取股票报价。
+    """Test getting stock quotes from the real API.
 
-    注意：这个测试会调用真实的LongPort API，
-    需要有效的API凭据和网络连接。
+    Note: This test calls the real LongPort API and requires
+    valid API credentials and a network connection.
     """
     client = LongPortClient()
 
-    # 使用常见的美股股票进行测试
+    # Use common US stocks for testing
     test_tickers = ["AAPL", "MSFT"]
 
     try:
         quotes = client.quote_last(test_tickers)
 
-        # 验证返回结果的结构
+        # Verify the structure of the returned result
         assert isinstance(quotes, dict)
-        assert len(quotes) <= len(test_tickers)  # 可能有些股票不在交易时间
+        assert len(quotes) <= len(test_tickers)  # Some stocks might not be in trading hours
 
         for symbol, (price, timestamp) in quotes.items():
-            # 验证数据类型和合理性
+            # Verify data types and reasonableness
             assert isinstance(symbol, str)
             assert symbol.endswith((".US", ".HK", ".SG"))
             assert isinstance(price, int | float)
-            assert price > 0  # 股价应该为正数
+            assert price > 0  # Stock price should be positive
             assert isinstance(timestamp, int)
-            assert timestamp > 0  # 时间戳应该为正数
+            assert timestamp > 0  # Timestamp should be positive
 
     except Exception as e:
-        # 如果是网络错误或API限制，给出更友好的错误信息
+        # If it's a network error or API limit, provide a more user-friendly error message
         if "network" in str(e).lower() or "timeout" in str(e).lower():
-            pytest.skip(f"网络连接问题，跳过测试: {e}")
+            pytest.skip(f"Network connection issue, skipping test: {e}")
         elif "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            pytest.skip(f"API限制，跳过测试: {e}")
+            pytest.skip(f"API limit reached, skipping test: {e}")
         else:
-            pytest.fail(f"获取报价失败: {e}")
+            pytest.fail(f"Failed to get quotes: {e}")
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not check_longport_credentials(), reason="LongPort API凭据未配置，跳过集成测试"
+    not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
 def test_candles_real_api():
-    """测试真实API获取历史K线数据。
+    """Test getting historical candlestick data from the real API.
 
-    注意：这个测试会调用真实的LongPort API。
+    Note: This test calls the real LongPort API.
     """
     client = LongPortClient()
 
-    # 获取最近30天的数据
+    # Get data for the last 30 days
     end_date = date.today()
     start_date = end_date - timedelta(days=30)
 
     try:
         candles = client.candles("AAPL", start_date, end_date)
 
-        # 验证返回结果
+        # Verify the returned result
         assert candles is not None
-        # 具体的数据结构验证取决于longport库的返回格式
-        # 这里只做基本的非空检查
+        # Specific data structure verification depends on the format returned by the longport library
+        # Here, we only perform a basic non-null check
 
     except Exception as e:
         if "network" in str(e).lower() or "timeout" in str(e).lower():
-            pytest.skip(f"网络连接问题，跳过测试: {e}")
+            pytest.skip(f"Network connection issue, skipping test: {e}")
         elif "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            pytest.skip(f"API限制，跳过测试: {e}")
+            pytest.skip(f"API limit reached, skipping test: {e}")
         elif "market closed" in str(e).lower() or "no data" in str(e).lower():
-            pytest.skip(f"市场关闭或无数据，跳过测试: {e}")
+            pytest.skip(f"Market closed or no data, skipping test: {e}")
         else:
-            pytest.fail(f"获取K线数据失败: {e}")
+            pytest.fail(f"Failed to get candlestick data: {e}")
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not check_longport_credentials(), reason="LongPort API凭据未配置，跳过集成测试"
+    not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
 def test_symbol_conversion_integration():
-    """测试符号转换在真实API调用中的表现。"""
+    """Test symbol conversion behavior in real API calls."""
     client = LongPortClient()
 
-    # 测试不同格式的股票代码
+    # Test different formats of stock tickers
     test_cases = [
-        "AAPL",  # 应该转换为 AAPL.US
-        "MSFT.US",  # 应该保持不变
-        "700.HK",  # 应该保持不变（如果有权限）
+        "AAPL",       # Should be converted to AAPL.US
+        "MSFT.US",    # Should remain unchanged
+        "700.HK",     # Should remain unchanged (if permission is granted)
     ]
 
     for ticker in test_cases:
         try:
             quotes = client.quote_last([ticker])
-            # 如果成功获取数据，验证返回的symbol格式
+            # If data is successfully retrieved, verify the format of the returned symbol
             for symbol in quotes.keys():
                 assert symbol.endswith((".US", ".HK", ".SG")), (
-                    f"符号格式不正确: {symbol}"
+                    f"Incorrect symbol format: {symbol}"
                 )
 
         except Exception as e:
-            # 某些市场可能没有权限或不在交易时间，这是正常的
+            # It's normal to not have permission for some markets or for them to be outside trading hours
             if "permission" in str(e).lower() or "access" in str(e).lower():
-                pytest.skip(f"无权限访问 {ticker}，跳过: {e}")
+                pytest.skip(f"No permission to access {ticker}, skipping: {e}")
             elif "not found" in str(e).lower() or "invalid" in str(e).lower():
-                pytest.skip(f"股票代码 {ticker} 无效或未找到，跳过: {e}")
+                pytest.skip(f"Ticker {ticker} is invalid or not found, skipping: {e}")
             else:
-                # 其他错误可能需要关注
-                pytest.fail(f"测试 {ticker} 时出错: {e}")
+                # Other errors might require attention
+                pytest.fail(f"Error while testing {ticker}: {e}")
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not check_longport_credentials(), reason="LongPort API凭据未配置，跳过集成测试"
+    not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
 def test_api_error_handling():
-    """测试API错误处理。"""
+    """Test API error handling."""
     client = LongPortClient()
 
-    # 测试无效的股票代码
+    # Test with invalid stock tickers
     invalid_tickers = ["INVALID_TICKER_12345"]
 
     try:
         quotes = client.quote_last(invalid_tickers)
-        # 如果没有抛出异常，检查返回结果是否为空或包含错误信息
+        # If no exception is thrown, check if the result is empty or contains an error message
         assert isinstance(quotes, dict)
 
     except Exception as e:
-        # 预期会有错误，这是正常的
+        # An error is expected, which is normal
         assert (
             "invalid" in str(e).lower()
             or "not found" in str(e).lower()
@@ -176,5 +176,5 @@ def test_api_error_handling():
         )
 
 
-# 注意：submit_limit方法涉及真实交易，不在集成测试中测试
-# 真实交易测试应该在专门的交易测试环境中进行，而不是在CI/CD中
+# Note: The submit_limit method involves real trading and is not tested in integration tests.
+# Real trading tests should be conducted in a dedicated trading test environment, not in CI/CD.

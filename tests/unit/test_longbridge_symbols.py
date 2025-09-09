@@ -16,31 +16,31 @@ from stock_analysis.broker.longport_client import _to_lb_symbol
         ("BABA.HK", "BABA.HK"),
         ("SE.SG", "SE.SG"),
         ("nvda", "NVDA.US"),
-        ("\tAMZN\n", "AMZN.US"),  # 测试各种空白字符
+        ("\tAMZN\n", "AMZN.US"),  # Test various whitespace characters
     ],
 )
 def test_to_lb_symbol(raw, expect):
-    """测试股票代码转换为LongPort格式的函数。
+    """Tests the function that converts a stock symbol to the LongPort format.
 
-    测试规则：
-    - 默认补全 .US 后缀
-    - 已有 .US/.HK/.SG 后缀的保持不变
-    - 自动转换为大写
-    - 去除前后空白字符
+    Test rules:
+    - Defaults to appending the .US suffix.
+    - Symbols that already have a .US, .HK, or .SG suffix are left unchanged.
+    - Automatically converts the symbol to uppercase.
+    - Strips leading and trailing whitespace.
     """
     assert _to_lb_symbol(raw) == expect
 
 
 @pytest.mark.unit
 def test_to_lb_symbol_edge_cases():
-    """测试边界情况。"""
-    # 空字符串应该返回 .US
+    """Tests edge cases for the symbol conversion function."""
+    # An empty string should return ".US"
     assert _to_lb_symbol("") == ".US"
 
-    # 只有空格的字符串
+    # A string containing only spaces
     assert _to_lb_symbol("   ") == ".US"
 
-    # 测试混合大小写
+    # Test mixed-case inputs
     assert _to_lb_symbol("TsLa.us") == "TSLA.US"
     assert _to_lb_symbol("baba.hk") == "BABA.HK"
     assert _to_lb_symbol("se.sg") == "SE.SG"

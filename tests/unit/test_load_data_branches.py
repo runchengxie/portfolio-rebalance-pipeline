@@ -1,10 +1,10 @@
-"""load_data_to_db的CLI/非CLI分支测试
+"""Tests for the CLI and non-CLI branches of `load_data_to_db`.
 
-测试数据加载的不同执行路径：
-- SQLite CLI可用时的快速导入分支
-- SQLite CLI不可用时的pandas fallback分支
-- 文件存在/不存在的处理
-- 错误情况的处理
+This module tests the different execution paths for loading data:
+- The fast import branch when the SQLite CLI is available.
+- The pandas fallback branch when the SQLite CLI is unavailable.
+- Handling of existing and non-existing files.
+- Handling of various error conditions.
 """
 
 import sqlite3
@@ -25,20 +25,20 @@ from stock_analysis.load_data_to_db import (
 
 @pytest.mark.unit
 class TestSQLiteCLIDetection:
-    """测试SQLite CLI检测逻辑"""
+    """Tests for the SQLite CLI detection logic."""
 
     def test_sqlite3_cli_available(self):
-        """测试SQLite CLI可用的情况"""
+        """Tests the case where the SQLite CLI is available."""
         with patch("shutil.which", return_value="/usr/bin/sqlite3"):
             assert _check_sqlite3_cli() is True
 
     def test_sqlite3_cli_not_available(self):
-        """测试SQLite CLI不可用的情况"""
+        """Tests the case where the SQLite CLI is not available."""
         with patch("shutil.which", return_value=None):
             assert _check_sqlite3_cli() is False
 
     def test_sqlite3_cli_detection_with_different_paths(self):
-        """测试不同路径下的SQLite CLI检测"""
+        """Tests SQLite CLI detection with various paths."""
         test_paths = [
             "/usr/bin/sqlite3",
             "/usr/local/bin/sqlite3",
@@ -54,11 +54,11 @@ class TestSQLiteCLIDetection:
 
 @pytest.mark.unit
 class TestSQLiteCLIImport:
-    """测试SQLite CLI导入功能"""
+    """Tests for the SQLite CLI import functionality."""
 
     def test_cli_import_success(self, tmp_path):
-        """测试CLI导入成功的情况"""
-        # 创建临时文件
+        """Tests a successful CLI import scenario."""
+        # Create temporary files
         csv_file = tmp_path / "test.csv"
         db_file = tmp_path / "test.db"
         schema_file = tmp_path / "schema.sql"
@@ -68,7 +68,7 @@ class TestSQLiteCLIImport:
             "CREATE TABLE IF NOT EXISTS share_prices (Ticker TEXT, Date TEXT, Close REAL);"
         )
 
-        # 模拟成功的subprocess调用
+        # Mock a successful subprocess call
         mock_result = Mock()
         mock_result.returncode = 0
 
@@ -78,13 +78,13 @@ class TestSQLiteCLIImport:
             assert result is True
             mock_run.assert_called_once()
 
-            # 验证调用参数包含正确的sqlite3命令
+            # Verify that the call arguments contain the correct sqlite3 command
             call_args = mock_run.call_args[0][0]
             assert call_args[0] == "sqlite3"
             assert str(db_file) in call_args
 
     def test_cli_import_subprocess_error(self, tmp_path):
-        """测试CLI导入subprocess错误的情况"""
+        """Tests a CLI import scenario with a subprocess error."""
         csv_file = tmp_path / "test.csv"
         db_file = tmp_path / "test.db"
         schema_file = tmp_path / "schema.sql"
@@ -92,7 +92,7 @@ class TestSQLiteCLIImport:
         csv_file.write_text("test data")
         schema_file.write_text("test schema")
 
-        # 模拟subprocess错误
+        # Mock a subprocess error
         error = subprocess.CalledProcessError(1, "sqlite3", stderr="SQL error")
 
         with patch("subprocess.run", side_effect=error):
@@ -101,7 +101,7 @@ class TestSQLiteCLIImport:
             assert result is False
 
     def test_cli_import_general_exception(self, tmp_path):
-        """测试CLI导入一般异常的情况"""
+        """Tests a CLI import scenario with a general exception."""
         csv_file = tmp_path / "test.csv"
         db_file = tmp_path / "test.db"
         schema_file = tmp_path / "schema.sql"
@@ -114,18 +114,17 @@ class TestSQLiteCLIImport:
 
 @pytest.mark.unit
 class TestPandasFallback:
-    """测试pandas fallback分支"""
+    """Tests for the pandas fallback branch."""
 
     def test_load_csv_in_chunks_basic(self, tmp_path):
-        """测试基本的CSV分块加载"""
-        # 创建测试数据库
+        """Tests the basic functionality of loading a CSV in chunks."""
+        # Create a test database
         db_file = tmp_path / "test.db"
         con = sqlite3.connect(db_file)
 
-        # 模拟CSV数据
-
+        # Mock CSV data
         with patch("pandas.read_csv") as mock_read_csv:
-            # 模拟pandas.read_csv返回的DataFrame
+            # Mock the DataFrame returned by pandas.read_csv
             mock_df = pd.DataFrame(
                 {
                     "Ticker": ["AAPL", "MSFT"],
@@ -133,7 +132,7 @@ class TestPandasFallback:
                     "Close": [150.0, 250.0],
                 }
             )
-            mock_read_csv.return_value = [mock_df]  # chunksize返回迭代器
+            mock_read_csv.return_value = [mock_df]  # chunksize returns an iterator
 
             with patch.object(mock_df, "to_sql") as mock_to_sql:
                 rows = _load_csv_in_chunks(
@@ -146,12 +145,12 @@ class TestPandasFallback:
         con.close()
 
     def test_load_csv_with_ticker_cleaning(self, tmp_path):
-        """测试带Ticker清洗的CSV加载"""
+        """Tests loading a CSV with Ticker cleaning."""
         db_file = tmp_path / "test.db"
         con = sqlite3.connect(db_file)
 
         with patch("pandas.read_csv") as mock_read_csv:
-            # 包含需要清洗的Ticker数据
+            # Contains Ticker data that needs cleaning
             mock_df = pd.DataFrame(
                 {
                     "Ticker": [" aapl ", "MSFT_DELISTED", ""],
@@ -164,17 +163,17 @@ class TestPandasFallback:
             with patch.object(pd.DataFrame, "to_sql") as mock_to_sql:
                 _load_csv_in_chunks(Path("dummy.csv"), "test_table", con)
 
-                # 验证to_sql被调用
+                # Verify that to_sql was called
                 mock_to_sql.assert_called_once()
 
-                # 验证传递给to_sql的DataFrame已经清洗过
+                # Verify that the DataFrame passed to to_sql has been cleaned
                 called_df = mock_to_sql.call_args[1]["con"]
                 assert called_df is con
 
         con.close()
 
     def test_load_financial_data_with_date_conversion(self, tmp_path):
-        """测试财务数据的日期转换"""
+        """Tests date conversion for financial data."""
         db_file = tmp_path / "test.db"
         con = sqlite3.connect(db_file)
 
@@ -192,7 +191,7 @@ class TestPandasFallback:
             with patch.object(pd.DataFrame, "to_sql"):
                 rows = _load_csv_in_chunks(
                     Path("dummy.csv"),
-                    "balance_sheet",  # 财务数据表
+                    "balance_sheet",  # Financial data table
                     con,
                 )
 
@@ -201,17 +200,17 @@ class TestPandasFallback:
         con.close()
 
     def test_load_price_data_deduplication(self, tmp_path):
-        """测试价格数据去重"""
+        """Tests deduplication of price data."""
         db_file = tmp_path / "test.db"
         con = sqlite3.connect(db_file)
 
         with patch("pandas.read_csv") as mock_read_csv:
-            # 包含重复数据
+            # Contains duplicate data
             mock_df = pd.DataFrame(
                 {
                     "Ticker": ["AAPL", "AAPL", "MSFT"],
                     "Date": ["2023-01-01", "2023-01-01", "2023-01-01"],
-                    "Close": [150.0, 151.0, 250.0],  # AAPL有重复，应该保留最后一个
+                    "Close": [150.0, 151.0, 250.0],  # AAPL is duplicated, last one should be kept
                 }
             )
             mock_read_csv.return_value = [mock_df]
@@ -222,7 +221,7 @@ class TestPandasFallback:
                 ) as mock_drop_dup:
                     _load_csv_in_chunks(Path("dummy.csv"), "share_prices", con)
 
-                    # 验证去重被调用
+                    # Verify that deduplication was called
                     mock_drop_dup.assert_called_once_with(
                         subset=["Ticker", "Date"], keep="last"
                     )
@@ -232,17 +231,17 @@ class TestPandasFallback:
 
 @pytest.mark.unit
 class TestMainFunctionBranches:
-    """测试main函数的不同分支"""
+    """Tests for the different branches of the main function."""
 
     @patch("stock_analysis.load_data_to_db.DATA_DIR")
     @patch("stock_analysis.load_data_to_db.DB_PATH")
     def test_main_with_cli_available(self, mock_db_path, mock_data_dir, tmp_path):
-        """测试SQLite CLI可用时的主函数执行"""
-        # 设置临时路径
+        """Tests the main function execution when the SQLite CLI is available."""
+        # Set temporary paths
         mock_data_dir.return_value = tmp_path
         mock_db_path.return_value = tmp_path / "test.db"
 
-        # 创建必要的文件
+        # Create necessary files
         (tmp_path / "us-balance-ttm.csv").write_text("Ticker,Revenue\nAAPL,100000\n")
         (tmp_path / "us-cashflow-ttm.csv").write_text("Ticker,Cash\nAAPL,50000\n")
         (tmp_path / "us-income-ttm.csv").write_text("Ticker,Income\nAAPL,25000\n")
@@ -270,19 +269,19 @@ class TestMainFunctionBranches:
 
                         main()
 
-                        # 验证CLI导入被调用
+                        # Verify that CLI import was called
                         mock_cli_import.assert_called_once()
-                        # 验证财务数据仍使用chunks加载
-                        assert mock_chunks.call_count == 3  # 三个财务数据文件
+                        # Verify that financial data is still loaded in chunks
+                        assert mock_chunks.call_count == 3  # Three financial data files
 
     @patch("stock_analysis.load_data_to_db.DATA_DIR")
     @patch("stock_analysis.load_data_to_db.DB_PATH")
     def test_main_with_cli_unavailable(self, mock_db_path, mock_data_dir, tmp_path):
-        """测试SQLite CLI不可用时的主函数执行"""
+        """Tests the main function execution when the SQLite CLI is unavailable."""
         mock_data_dir.return_value = tmp_path
         mock_db_path.return_value = tmp_path / "test.db"
 
-        # 创建价格数据文件
+        # Create the price data file
         (tmp_path / "us-shareprices-daily.csv").write_text(
             "Ticker;Date;Close\nAAPL;2023-01-01;150.0\n"
         )
@@ -303,9 +302,9 @@ class TestMainFunctionBranches:
 
                         main()
 
-                        # 验证CLI导入未被调用
+                        # Verify that CLI import was not called
                         mock_cli_import.assert_not_called()
-                        # 验证fallback到pandas chunks
+                        # Verify fallback to pandas chunks
                         mock_chunks.assert_called()
 
     @patch("stock_analysis.load_data_to_db.DATA_DIR")
@@ -313,11 +312,11 @@ class TestMainFunctionBranches:
     def test_main_with_cli_failure_fallback(
         self, mock_db_path, mock_data_dir, tmp_path
     ):
-        """测试CLI导入失败时的fallback"""
+        """Tests the fallback mechanism when CLI import fails."""
         mock_data_dir.return_value = tmp_path
         mock_db_path.return_value = tmp_path / "test.db"
 
-        # 创建必要文件
+        # Create necessary files
         (tmp_path / "us-shareprices-daily.csv").write_text(
             "Ticker;Date;Close\nAAPL;2023-01-01;150.0\n"
         )
@@ -331,7 +330,7 @@ class TestMainFunctionBranches:
             with patch(
                 "stock_analysis.load_data_to_db._import_prices_with_cli",
                 return_value=False,
-            ):  # CLI失败
+            ):  # Simulate CLI failure
                 with patch(
                     "stock_analysis.load_data_to_db._load_csv_in_chunks",
                     return_value=100,
@@ -342,7 +341,7 @@ class TestMainFunctionBranches:
 
                         main()
 
-                        # 验证fallback到pandas chunks
+                        # Verify fallback to pandas chunks
                         mock_chunks.assert_called()
 
     @patch("stock_analysis.load_data_to_db.DATA_DIR")
@@ -350,11 +349,11 @@ class TestMainFunctionBranches:
     def test_main_missing_files_handling(
         self, mock_db_path, mock_data_dir, tmp_path, capsys
     ):
-        """测试缺失文件的处理"""
+        """Tests handling of missing files."""
         mock_data_dir.return_value = tmp_path
         mock_db_path.return_value = tmp_path / "test.db"
 
-        # 不创建任何文件，测试缺失文件的处理
+        # Do not create any files to test missing file handling
 
         with patch("sqlite3.connect") as mock_connect:
             mock_con = Mock()
@@ -362,23 +361,23 @@ class TestMainFunctionBranches:
 
             main()
 
-            # 验证警告信息被打印
+            # Verify that a warning message is printed
             captured = capsys.readouterr()
             assert "[WARNING] File not found" in captured.out
 
 
 @pytest.mark.unit
 class TestErrorHandling:
-    """测试错误处理"""
+    """Tests for error handling."""
 
     def test_database_connection_error(self):
-        """测试数据库连接错误"""
+        """Tests handling of a database connection error."""
         with patch("sqlite3.connect", side_effect=sqlite3.Error("Database locked")):
             with pytest.raises(sqlite3.Error):
                 main()
 
     def test_csv_reading_error(self, tmp_path):
-        """测试CSV读取错误"""
+        """Tests handling of a CSV reading error."""
         db_file = tmp_path / "test.db"
         con = sqlite3.connect(db_file)
 
@@ -389,7 +388,7 @@ class TestErrorHandling:
         con.close()
 
     def test_file_permission_error(self, tmp_path):
-        """测试文件权限错误"""
+        """Tests handling of a file permission error."""
         csv_file = tmp_path / "test.csv"
         db_file = tmp_path / "test.db"
         schema_file = tmp_path / "schema.sql"
