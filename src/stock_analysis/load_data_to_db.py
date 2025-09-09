@@ -178,6 +178,7 @@ def main(
     """
     db_path: Path = _resolve_path(DB_PATH)
     data_dir: Path = _resolve_path(DATA_DIR)
+    
 
     print(f"Creating SQLite database at: {db_path}")
     with sqlite3.connect(db_path) as con:
