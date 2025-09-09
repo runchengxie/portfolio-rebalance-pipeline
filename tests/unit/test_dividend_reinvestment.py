@@ -1,9 +1,12 @@
 import datetime
+
 import pandas as pd
 import pandas.testing as pdt
-
-from stock_analysis.backtest.prep import DividendPandasData
+import pytest
 from stock_analysis.backtest.engine import run_quarterly_backtest
+from stock_analysis.backtest.prep import DividendPandasData
+
+pytestmark = pytest.mark.unit
 
 
 def test_dividend_reinvestment():

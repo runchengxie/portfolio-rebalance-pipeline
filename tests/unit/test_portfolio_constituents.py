@@ -3,12 +3,15 @@ from pathlib import Path
 import pandas as pd
 import pytest  # Import the pytest library
 
+pytestmark = pytest.mark.integration
+
 # --- Path Configuration ---
 try:
     # This block determines the project root directory from the current file's location.
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
 except NameError:
-    # This is a fallback for interactive environments (like notebooks) where __file__ is not defined.
+    # This is a fallback for interactive environments (like notebooks)
+    # where __file__ is not defined.
     PROJECT_ROOT = (
         Path(".").resolve().parent
         if "tests" in str(Path(".").resolve())
@@ -24,7 +27,9 @@ CONSTITUENTS_FILE = DATA_DIR / "sp500_historical_constituents.csv"
 # --- Pytest Fixtures: Prepare data needed for tests ---
 
 
-@pytest.fixture(scope="session")  # scope="session" means this fixture runs only once per test session
+@pytest.fixture(
+    scope="session"
+)  # scope="session" means this fixture runs only once per test session
 def sp500_constituents() -> pd.DataFrame:
     """
     Loads the S&P 500 historical constituents data as a reusable test resource.
@@ -34,7 +39,9 @@ def sp500_constituents() -> pd.DataFrame:
 
     df = pd.read_csv(CONSTITUENTS_FILE)
     df["start_date"] = pd.to_datetime(df["start_date"])
-    df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce") # 'coerce' turns invalid dates into NaT
+    df["end_date"] = pd.to_datetime(
+        df["end_date"], errors="coerce"
+    )  # 'coerce' turns invalid dates into NaT
     df["ticker"] = df["ticker"].str.upper().str.strip()
     return df
 
@@ -54,7 +61,10 @@ def portfolio_excel_file() -> pd.ExcelFile:
 
 
 def get_portfolio_sheet_names():
-    """Helper function to read the list of sheet names from the Excel file for parametrization."""
+    """
+    Helper function to read the list of sheet names from the Excel file for
+    parametrization.
+    """
     if not PORTFOLIO_FILE.exists():
         return []
     xls = pd.ExcelFile(PORTFOLIO_FILE)
@@ -68,11 +78,14 @@ def verify_membership(
     portfolio_date: pd.Timestamp, portfolio_tickers: list, df_constituents: pd.DataFrame
 ) -> list:
     """
-    (Helper function) Verifies if a given list of tickers were members of the S&P 500 on a specific date.
+    (Helper function) Verifies if a given list of tickers were members of the
+    S&P 500 on a specific date.
     Returns a list of tickers that were not members.
     """
     misfit_tickers = []
-    check_date = portfolio_date.normalize() # Normalize to midnight for consistent date comparison
+    check_date = (
+        portfolio_date.normalize()
+    )  # Normalize to midnight for consistent date comparison
 
     for ticker in portfolio_tickers:
         ticker_history = df_constituents[df_constituents["ticker"] == ticker]
@@ -125,7 +138,9 @@ def test_portfolio_stocks_are_valid_sp500_members(
     )
 
     # 3. Use assert to declare the expected outcome
-    # The assertion fails if misfit_tickers is not empty, and pytest will report the error.
+    # The assertion fails if misfit_tickers is not empty, and pytest will report
+    # the error.
     assert not misfit_tickers, (
-        f"On {portfolio_date.date()}, found tickers that were not S&P 500 members: {misfit_tickers}"
+        f"On {portfolio_date.date()}, found tickers that were not S&P 500 members: "
+        f"{misfit_tickers}"
     )
