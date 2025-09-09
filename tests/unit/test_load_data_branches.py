@@ -248,7 +248,7 @@ class TestMainFunctionBranches:
             "Ticker;Date;Close\nAAPL;2023-01-01;150.0\n"
         )
         schema_dir = tmp_path.parent / "sql"
-        schema_dir.mkdir()
+        schema_dir.mkdir(exist_ok=True)
         (schema_dir / "schema.sql").write_text(
             "CREATE TABLE share_prices (Ticker TEXT);"
         )
@@ -322,7 +322,7 @@ class TestMainFunctionBranches:
             "Ticker;Date;Close\nAAPL;2023-01-01;150.0\n"
         )
         schema_dir = tmp_path.parent / "sql"
-        schema_dir.mkdir()
+        schema_dir.mkdir(exist_ok=True)
         (schema_dir / "schema.sql").write_text(
             "CREATE TABLE share_prices (Ticker TEXT);"
         )
