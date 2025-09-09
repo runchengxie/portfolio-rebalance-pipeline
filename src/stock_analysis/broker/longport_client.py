@@ -3,13 +3,29 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-import os
+from decimal import Decimal
 
 # Compatibility import: prefer longport, fallback to longbridge
 try:  # pragma: no cover - depends on external package
-    from longport.openapi import Config, Market, QuoteContext, TradeContext
+    from longport.openapi import (
+        Config,
+        Market,
+        OrderSide,
+        OrderType,
+        QuoteContext,
+        TimeInForceType,
+        TradeContext,
+    )
 except ImportError:  # pragma: no cover - executed when longport not available
-    from longbridge.openapi import Config, Market, QuoteContext, TradeContext
+    from longbridge.openapi import (
+        Config,
+        Market,
+        OrderSide,
+        OrderType,
+        QuoteContext,
+        TimeInForceType,
+        TradeContext,
+    )
 
 # Timezone support (Python 3.9+), fallback to local time determination when unavailable
 try:
@@ -164,6 +180,9 @@ class LongPortClient:
 
         self.quote = QuoteContext(self.config)
         self.trade = TradeContext(self.config)
+        # Backward compatible attribute names expected by older code/tests
+        self.q = self.quote
+        self.t = self.trade
 
         # Build limits from env if not explicitly provided. 0 means unlimited.
         if limits is None:
@@ -238,7 +257,10 @@ class LongPortClient:
         """
         bars: dict[str, tuple[float, str]] = {}
         symbol_list = [_to_lb_symbol(x) for x in symbols]
-        ret = self.quote.quote(symbol_list)
+        quote_ctx = getattr(self, "q", None) or getattr(self, "quote", None)
+        if quote_ctx is None:
+            raise AttributeError("Quote context not initialised")
+        ret = quote_ctx.quote(symbol_list)
         for i in ret:
             # Prefer last_done, fallback to prev_close if missing/zero
             px = float((getattr(i, "last_done", 0) or 0) or 0)
@@ -251,6 +273,65 @@ class LongPortClient:
                         px = 0.0
             bars[i.symbol] = (px, getattr(i, "timestamp", "") or "")
         return bars
+
+    def candles(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+        period,
+        adjust: int | None = None,
+    ):
+        """Fetch historical candle data for a symbol.
+
+        Parameters mirror the underlying SDK's ``history_candlesticks_by_date``
+        call; the method mainly ensures the ticker is converted to the
+        LongPort format and that parameters are forwarded correctly.
+        """
+
+        quote_ctx = getattr(self, "q", None) or getattr(self, "quote", None)
+        if quote_ctx is None:
+            raise AttributeError("Quote context not initialised")
+        lb_symbol = _to_lb_symbol(symbol)
+        market = _market_enum(_market_of(lb_symbol))
+        return quote_ctx.history_candlesticks_by_date(
+            lb_symbol, period, market, start, end, adjust
+        )
+
+    def submit_limit(
+        self,
+        symbol: str,
+        price: float,
+        quantity: float,
+        tif: TimeInForceType | None = None,
+        remark: str | None = None,
+    ):
+        """Submit a limit order.
+
+        The sign of ``quantity`` determines the order side: positive for buy
+        orders and negative for sell orders. ``quantity`` is converted to its
+        absolute value when sending to the broker. ``price`` and ``quantity``
+        are converted to ``Decimal`` to avoid floating point issues.
+        """
+
+        trade_ctx = getattr(self, "t", None) or getattr(self, "trade", None)
+        if trade_ctx is None:
+            raise AttributeError("Trade context not initialised")
+
+        side = OrderSide.Buy if quantity >= 0 else OrderSide.Sell
+        qty = Decimal(str(abs(quantity)))
+        px = Decimal(str(price))
+        if tif is None:
+            tif = TimeInForceType.Day
+        return trade_ctx.submit_order(
+            symbol=_to_lb_symbol(symbol),
+            order_type=OrderType.LO,
+            side=side,
+            submitted_price=px,
+            submitted_quantity=qty,
+            time_in_force=tif,
+            remark=remark,
+        )
 
     def portfolio_snapshot(
         self,
