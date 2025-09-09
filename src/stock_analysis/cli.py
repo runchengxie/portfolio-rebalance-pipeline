@@ -11,10 +11,10 @@ from .commands.ai_pick import run_ai_pick  # noqa: F401
 from .commands.backtest import run_backtest  # noqa: F401
 from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
 from .commands.lb_account import run_lb_account  # noqa: F401
+from .commands.lb_config import run_lb_config  # noqa: F401
 from .commands.lb_quote import run_lb_quote  # noqa: F401
 from .commands.lb_rebalance import run_lb_rebalance  # noqa: F401
 from .commands.load_data import run_load_data  # noqa: F401
-from .commands.lb_config import run_lb_config  # noqa: F401
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -32,7 +32,7 @@ def create_parser() -> argparse.ArgumentParser:
   stockq --help                    显示帮助信息
   stockq preliminary               运行量化初筛选股
   stockq backtest ai               运行AI选股回测
-  stockq backtest quant            运行量化初选回测  
+  stockq backtest quant            运行量化初选回测
   stockq backtest spy              运行SPY基准回测
   stockq load-data                 加载数据到数据库
   stockq ai-pick                   运行AI选股分析
@@ -462,10 +462,7 @@ def main() -> int:
                 parser.print_help()
                 return 0
         else:
-            from .utils.logging import get_logger
-
-            logger = get_logger(__name__)
-            logger.error(f"未知命令：{args.command}")
+            print(f"Unknown command: {args.command}", file=sys.stderr)
             return 1
     except ImportError as e:
         from .utils.logging import get_logger
