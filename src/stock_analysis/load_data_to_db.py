@@ -146,7 +146,7 @@ def _load_csv_in_chunks(
             if date_end is not None:
                 df = df[df["Date"] <= date_end]
 
-            df.drop_duplicates(subset=["Ticker", "Date"], keep="last", inplace=True)
+            df = df.drop_duplicates(subset=["Ticker", "Date"], keep="last")
 
         df.to_sql(
             table,
