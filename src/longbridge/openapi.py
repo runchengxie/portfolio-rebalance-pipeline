@@ -16,3 +16,20 @@ class QuoteContext:
 class TradeContext:
     def __init__(self, config):
         pass
+
+
+# Simple enum stubs to satisfy imports in tests. They mimic the
+# interfaces provided by the real ``longbridge`` package but contain only
+# the attributes exercised by the unit tests.
+class OrderSide:
+    Buy = "Buy"
+    Sell = "Sell"
+
+
+class OrderType:
+    LO = "LO"
+
+
+class TimeInForceType:
+    Day = "Day"
+    GTC = "GTC"
