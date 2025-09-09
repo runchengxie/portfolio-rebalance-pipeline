@@ -40,23 +40,17 @@ class TestPaths:
         # Verify that it is an absolute path
         assert root.is_absolute()
 
-    def test_get_project_root_in_interactive_environment(self):
+    def test_get_project_root_in_interactive_environment(self, monkeypatch):
         """Tests getting the project root in an interactive environment."""
-        # Simulate a NameError (e.g., in a Jupyter environment)
-        with patch("stock_analysis.utils.paths.Path") as mock_path:
-            # Simulate the case where __file__ does not exist
-            mock_path.side_effect = NameError("name '__file__' is not defined")
+        import stock_analysis.utils.paths as paths
 
-            # It should fall back to using cwd()
-            with patch("stock_analysis.utils.paths.Path.cwd") as mock_cwd:
-                mock_cwd.return_value = Path("/mock/current/dir")
+        # Simulate the absence of __file__ and ensure cwd() is used
+        monkeypatch.delattr(paths, "__file__", raising=False)
+        expected_dir = Path("/mock/current/dir")
+        monkeypatch.setattr(Path, "cwd", lambda: expected_dir)
 
-                # Re-import to trigger the exception handling
-                import importlib
-
-                import stock_analysis.utils.paths
-
-                importlib.reload(stock_analysis.utils.paths)
+        root = paths.get_project_root()
+        assert root == expected_dir
 
     def test_project_root_constant(self):
         """Tests the PROJECT_ROOT constant."""
@@ -186,7 +180,8 @@ class TestSetupLogging:
         # Second setup of a logger with the same name
         logger2 = setup_logging("duplicate_test")
 
-        # It should return the same logger instance, and the handler count should not change
+        # It should return the same logger instance,
+        # and the handler count should not change
         assert logger1 is logger2
         assert len(logger2.handlers) == initial_handler_count
 
@@ -396,7 +391,8 @@ class TestLoggingIntegration:
 
             elapsed_time = time.time() - start_time
 
-            # Verify performance is reasonable (1000 messages should complete in a reasonable time)
+            # Verify performance is reasonable
+            # (1000 messages should complete in a reasonable time)
             assert elapsed_time < 5.0  # Should complete within 5 seconds
 
             # Verify all messages were logged
