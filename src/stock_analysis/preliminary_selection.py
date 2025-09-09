@@ -1,12 +1,17 @@
+"""Preliminary selection utilities."""
+
+# ruff: noqa: E501
+
 import json
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta  # type: ignore[import-untyped]
 from scipy.stats import zscore
 
 # --- Path Configuration ---
@@ -107,7 +112,7 @@ def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
 # Get S&P 500 stock universe for a specific date
 def get_universe_for_date(
     target_date: pd.Timestamp, df_constituents: pd.DataFrame
-) -> list:
+) -> list[str]:
     """
     Filter the list of valid stocks at a given date from the historical constituents DataFrame.
     """
@@ -121,7 +126,7 @@ def get_universe_for_date(
         | (df_constituents["end_date"] > target_date)
     )
 
-    return df_constituents[is_active]["ticker"].tolist()
+    return cast(list[str], df_constituents[is_active]["ticker"].astype(str).tolist())
 
 
 # --- Helper Functions ---
@@ -220,7 +225,14 @@ def calculate_factors_point_in_time(df: pd.DataFrame) -> pd.DataFrame:
 
     df_zscores = pd.DataFrame(index=df_cleaned.index)
     for component in factor_components:
-        df_zscores[f"z_{component}"] = zscore(df_cleaned[component])
+        series = df_cleaned[component]
+        # ``scipy.stats.zscore`` returns NaN when the standard deviation is zero
+        # or the input has a single element.  For our use case a constant
+        # component should contribute ``0`` to the final score instead of NaN.
+        if len(series) <= 1 or series.std(ddof=0) == 0:
+            df_zscores[f"z_{component}"] = 0.0
+        else:
+            df_zscores[f"z_{component}"] = zscore(series)
 
     df_cleaned["factor_score"] = 0.0
     for component, weight in FACTOR_WEIGHTS.items():
