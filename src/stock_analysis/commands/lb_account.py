@@ -3,10 +3,19 @@
 Handles command logic for account information queries.
 """
 
+import sys
+
 from ..renderers.jsonout import render_multiple_account_snapshots_json
 from ..renderers.table import render_multiple_account_snapshots
-from ..services.account_snapshot import get_account_snapshot
 from ..utils.logging import get_logger
+
+try:  # pragma: no cover - optional dependency
+    from ..services.account_snapshot import get_account_snapshot
+except Exception:  # pragma: no cover
+
+    def get_account_snapshot(*args, **kwargs):  # type: ignore[override]
+        raise ImportError("longport dependencies are not installed")
+
 
 logger = get_logger(__name__)
 
@@ -27,6 +36,9 @@ def run_lb_account(
         int: Exit code (0 indicates success)
     """
     try:
+        if only_funds and only_positions:
+            only_positions = False
+
         # Get real account snapshot
         snapshot = get_account_snapshot(env="real")
         snapshots = [snapshot]
@@ -44,9 +56,17 @@ def run_lb_account(
         return 0
 
     except ImportError as e:
-        logger.error(f"无法导入LongPort模块: {e}")
-        logger.error("请确保已安装 longport 包：pip install longport")
+        msg1 = f"Failed to import LongPort module: {e}"
+        msg2 = (
+            "Please make sure the 'longport' package is installed: pip install longport"
+        )
+        logger.error(msg1)
+        logger.error(msg2)
+        print(msg1, file=sys.stderr)
+        print(msg2, file=sys.stderr)
         return 1
     except Exception as e:
-        logger.error(f"账户总览失败：{e}")
+        msg = f"Failed to get account overview: {e}"
+        logger.error(msg)
+        print(msg, file=sys.stderr)
         return 1

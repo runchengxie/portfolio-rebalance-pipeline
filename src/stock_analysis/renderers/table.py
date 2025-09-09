@@ -16,15 +16,15 @@ def render_quotes(quotes: list[Quote]) -> str:
         str: Formatted table string
     """
     if not quotes:
-        return "无报价数据"
+        return "No quote data"
 
     lines = []
-    lines.append("实时报价:")
+    lines.append("Real-time Quotes:")
     lines.append("-" * 50)
 
     for quote in quotes:
         lines.append(
-            f"{quote.symbol:12} | 价格: {quote.price:>10.2f} | 时间: {quote.timestamp}"
+            f"{quote.symbol:12} | Price: {quote.price:>10.2f} | Time: {quote.timestamp}"
         )
 
     return "\n".join(lines)
@@ -51,16 +51,18 @@ def render_account_snapshot(
 
     # Fund information
     if not only_positions:
-        lines.append(f"\n[{snapshot.env.upper()}] 现金(USD): ${snapshot.cash_usd:,.2f}")
+        lines.append(
+            f"\n[{snapshot.env.upper()}] Cash (USD): ${snapshot.cash_usd:,.2f}"
+        )
         if not only_funds:
-            lines.append(f"持仓市值: ${snapshot.total_market_value:,.2f}")
-            lines.append(f"总资产: ${snapshot.total_portfolio_value:,.2f}")
+            lines.append(f"Positions market value: ${snapshot.total_market_value:,.2f}")
+            lines.append(f"Total assets: ${snapshot.total_portfolio_value:,.2f}")
 
     # Position information
     if not only_funds:
         if snapshot.positions:
             if not only_positions:
-                lines.append("\n持仓详情:")
+                lines.append("\nPositions:")
             lines.append("Symbol        Qty        Last       Est.Value")
             lines.append("-" * 50)
 
@@ -71,7 +73,7 @@ def render_account_snapshot(
                 )
         else:
             if not only_positions:
-                lines.append("\n无持仓")
+                lines.append("\nNo positions held")
 
     return "\n".join(lines)
 
@@ -92,7 +94,7 @@ def render_multiple_account_snapshots(
         str: Formatted table string
     """
     if not snapshots:
-        return "无账户数据"
+        return "No account data"
 
     lines = []
     for snapshot in snapshots:
