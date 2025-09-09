@@ -10,8 +10,6 @@ import sys
 from .commands.ai_pick import run_ai_pick  # noqa: F401
 from .commands.backtest import run_backtest  # noqa: F401
 from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
-from .commands.lb_account import run_lb_account  # noqa: F401
-from .commands.lb_config import run_lb_config  # noqa: F401
 from .commands.load_data import run_load_data  # noqa: F401
 
 
@@ -498,3 +496,25 @@ def run_lb_rebalance(
         env,
         target_gross_exposure,
     )
+
+
+def run_lb_account(
+    only_funds: bool = False,
+    only_positions: bool = False,
+    fmt: str = "table",
+) -> int:  # type: ignore[override]
+    """Forwarder for lb_account with lazy import."""
+    from .commands.lb_account import run_lb_account as _run_lb_account
+
+    return _run_lb_account(
+        only_funds=only_funds,
+        only_positions=only_positions,
+        fmt=fmt,
+    )
+
+
+def run_lb_config(show: bool = True) -> int:  # type: ignore[override]
+    """Forwarder for lb_config with lazy import."""
+    from .commands.lb_config import run_lb_config as _run_lb_config
+
+    return _run_lb_config(show)
