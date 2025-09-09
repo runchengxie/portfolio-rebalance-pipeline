@@ -6,15 +6,33 @@ Responsible only for argument parsing and command dispatching, without business 
 import argparse
 import sys
 
+from .commands import lb_quote, lb_rebalance
+
 # Re-export command entry functions for tests and external callers
 from .commands.ai_pick import run_ai_pick  # noqa: F401
 from .commands.backtest import run_backtest  # noqa: F401
 from .commands.gen_whitelist import run_gen_whitelist  # noqa: F401
 from .commands.lb_account import run_lb_account  # noqa: F401
-from .commands.lb_quote import run_lb_quote  # noqa: F401
-from .commands.lb_rebalance import run_lb_rebalance  # noqa: F401
-from .commands.load_data import run_load_data  # noqa: F401
 from .commands.lb_config import run_lb_config  # noqa: F401
+
+
+def run_lb_quote(tickers: list[str]) -> int:
+    return lb_quote.run_lb_quote(tickers)
+
+
+def run_lb_rebalance(
+    input_file: str,
+    account: str = "main",
+    dry_run: bool = True,
+    env: str = "real",
+    target_gross_exposure: float = 1.0,
+) -> int:
+    return lb_rebalance.run_lb_rebalance(
+        input_file, account, dry_run, env, target_gross_exposure
+    )
+
+
+from .commands.load_data import run_load_data  # noqa: F401
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -32,7 +50,7 @@ def create_parser() -> argparse.ArgumentParser:
   stockq --help                    显示帮助信息
   stockq preliminary               运行量化初筛选股
   stockq backtest ai               运行AI选股回测
-  stockq backtest quant            运行量化初选回测  
+  stockq backtest quant            运行量化初选回测
   stockq backtest spy              运行SPY基准回测
   stockq load-data                 加载数据到数据库
   stockq ai-pick                   运行AI选股分析
@@ -420,12 +438,8 @@ def main() -> int:
                 getattr(args, "out", None),
             )
         elif args.command == "lb-quote":
-            from .commands.lb_quote import run_lb_quote
-
             return run_lb_quote(args.tickers)
         elif args.command == "lb-rebalance":
-            from .commands.lb_rebalance import run_lb_rebalance
-
             # If --execute is specified, disable dry-run mode
             dry_run = not getattr(args, "execute", False)
             return run_lb_rebalance(
@@ -462,10 +476,13 @@ def main() -> int:
                 parser.print_help()
                 return 0
         else:
+            import sys
+
             from .utils.logging import get_logger
 
             logger = get_logger(__name__)
             logger.error(f"未知命令：{args.command}")
+            print(f"Unknown command: {args.command}", file=sys.stderr)
             return 1
     except ImportError as e:
         from .utils.logging import get_logger

@@ -9,8 +9,8 @@ from ..renderers.diff import render_rebalance_diff
 from ..services.account_snapshot import get_account_snapshot, get_quotes
 from ..services.rebalancer import RebalanceService
 from ..utils.excel import read_latest_sheet_tickers
-from ..utils.targets import read_targets_json
 from ..utils.logging import get_logger
+from ..utils.targets import read_targets_json
 
 logger = get_logger(__name__)
 
@@ -24,8 +24,11 @@ def run_lb_rebalance(
 ) -> int:
     """Run LongPort differential rebalancing
 
-    Based on real account snapshot, calculate the difference between target positions and current holdings, execute rebalancing operations.
-    Regardless of test or real environment, follow a unified path: first get account snapshot, calculate differences, then decide whether to place real orders.
+    Based on real account snapshot, calculate the difference between
+    target positions and current holdings, execute rebalancing
+    operations. Regardless of test or real environment, follow a unified
+    path: first get account snapshot, calculate differences, then decide
+    whether to place real orders.
 
     Args:
         input_file: AI stock selection result file path
@@ -52,6 +55,7 @@ def run_lb_rebalance(
         file_path = Path(input_file)
         if not file_path.exists():
             logger.error(f"文件不存在: {input_file}")
+            print(f"File not found: {input_file}")
             return 1
 
         # Read target stock list (JSON targets or Excel latest sheet)
@@ -61,18 +65,21 @@ def run_lb_rebalance(
                 tickers = tg.tickers
                 sheet_name = tg.asof or file_path.stem
                 logger.info(
-                    f"成功读取 targets JSON: {file_path.name}（asof={sheet_name}），包含 {len(tickers)} 条记录"
+                    "成功读取 targets JSON: "
+                    f"{file_path.name}（asof={sheet_name}），包含 {len(tickers)} 条记录"
                 )
             else:
                 tickers, sheet_name = read_latest_sheet_tickers(file_path)
                 logger.info(
-                    f"成功读取Excel，使用 sheet: {sheet_name}，包含 {len(tickers)} 条记录"
+                    "成功读取Excel，使用 sheet: "
+                    f"{sheet_name}，包含 {len(tickers)} 条记录"
                 )
         except Exception as e:
             logger.error(f"读取输入文件失败：{e}")
             return 1
 
-        # Build single client throughout the process to avoid repeated initialization causing multiple permission table prints
+        # Build single client throughout the process to avoid repeated
+        # initialization causing multiple permission table prints
         from ..broker.longport_client import LongPortClient
 
         client = LongPortClient(env=env)
@@ -91,14 +98,16 @@ def run_lb_rebalance(
         else:
             quote_map = {}
 
-        # Use unified quotes to backfill position valuations in account snapshot, avoid Before being 0
+        # Use unified quotes to backfill position valuations in account
+        # snapshot, avoid Before being 0
         if quote_map and account_snapshot.positions:
             for pos in account_snapshot.positions:
                 px = float(quote_map.get(pos.symbol, pos.last_price or 0.0) or 0.0)
                 if px > 0:
                     pos.last_price = px
                     pos.estimated_value = float(px) * float(pos.quantity)
-            # Synchronously update snapshot totals, if total assets were 0 before, fall back to cash + position valuations
+            # Synchronously update snapshot totals, if total assets were 0
+            # before, fall back to cash + position valuations
             total_mv = sum(float(p.estimated_value) for p in account_snapshot.positions)
             account_snapshot.total_market_value = total_mv
             if not account_snapshot.total_portfolio_value:
