@@ -1,14 +1,14 @@
-# tests/test_portfolio_verification.py
-
 from pathlib import Path
 
 import pandas as pd
-import pytest  # 导入 pytest 库
+import pytest  # Import the pytest library
 
-# --- 路径配置 ---
+# --- Path Configuration ---
 try:
+    # This block determines the project root directory from the current file's location.
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
 except NameError:
+    # This is a fallback for interactive environments (like notebooks) where __file__ is not defined.
     PROJECT_ROOT = (
         Path(".").resolve().parent
         if "tests" in str(Path(".").resolve())
@@ -21,22 +21,20 @@ PORTFOLIO_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historica
 CONSTITUENTS_FILE = DATA_DIR / "sp500_historical_constituents.csv"
 
 
-# --- Pytest Fixtures: 准备测试所需的数据 ---
+# --- Pytest Fixtures: Prepare data needed for tests ---
 
 
-@pytest.fixture(
-    scope="session"
-)  # scope="session" 表示这个fixture在整个测试会话中只执行一次
+@pytest.fixture(scope="session")  # scope="session" means this fixture runs only once per test session
 def sp500_constituents() -> pd.DataFrame:
     """
-    加载S&P 500历史成分股数据，作为一个可复用的测试资源。
+    Loads the S&P 500 historical constituents data as a reusable test resource.
     """
     if not CONSTITUENTS_FILE.exists():
         pytest.skip(f"Ground truth file not found, skipping tests: {CONSTITUENTS_FILE}")
 
     df = pd.read_csv(CONSTITUENTS_FILE)
     df["start_date"] = pd.to_datetime(df["start_date"])
-    df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce")
+    df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce") # 'coerce' turns invalid dates into NaT
     df["ticker"] = df["ticker"].str.upper().str.strip()
     return df
 
@@ -44,7 +42,7 @@ def sp500_constituents() -> pd.DataFrame:
 @pytest.fixture(scope="session")
 def portfolio_excel_file() -> pd.ExcelFile:
     """
-    加载投资组合Excel文件，作为一个可复用的测试资源。
+    Loads the portfolio Excel file as a reusable test resource.
     """
     if not PORTFOLIO_FILE.exists():
         pytest.skip(f"Portfolio file not found, skipping tests: {PORTFOLIO_FILE}")
@@ -52,29 +50,29 @@ def portfolio_excel_file() -> pd.ExcelFile:
     return pd.ExcelFile(PORTFOLIO_FILE)
 
 
-# --- 参数化：动态生成测试用例 ---
+# --- Parametrization: Dynamically generate test cases ---
 
 
 def get_portfolio_sheet_names():
-    """帮助函数：读取Excel文件的工作表名列表，用于参数化。"""
+    """Helper function to read the list of sheet names from the Excel file for parametrization."""
     if not PORTFOLIO_FILE.exists():
         return []
     xls = pd.ExcelFile(PORTFOLIO_FILE)
     return xls.sheet_names
 
 
-# --- 核心测试逻辑 ---
+# --- Core Test Logic ---
 
 
 def verify_membership(
     portfolio_date: pd.Timestamp, portfolio_tickers: list, df_constituents: pd.DataFrame
 ) -> list:
     """
-    (Helper function) 验证给定日期的一组股票是否都是S&P 500成员。
-    返回不符合条件的股票列表。
+    (Helper function) Verifies if a given list of tickers were members of the S&P 500 on a specific date.
+    Returns a list of tickers that were not members.
     """
     misfit_tickers = []
-    check_date = portfolio_date.normalize()
+    check_date = portfolio_date.normalize() # Normalize to midnight for consistent date comparison
 
     for ticker in portfolio_tickers:
         ticker_history = df_constituents[df_constituents["ticker"] == ticker]
@@ -82,6 +80,8 @@ def verify_membership(
             misfit_tickers.append(ticker)
             continue
 
+        # A stock is a member if the check_date is between its start_date (inclusive)
+        # and end_date (exclusive), or if the end_date is not set (NaT).
         is_member = (
             (ticker_history["start_date"] <= check_date)
             & (
@@ -96,7 +96,7 @@ def verify_membership(
     return misfit_tickers
 
 
-# --- Pytest 测试函数 ---
+# --- Pytest Test Functions ---
 
 
 @pytest.mark.parametrize("sheet_name", get_portfolio_sheet_names())
@@ -106,25 +106,26 @@ def test_portfolio_stocks_are_valid_sp500_members(
     sp500_constituents: pd.DataFrame,
 ):
     """
-    这是一个参数化的测试。
-    对于Excel中的每一个工作表(sheet_name)，本测试都会独立运行一次。
-    它验证该工作表中的所有股票在对应的日期都是S&P 500的有效成员。
+    This is a parameterized test.
+    It runs independently for each sheet (sheet_name) in the Excel file.
+    It verifies that all stocks in the sheet's portfolio were valid S&P 500
+    members on the corresponding date.
     """
-    # 1. 从测试参数和Fixtures中准备数据
+    # 1. Prepare data from test parameters and fixtures
     portfolio_date = pd.to_datetime(sheet_name)
     df_portfolio = portfolio_excel_file.parse(sheet_name)
     tickers_to_check = df_portfolio["Ticker"].tolist()
 
     if not tickers_to_check:
-        pytest.skip("Portfolio is empty for this date.")
+        pytest.skip(f"Portfolio is empty for this date: {sheet_name}")
 
-    # 2. 执行核心验证逻辑
+    # 2. Execute the core verification logic
     misfit_tickers = verify_membership(
         portfolio_date, tickers_to_check, sp500_constituents
     )
 
-    # 3. 使用 assert 声明期望的结果
-    # 如果 misfit_tickers 不是空列表，assert会失败，pytest会报告错误。
+    # 3. Use assert to declare the expected outcome
+    # The assertion fails if misfit_tickers is not empty, and pytest will report the error.
     assert not misfit_tickers, (
         f"On {portfolio_date.date()}, found tickers that were not S&P 500 members: {misfit_tickers}"
     )
