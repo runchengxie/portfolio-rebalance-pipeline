@@ -11,6 +11,17 @@ import pandas as pd
 from .utils.paths import DATA_DIR, DB_PATH  # ← 用已有模块，别重复造轮子
 
 
+def _resolve_path(path_candidate):
+    """Return a usable Path whether given a Path or a callable returning one.
+
+    Some tests patch ``DB_PATH``/``DATA_DIR`` with ``MagicMock`` objects whose
+    ``return_value`` provides the actual ``Path``.  Allow both styles by
+    resolving callables to their return values.
+    """
+
+    return path_candidate() if callable(path_candidate) else path_candidate
+
+
 def tidy_ticker(col: pd.Series) -> pd.Series:
     """Data cleaning function: standardize stock symbols"""
     return (
@@ -165,9 +176,8 @@ def main(
         date_start: Optional start date (YYYY-MM-DD) for price import
         date_end: Optional end date (YYYY-MM-DD) for price import
     """
-    # Allow patching of DATA_DIR/DB_PATH with callables in tests
-    data_dir = DATA_DIR() if callable(DATA_DIR) else DATA_DIR
-    db_path = DB_PATH() if callable(DB_PATH) else DB_PATH
+    db_path: Path = _resolve_path(DB_PATH)
+    data_dir: Path = _resolve_path(DATA_DIR)
 
     print(f"Creating SQLite database at: {db_path}")
     with sqlite3.connect(db_path) as con:

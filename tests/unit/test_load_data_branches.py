@@ -14,7 +14,6 @@ from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
-
 from stock_analysis.load_data_to_db import (
     _check_sqlite3_cli,
     _import_prices_with_cli,
@@ -65,7 +64,8 @@ class TestSQLiteCLIImport:
 
         csv_file.write_text("Ticker;Date;Close\nAAPL;2023-01-01;150.0\n")
         schema_file.write_text(
-            "CREATE TABLE IF NOT EXISTS share_prices (Ticker TEXT, Date TEXT, Close REAL);"
+            "CREATE TABLE IF NOT EXISTS share_prices "
+            "(Ticker TEXT, Date TEXT, Close REAL);"
         )
 
         # Mock a successful subprocess call
@@ -210,7 +210,11 @@ class TestPandasFallback:
                 {
                     "Ticker": ["AAPL", "AAPL", "MSFT"],
                     "Date": ["2023-01-01", "2023-01-01", "2023-01-01"],
-                    "Close": [150.0, 151.0, 250.0],  # AAPL is duplicated, last one should be kept
+                    "Close": [
+                        150.0,
+                        151.0,
+                        250.0,
+                    ],  # AAPL is duplicated, last one should be kept
                 }
             )
             mock_read_csv.return_value = [mock_df]
@@ -233,14 +237,9 @@ class TestPandasFallback:
 class TestMainFunctionBranches:
     """Tests for the different branches of the main function."""
 
-    @patch("stock_analysis.load_data_to_db.DATA_DIR")
-    @patch("stock_analysis.load_data_to_db.DB_PATH")
-    def test_main_with_cli_available(self, mock_db_path, mock_data_dir, tmp_path):
+    def test_main_with_cli_available(self, tmp_path):
         """Tests the main function execution when the SQLite CLI is available."""
-        # Set temporary paths
-        mock_data_dir.return_value = tmp_path
-        mock_db_path.return_value = tmp_path / "test.db"
-
+        db_path = tmp_path / "test.db"
         # Create necessary files
         (tmp_path / "us-balance-ttm.csv").write_text("Ticker,Revenue\nAAPL,100000\n")
         (tmp_path / "us-cashflow-ttm.csv").write_text("Ticker,Cash\nAAPL,50000\n")
@@ -248,114 +247,119 @@ class TestMainFunctionBranches:
         (tmp_path / "us-shareprices-daily.csv").write_text(
             "Ticker;Date;Close\nAAPL;2023-01-01;150.0\n"
         )
-        (tmp_path.parent / "schema.sql").write_text(
+        schema_dir = tmp_path.parent / "sql"
+        schema_dir.mkdir()
+        (schema_dir / "schema.sql").write_text(
             "CREATE TABLE share_prices (Ticker TEXT);"
         )
 
-        with patch(
-            "stock_analysis.load_data_to_db._check_sqlite3_cli", return_value=True
-        ):
-            with patch(
+        with (
+            patch("stock_analysis.load_data_to_db.DATA_DIR", tmp_path),
+            patch("stock_analysis.load_data_to_db.DB_PATH", db_path),
+            patch(
+                "stock_analysis.load_data_to_db._check_sqlite3_cli", return_value=True
+            ),
+            patch(
                 "stock_analysis.load_data_to_db._import_prices_with_cli",
                 return_value=True,
-            ) as mock_cli_import:
-                with patch(
-                    "stock_analysis.load_data_to_db._load_csv_in_chunks",
-                    return_value=100,
-                ) as mock_chunks:
-                    with patch("sqlite3.connect") as mock_connect:
-                        mock_con = Mock()
-                        mock_connect.return_value.__enter__.return_value = mock_con
+            ) as mock_cli_import,
+            patch(
+                "stock_analysis.load_data_to_db._load_csv_in_chunks",
+                return_value=100,
+            ) as mock_chunks,
+            patch("sqlite3.connect") as mock_connect,
+        ):
+            mock_con = Mock()
+            mock_connect.return_value.__enter__.return_value = mock_con
 
-                        main()
+            main()
 
-                        # Verify that CLI import was called
-                        mock_cli_import.assert_called_once()
-                        # Verify that financial data is still loaded in chunks
-                        assert mock_chunks.call_count == 3  # Three financial data files
+            # Verify that CLI import was called
+            mock_cli_import.assert_called_once()
+            # Verify that financial data is still loaded in chunks
+            assert mock_chunks.call_count == 3  # Three financial data files
 
-    @patch("stock_analysis.load_data_to_db.DATA_DIR")
-    @patch("stock_analysis.load_data_to_db.DB_PATH")
-    def test_main_with_cli_unavailable(self, mock_db_path, mock_data_dir, tmp_path):
+    def test_main_with_cli_unavailable(self, tmp_path):
         """Tests the main function execution when the SQLite CLI is unavailable."""
-        mock_data_dir.return_value = tmp_path
-        mock_db_path.return_value = tmp_path / "test.db"
+        db_path = tmp_path / "test.db"
 
         # Create the price data file
         (tmp_path / "us-shareprices-daily.csv").write_text(
             "Ticker;Date;Close\nAAPL;2023-01-01;150.0\n"
         )
 
-        with patch(
-            "stock_analysis.load_data_to_db._check_sqlite3_cli", return_value=False
-        ):
-            with patch(
+        with (
+            patch("stock_analysis.load_data_to_db.DATA_DIR", tmp_path),
+            patch("stock_analysis.load_data_to_db.DB_PATH", db_path),
+            patch(
+                "stock_analysis.load_data_to_db._check_sqlite3_cli", return_value=False
+            ),
+            patch(
                 "stock_analysis.load_data_to_db._import_prices_with_cli"
-            ) as mock_cli_import:
-                with patch(
-                    "stock_analysis.load_data_to_db._load_csv_in_chunks",
-                    return_value=100,
-                ) as mock_chunks:
-                    with patch("sqlite3.connect") as mock_connect:
-                        mock_con = Mock()
-                        mock_connect.return_value.__enter__.return_value = mock_con
+            ) as mock_cli_import,
+            patch(
+                "stock_analysis.load_data_to_db._load_csv_in_chunks",
+                return_value=100,
+            ) as mock_chunks,
+            patch("sqlite3.connect") as mock_connect,
+        ):
+            mock_con = Mock()
+            mock_connect.return_value.__enter__.return_value = mock_con
 
-                        main()
+            main()
 
-                        # Verify that CLI import was not called
-                        mock_cli_import.assert_not_called()
-                        # Verify fallback to pandas chunks
-                        mock_chunks.assert_called()
+            # Verify that CLI import was not called
+            mock_cli_import.assert_not_called()
+            # Verify fallback to pandas chunks
+            mock_chunks.assert_called()
 
-    @patch("stock_analysis.load_data_to_db.DATA_DIR")
-    @patch("stock_analysis.load_data_to_db.DB_PATH")
-    def test_main_with_cli_failure_fallback(
-        self, mock_db_path, mock_data_dir, tmp_path
-    ):
+    def test_main_with_cli_failure_fallback(self, tmp_path):
         """Tests the fallback mechanism when CLI import fails."""
-        mock_data_dir.return_value = tmp_path
-        mock_db_path.return_value = tmp_path / "test.db"
+        db_path = tmp_path / "test.db"
 
         # Create necessary files
         (tmp_path / "us-shareprices-daily.csv").write_text(
             "Ticker;Date;Close\nAAPL;2023-01-01;150.0\n"
         )
-        (tmp_path.parent / "schema.sql").write_text(
+        schema_dir = tmp_path.parent / "sql"
+        schema_dir.mkdir()
+        (schema_dir / "schema.sql").write_text(
             "CREATE TABLE share_prices (Ticker TEXT);"
         )
 
-        with patch(
-            "stock_analysis.load_data_to_db._check_sqlite3_cli", return_value=True
-        ):
-            with patch(
+        with (
+            patch("stock_analysis.load_data_to_db.DATA_DIR", tmp_path),
+            patch("stock_analysis.load_data_to_db.DB_PATH", db_path),
+            patch(
+                "stock_analysis.load_data_to_db._check_sqlite3_cli", return_value=True
+            ),
+            patch(
                 "stock_analysis.load_data_to_db._import_prices_with_cli",
                 return_value=False,
-            ):  # Simulate CLI failure
-                with patch(
-                    "stock_analysis.load_data_to_db._load_csv_in_chunks",
-                    return_value=100,
-                ) as mock_chunks:
-                    with patch("sqlite3.connect") as mock_connect:
-                        mock_con = Mock()
-                        mock_connect.return_value.__enter__.return_value = mock_con
+            ),
+            patch(
+                "stock_analysis.load_data_to_db._load_csv_in_chunks", return_value=100
+            ) as mock_chunks,
+            patch("sqlite3.connect") as mock_connect,
+        ):
+            mock_con = Mock()
+            mock_connect.return_value.__enter__.return_value = mock_con
 
-                        main()
+            main()
 
-                        # Verify fallback to pandas chunks
-                        mock_chunks.assert_called()
+            # Verify fallback to pandas chunks
+            mock_chunks.assert_called()
 
-    @patch("stock_analysis.load_data_to_db.DATA_DIR")
-    @patch("stock_analysis.load_data_to_db.DB_PATH")
-    def test_main_missing_files_handling(
-        self, mock_db_path, mock_data_dir, tmp_path, capsys
-    ):
+    def test_main_missing_files_handling(self, tmp_path, capsys):
         """Tests handling of missing files."""
-        mock_data_dir.return_value = tmp_path
-        mock_db_path.return_value = tmp_path / "test.db"
+        db_path = tmp_path / "test.db"
 
         # Do not create any files to test missing file handling
-
-        with patch("sqlite3.connect") as mock_connect:
+        with (
+            patch("stock_analysis.load_data_to_db.DATA_DIR", tmp_path),
+            patch("stock_analysis.load_data_to_db.DB_PATH", db_path),
+            patch("sqlite3.connect") as mock_connect,
+        ):
             mock_con = Mock()
             mock_connect.return_value.__enter__.return_value = mock_con
 

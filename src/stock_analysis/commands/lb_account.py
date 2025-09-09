@@ -29,6 +29,9 @@ def run_lb_account(
         int: Exit code (0 indicates success)
     """
     try:
+        # Explicitly validate LongPort dependency early so tests can patch
+        # import behavior without triggering SDK initialization.
+        __import__("stock_analysis.broker.longport_client")
         # Resolve conflicting flags: funds take precedence over positions
         if only_funds and only_positions:
             only_positions = False
