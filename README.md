@@ -16,11 +16,11 @@
 ==================================================
 Time Period Covered:     2016-10-04 to 2025-08-31
 Initial Portfolio Value: $1,000,000.00
-Final Portfolio Value:   $3,691,312.40
+Final Portfolio Value:   $4,358,054.98
 --------------------------------------------------
-Total Return:            130.60%
-Annualized Return:       9.84%
-Max Drawdown:            20.79%
+Total Return:            147.20%
+Annualized Return:       10.70%
+Max Drawdown:            20.39%
 ==================================================
 
 ==================================================
