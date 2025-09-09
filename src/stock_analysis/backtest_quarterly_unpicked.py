@@ -23,8 +23,12 @@ from .utils.paths import (
 # Strategy classes and helper functions have been moved to backtest.engine and backtest.prep modules
 
 
-def main():
-    """Main function - Run unselected quarterly backtest"""
+def main(*, log_level: int | None = None):
+    """Main function - Run unselected quarterly backtest
+
+    Args:
+        log_level: Optional logging level for strategy logs
+    """
     print("--- Running Quarterly Point-in-Time Backtest (Database Mode) ---")
 
     try:
@@ -91,6 +95,7 @@ def main():
         use_logging=False,  # Unselected version uses print
         add_observers=False,  # Unselected version does not add observers
         add_annual_return=False,  # Unselected version does not add annual return analyzer
+        log_level=log_level,
     )
 
     # Prepare SPY benchmark
@@ -100,7 +105,10 @@ def main():
         end_dt = datetime.datetime.combine(BACKTEST_END_DATE, datetime.time())
         spy_data = load_spy_data(DB_PATH, start_dt, end_dt)
         spy_value, _ = run_benchmark_backtest(
-            data=spy_data, initial_cash=initial_cash, ticker="SPY"
+            data=spy_data,
+            initial_cash=initial_cash,
+            ticker="SPY",
+            log_level=log_level,
         )
     except Exception as e:
         print(f"[WARN] SPY benchmark skipped: {e}")

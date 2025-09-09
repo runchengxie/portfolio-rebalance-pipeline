@@ -12,8 +12,13 @@ SPY_TICKER = "SPY"
 # Data loading functions and strategy classes have been moved to respective modules
 
 
-def main():
-    """Main execution function - Run SPY benchmark backtest"""
+def main(*, target_percent: float | None = None, log_level: int | None = None):
+    """Main execution function - Run SPY benchmark backtest
+
+    Args:
+        target_percent: Optional target equity percent for buy-and-hold (e.g., 0.99)
+        log_level: Optional logging level (e.g., logging.INFO/DEBUG)
+    """
     print("--- SPY Benchmark Backtest ---")
 
     # Get unified time period from configuration file
@@ -36,7 +41,11 @@ def main():
 
     # Run benchmark backtest
     portfolio_value, metrics = run_benchmark_backtest(
-        data=spy_data, initial_cash=initial_cash, ticker=SPY_TICKER
+        data=spy_data,
+        initial_cash=initial_cash,
+        ticker=SPY_TICKER,
+        target_percent=target_percent if target_percent is not None else 0.99,
+        log_level=log_level,
     )
 
     # Generate report

@@ -3,12 +3,33 @@
 Handles command logic for backtest analysis.
 """
 
+import logging
+
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-def run_backtest(strategy: str, config_path: str | None = None) -> int:
+def _parse_log_level(level: str | None) -> int | None:
+    if not level:
+        return None
+    m = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+        "critical": logging.CRITICAL,
+    }
+    return m.get(level.lower(), logging.INFO)
+
+
+def run_backtest(
+    strategy: str,
+    config_path: str | None = None,
+    *,
+    target_percent: float | None = None,
+    log_level: str | None = None,
+) -> int:
     """Run backtest analysis
 
     Args:
@@ -21,18 +42,20 @@ def run_backtest(strategy: str, config_path: str | None = None) -> int:
     try:
         logger.info(f"正在运行 {strategy.upper()} 策略回测...")
 
+        lvl = _parse_log_level(log_level)
+
         if strategy == "ai":
             from ..backtest_quarterly_ai_pick import main as ai_main
 
-            ai_main()
+            ai_main(log_level=lvl)
         elif strategy == "quant":
             from ..backtest_quarterly_unpicked import main as quant_main
 
-            quant_main()
+            quant_main(log_level=lvl)
         elif strategy == "spy":
             from ..backtest_benchmark_spy import main as spy_main
 
-            spy_main()
+            spy_main(target_percent=target_percent, log_level=lvl)
 
         logger.info(f"{strategy.upper()} 策略回测完成！")
         return 0

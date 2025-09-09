@@ -64,6 +64,17 @@ def create_parser() -> argparse.ArgumentParser:
         help="回测策略类型：ai(AI选股), quant(量化初选), spy(SPY基准)",
     )
     backtest_parser.add_argument("--config", type=str, help="配置文件路径（可选）")
+    backtest_parser.add_argument(
+        "--target",
+        type=float,
+        help="买入并持有的目标仓位比例（仅对 spy 有效，如 0.99）",
+    )
+    backtest_parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["debug", "info", "warning", "error", "critical"],
+        help="回测日志级别（影响分红与再平衡日志粒度）",
+    )
 
     # Data loading command
     load_parser = subparsers.add_parser(
@@ -346,7 +357,12 @@ def main() -> int:
         if args.command == "backtest":
             from .commands.backtest import run_backtest
 
-            return run_backtest(args.strategy, getattr(args, "config", None))
+            return run_backtest(
+                args.strategy,
+                getattr(args, "config", None),
+                target_percent=getattr(args, "target", None),
+                log_level=getattr(args, "log_level", None),
+            )
         elif args.command == "load-data":
             from .commands.load_data import run_load_data
 

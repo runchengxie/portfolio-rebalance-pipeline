@@ -16,11 +16,11 @@
 ==================================================
 Time Period Covered:     2016-10-04 to 2025-08-31
 Initial Portfolio Value: $1,000,000.00
-Final Portfolio Value:   $4,358,054.98
+Final Portfolio Value:   $4,071,358.78
 --------------------------------------------------
-Total Return:            147.20%
-Annualized Return:       10.70%
-Max Drawdown:            20.39%
+Total Return:            140.40%
+Annualized Return:       10.35%
+Max Drawdown:            25.57%
 ==================================================
 
 ==================================================
@@ -28,11 +28,11 @@ Max Drawdown:            20.39%
 ==================================================
 Time Period Covered:     2016-10-04 to 2025-07-02
 Initial Portfolio Value: $1,000,000.00
-Final Portfolio Value:   $2,867,639.44
+Final Portfolio Value:   $3,282,875.08
 --------------------------------------------------
-Total Return:            105.35%
-Annualized Return:       8.58%
-Max Drawdown:            33.96%
+Total Return:            118.87%
+Annualized Return:       9.37%
+Max Drawdown:            33.23%
 ==================================================
 ```
 
@@ -274,10 +274,18 @@ fractional_preview:
     stockq backtest quant
     ```
 
-* 对比回测 2 (SPY 基准)：评估 AI 策略与 SPY 基准（S&P 500 ETF）的表现。
+* 对比回测 2 (SPY 基准)：评估 AI 策略与 SPY 基准（S&P 500 ETF）的表现（含分红再投资）。
 
     ```bash
+    # 基准含DRIP（分红再投），默认用 99% 仓位，留 1% 现金缓冲
     stockq backtest spy
+
+    # 调整目标仓位 & 日志级别（仅对 backtest 生效）
+    stockq backtest spy --target 1.0 --log-level debug
+    
+    # 同样可为策略回测调整日志级别（分红与再平衡日志更详细）
+    stockq backtest ai --log-level info
+    stockq backtest quant --log-level debug
     ```
 
 ### 导出与一致性校验（Excel ↔ JSON）

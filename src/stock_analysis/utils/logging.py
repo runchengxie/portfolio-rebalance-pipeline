@@ -93,11 +93,18 @@ class StrategyLogger:
     Small wrapper for backtest strategies: can use logging or fallback to print.
     """
 
-    def __init__(self, use_logging: bool = True, logger_name: str = "strategy"):
+    def __init__(
+        self,
+        use_logging: bool = True,
+        logger_name: str = "strategy",
+        level: int | None = None,
+    ):
         self.use_logging = use_logging
         if use_logging:
             # Ensure at least console output; let upper layer decide file output
-            self.logger = setup_logging(logger_name)
+            self.logger = setup_logging(
+                logger_name, level=level if level is not None else logging.INFO
+            )
         else:
             self.logger = None
 

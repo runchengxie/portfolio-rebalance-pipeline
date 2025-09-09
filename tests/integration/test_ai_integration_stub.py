@@ -1,21 +1,25 @@
-"""测试AI选股流程健壮性模块（纯模拟，不触网）
+"""
+Module for Testing the Robustness of the AI Stock Picking Workflow (Pure Simulation, No Network Access)
 
-测试AI选股流程中的关键组件，包括：
-- RateLimiter 滑动窗口节流
-- Circuit 熔断开/合逻辑
-- KeyPool 对401/403永久剔除 vs 429项目级冷却的分类
-- 模拟client.models.generate_content超时、重试退避与成功后状态复位
-- 解析结构化JSON的必填字段校验与异常分支
+This module tests the key components of the AI stock-picking workflow, including:
+- RateLimiter: A sliding window for request throttling.
+- Circuit: The open/closed logic of a circuit breaker.
+- KeyPool: Its ability to differentiate between permanently removing a key (for 401/403 errors) and applying a project-level cooldown (for 429 errors).
+- Simulation of `client.models.generate_content`: Tests timeouts, retry backoff, and state reset upon success.
+- Parsing Structured JSON: Validates required fields and handles exception branches.
 """
 
+# Standard library imports
 import json
 import threading
 import time
 from unittest.mock import Mock, patch
 
+# Third-party library imports for testing
 import pytest
 from pydantic import ValidationError
 
+# Imports from the application's own code
 from stock_analysis.ai_stock_pick import (
     AIStockPick,
     Circuit,
@@ -28,148 +32,150 @@ from stock_analysis.ai_stock_pick import (
 
 
 class TestRateLimiter:
-    """测试滑动窗口限速器"""
+    """Tests for the sliding window rate limiter."""
 
     def test_initialization(self):
-        """测试限速器初始化"""
+        """Tests the limiter's initialization."""
         limiter = RateLimiter(max_calls=10, per_seconds=60)
+        # Verify that the attributes are set correctly upon creation.
         assert limiter.max_calls == 10
         assert limiter.per == 60
         assert len(limiter.calls) == 0
 
     def test_allow_within_limit(self):
-        """测试在限制范围内的调用"""
+        """Tests calls that are within the defined limit."""
         limiter = RateLimiter(max_calls=3, per_seconds=60)
 
-        # 前3次调用应该被允许
+        # The first 3 calls should be allowed.
         for _i in range(3):
             assert limiter.allow()
             limiter.record_call()
 
-        # 第4次调用应该被拒绝
+        # The 4th call should be rejected because the limit has been reached.
         assert not limiter.allow()
 
     def test_sliding_window_behavior(self):
-        """测试滑动窗口行为"""
-        limiter = RateLimiter(max_calls=2, per_seconds=1)  # 1秒内最多2次调用
+        """Tests the sliding window behavior."""
+        limiter = RateLimiter(max_calls=2, per_seconds=1)  # Max 2 calls per second
 
-        # 记录两次调用
+        # Record two calls to hit the limit.
         limiter.record_call()
         limiter.record_call()
 
-        # 应该达到限制
+        # The next call should be blocked.
         assert not limiter.allow()
 
-        # 等待超过时间窗口
+        # Wait for a time longer than the window (1 second).
         time.sleep(1.1)
 
-        # 现在应该可以再次调用
+        # Now, a new call should be allowed because the old records have expired.
         assert limiter.allow()
 
     def test_wait_method(self):
-        """测试等待方法"""
+        """Tests the `wait` method, which should block until a call is allowed."""
         limiter = RateLimiter(max_calls=1, per_seconds=1)
 
-        # 第一次调用
+        # Make one call to use up the allowance.
         limiter.record_call()
 
-        # 记录等待开始时间
+        # Record the start time before waiting.
         start_time = time.time()
 
-        # 等待应该会阻塞直到可以再次调用
+        # The `wait()` method should block until the window resets.
         limiter.wait()
 
-        # 验证等待时间合理（应该接近1秒）
+        # Verify that the elapsed time is reasonable (should be close to 1 second).
         elapsed = time.time() - start_time
-        assert elapsed >= 0.9  # 允许一些时间误差
+        assert elapsed >= 0.9  # Allow for some timing inaccuracy.
 
     def test_cleanup_old_calls(self):
-        """测试清理过期调用记录"""
+        """Tests the cleanup of expired call records."""
         limiter = RateLimiter(max_calls=5, per_seconds=1)
 
-        # 添加一些调用记录
+        # Add some call records.
         for _ in range(3):
             limiter.record_call()
 
         assert len(limiter.calls) == 3
 
-        # 等待超过时间窗口
+        # Wait for the window to pass, making the records expire.
         time.sleep(1.1)
 
-        # 调用allow()应该清理过期记录
+        # Calling `allow()` should trigger the cleanup of old records.
         limiter.allow()
 
-        # 过期记录应该被清理
+        # The list of calls should now be empty.
         assert len(limiter.calls) == 0
 
 
 class TestCircuit:
-    """测试熔断器"""
+    """Tests for the Circuit Breaker."""
 
     def test_initialization(self):
-        """测试熔断器初始化"""
+        """Tests the circuit breaker's initialization."""
         circuit = Circuit(fail_threshold=3, cooldown=30)
+        # Verify initial state.
         assert circuit.fail_threshold == 3
         assert circuit.cooldown == 30
         assert circuit.failures == 0
         assert circuit.open_until == 0
 
     def test_allow_when_closed(self):
-        """测试熔断器关闭时允许请求"""
+        """Tests that requests are allowed when the circuit is closed (normal state)."""
         circuit = Circuit(fail_threshold=3, cooldown=30)
         assert circuit.allow()
 
     def test_record_failure_and_open(self):
-        """测试记录失败并打开熔断器"""
+        """Tests that recording failures eventually opens the circuit."""
         circuit = Circuit(fail_threshold=2, cooldown=1)
 
-        # 第一次失败
+        # First failure.
         circuit.record_failure()
         assert circuit.failures == 1
-        assert circuit.allow()  # 还未达到阈值
+        assert circuit.allow()  # Still below the threshold.
 
-        # 第二次失败，应该打开熔断器
+        # Second failure, which should open ("trip") the circuit.
         circuit.record_failure()
         assert circuit.failures == 2
-        assert not circuit.allow()  # 熔断器打开
+        assert not circuit.allow()  # The circuit is now open and should block requests.
 
     def test_cooldown_period(self):
-        """测试冷却期行为"""
+        """Tests the behavior during the cooldown period."""
         circuit = Circuit(fail_threshold=1, cooldown=1)
 
-        # 触发熔断
+        # Trigger the circuit to open.
         circuit.record_failure()
         assert not circuit.allow()
 
-        # 等待冷却期结束
+        # Wait for the cooldown period to end.
         time.sleep(1.1)
 
-        # 现在应该允许请求
+        # Now, requests should be allowed again (circuit is half-open or closed).
         assert circuit.allow()
 
     def test_record_success_resets_failures(self):
-        """测试记录成功重置失败计数"""
+        """Tests that a successful call resets the failure counter."""
         circuit = Circuit(fail_threshold=3, cooldown=30)
 
-        # 记录一些失败
+        # Record some failures.
         circuit.record_failure()
         circuit.record_failure()
         assert circuit.failures == 2
 
-        # 记录成功应该重置失败计数
+        # A successful call should reset the counter back to zero.
         circuit.record_success()
         assert circuit.failures == 0
 
     def test_multiple_failures_extend_cooldown(self):
-        """测试多次失败延长冷却时间"""
+        """Tests that subsequent failures while the circuit is open extend the cooldown."""
         circuit = Circuit(fail_threshold=1, cooldown=1)
 
-        # 第一次失败
+        # First failure opens the circuit and sets an `open_until` time.
         time.time()
         circuit.record_failure()
         first_open_until = circuit.open_until
 
-        # 再次失败应该延长冷却时间
+        # Another failure should push the `open_until` time further into the future.
         circuit.record_failure()
         second_open_until = circuit.open_until
 
@@ -177,10 +183,10 @@ class TestCircuit:
 
 
 class TestKeySlot:
-    """测试API Key槽位"""
+    """Tests for the API Key Slot, which holds a single key and its state."""
 
     def test_initialization(self):
-        """测试槽位初始化"""
+        """Tests the initialization of a key slot."""
         mock_client = Mock()
         mock_limiter = Mock()
 
@@ -190,29 +196,29 @@ class TestKeySlot:
         assert slot.api_key == "api_key_123"
         assert slot.client == mock_client
         assert slot.limiter == mock_limiter
-        assert isinstance(slot.circuit, Circuit)
-        assert not slot.dead
-        assert slot.next_ok_at == 0
+        assert isinstance(slot.circuit, Circuit) # Each slot has its own circuit breaker.
+        assert not slot.dead # It should not be "dead" initially.
+        assert slot.next_ok_at == 0 # It should be available immediately.
 
     def test_slot_states(self):
-        """测试槽位状态管理"""
+        """Tests the state management of a slot."""
         mock_client = Mock()
         mock_limiter = Mock()
 
         slot = KeySlot("test_key", "api_key_123", mock_client, mock_limiter)
 
-        # 测试标记为死亡
+        # Test marking the slot as dead (permanently unusable).
         slot.dead = True
         assert slot.dead
 
-        # 测试设置下次可用时间
+        # Test setting the next available time.
         future_time = time.time() + 60
         slot.next_ok_at = future_time
         assert slot.next_ok_at == future_time
 
 
 class TestKeyPool:
-    """测试API Key池管理器"""
+    """Tests for the API Key Pool manager."""
 
     def create_mock_slot(
         self,
@@ -221,7 +227,7 @@ class TestKeyPool:
         circuit_allow: bool = True,
         next_ok_at: float = 0,
     ) -> KeySlot:
-        """创建模拟槽位"""
+        """Helper function to create a mock KeySlot for testing."""
         mock_client = Mock()
         mock_limiter = Mock()
 
@@ -229,13 +235,13 @@ class TestKeyPool:
         slot.dead = dead
         slot.next_ok_at = next_ok_at
 
-        # 模拟熔断器行为
+        # Mock the circuit breaker's behavior.
         slot.circuit.allow = Mock(return_value=circuit_allow)
 
         return slot
 
     def test_acquire_available_slot(self):
-        """测试获取可用槽位"""
+        """Tests acquiring an available slot from the pool."""
         slot1 = self.create_mock_slot("key1")
         slot2 = self.create_mock_slot("key2")
 
@@ -245,7 +251,7 @@ class TestKeyPool:
         assert acquired_slot in [slot1, slot2]
 
     def test_skip_dead_slots(self):
-        """测试跳过死亡槽位"""
+        """Tests that the pool skips over 'dead' (permanently failed) slots."""
         dead_slot = self.create_mock_slot("dead_key", dead=True)
         alive_slot = self.create_mock_slot("alive_key", dead=False)
 
@@ -255,7 +261,7 @@ class TestKeyPool:
         assert acquired_slot == alive_slot
 
     def test_skip_circuit_open_slots(self):
-        """测试跳过熔断器打开的槽位"""
+        """Tests that the pool skips slots whose circuit breakers are open."""
         open_slot = self.create_mock_slot("open_key", circuit_allow=False)
         closed_slot = self.create_mock_slot("closed_key", circuit_allow=True)
 
@@ -265,7 +271,7 @@ class TestKeyPool:
         assert acquired_slot == closed_slot
 
     def test_skip_time_restricted_slots(self):
-        """测试跳过时间限制的槽位"""
+        """Tests that the pool skips slots that are on a temporary cooldown."""
         future_time = time.time() + 60
         restricted_slot = self.create_mock_slot(
             "restricted_key", next_ok_at=future_time
@@ -278,118 +284,120 @@ class TestKeyPool:
         assert acquired_slot == available_slot
 
     def test_project_cooldown(self):
-        """测试项目级冷却"""
+        """Tests the project-level cooldown (affects all keys)."""
         slot = self.create_mock_slot("key1")
         pool = KeyPool([slot])
 
-        # 设置项目级冷却
+        # Set a project-level cooldown period.
         pool.project_cooldown_until = time.time() + 60
 
-        # 应该等待项目冷却结束
+        # The acquire method should wait until the cooldown is over.
         with patch("time.sleep") as mock_sleep:
-            # 模拟时间流逝
+            # Simulate time passing to get past the cooldown.
             with patch("time.time", side_effect=[time.time(), time.time() + 61]):
                 acquired_slot = pool.acquire()
                 assert acquired_slot == slot
+                # Verify that `time.sleep` was called to wait.
                 mock_sleep.assert_called()
 
     def test_report_success(self):
-        """测试报告成功"""
+        """Tests reporting a successful API call."""
         slot = self.create_mock_slot("key1")
+        # Mock the success method on the circuit breaker
+        slot.circuit.record_success = Mock()
         pool = KeyPool([slot])
 
         pool.report_success(slot)
 
-        # 验证熔断器记录成功
+        # Verify the circuit breaker was notified of the success.
         slot.circuit.record_success.assert_called_once()
-        # 验证下次可用时间被重置
+        # Verify the cooldown time was reset.
         assert slot.next_ok_at == time.time()
 
     def test_report_failure_401_403(self):
-        """测试报告401/403错误（永久移除）"""
+        """Tests reporting a 401/403 error, which should permanently remove the key."""
         slot = self.create_mock_slot("key1")
         pool = KeyPool([slot])
 
-        # 模拟401错误
+        # Simulate a 401 Unauthorized error.
         error_401 = Exception("401 Unauthorized")
         pool.report_failure(slot, error_401)
 
-        # 槽位应该被标记为死亡
+        # The slot should now be marked as dead.
         assert slot.dead
 
     def test_report_failure_429(self):
-        """测试报告429错误（项目级冷却）"""
+        """Tests reporting a 429 error, which should trigger a project-level cooldown."""
         slot = self.create_mock_slot("key1")
         pool = KeyPool([slot])
 
-        # 模拟429错误
+        # Simulate a 429 Too Many Requests error.
         error_429 = Exception("429 Too Many Requests")
         pool.report_failure(slot, error_429)
 
-        # 应该设置项目级冷却
+        # A project-level cooldown should be set.
         assert pool.project_cooldown_until > time.time()
 
     def test_report_failure_other_errors(self):
-        """测试报告其他错误（熔断器处理）"""
+        """Tests reporting other errors, which should be handled by the circuit breaker."""
         slot = self.create_mock_slot("key1")
+        # Mock the failure method on the circuit breaker
+        slot.circuit.record_failure = Mock()
         pool = KeyPool([slot])
 
-        # 模拟其他错误
+        # Simulate a generic server error.
         other_error = Exception("500 Internal Server Error")
         pool.report_failure(slot, other_error)
 
-        # 应该记录到熔断器
+        # The failure should be recorded by the slot's circuit breaker.
         slot.circuit.record_failure.assert_called_once()
-        # 应该设置软退避时间
+        # A short-term "soft backoff" time should be set for this specific key.
         assert slot.next_ok_at > time.time()
 
 
 class TestCallWithPool:
-    """测试使用Key池的API调用函数"""
+    """Tests the `call_with_pool` function, which orchestrates API calls using the KeyPool."""
 
     def create_mock_pool(self, success_on_attempt: int = 1) -> Mock:
-        """创建模拟Key池
-
-        Args:
-            success_on_attempt: 在第几次尝试时成功（1表示第一次就成功）
-        """
+        """Helper to create a mock KeyPool for testing."""
         mock_pool = Mock()
         mock_slot = Mock()
         mock_slot.name = "test_key"
 
-        # 模拟acquire方法
+        # Simulate the acquire method.
         mock_pool.acquire.return_value = mock_slot
 
-        # 模拟成功和失败的报告方法
+        # Simulate the reporting methods.
         mock_pool.report_success = Mock()
         mock_pool.report_failure = Mock()
 
         return mock_pool, mock_slot
 
     def test_successful_call_first_attempt(self):
-        """测试第一次尝试就成功的调用"""
+        """Tests a call that succeeds on the first try."""
         mock_pool, mock_slot = self.create_mock_pool()
 
-        # 创建成功的调用函数
+        # A function that simulates a successful API call.
         def successful_call(slot):
             return {"result": "success", "slot_name": slot.name}
 
         result = call_with_pool(mock_pool, successful_call, max_retries=3)
 
-        # 验证结果
+        # Verify the result is correct.
         assert result["result"] == "success"
         assert result["slot_name"] == "test_key"
 
-        # 验证成功被报告
+        # Verify that success was reported and failure was not.
         mock_pool.report_success.assert_called_once_with(mock_slot)
         mock_pool.report_failure.assert_not_called()
 
     def test_retry_on_failure(self):
-        """测试失败时的重试逻辑"""
+        """Tests the retry logic for calls that initially fail."""
         mock_pool, mock_slot = self.create_mock_pool()
 
         call_count = 0
 
+        # A function that fails twice before succeeding.
         def failing_then_success_call(slot):
             nonlocal call_count
             call_count += 1
@@ -399,32 +407,33 @@ class TestCallWithPool:
 
         result = call_with_pool(mock_pool, failing_then_success_call, max_retries=5)
 
-        # 验证最终成功
+        # Verify it eventually succeeded.
         assert result["result"] == "success after retries"
 
-        # 验证重试次数
+        # Verify it was called 3 times (2 failures, 1 success).
         assert call_count == 3
 
-        # 验证失败和成功都被报告
-        assert mock_pool.report_failure.call_count == 2  # 前两次失败
-        mock_pool.report_success.assert_called_once()  # 最后一次成功
+        # Verify failures and success were reported correctly.
+        assert mock_pool.report_failure.call_count == 2
+        mock_pool.report_success.assert_called_once()
 
     def test_max_retries_exceeded(self):
-        """测试超过最大重试次数"""
+        """Tests what happens when the maximum number of retries is exceeded."""
         mock_pool, mock_slot = self.create_mock_pool()
 
         def always_failing_call(slot):
             raise Exception("Always fails")
 
+        # Expect the final exception to be raised.
         with pytest.raises(Exception, match="Always fails"):
             call_with_pool(mock_pool, always_failing_call, max_retries=2)
 
-        # 验证重试次数
-        assert mock_pool.report_failure.call_count == 3  # 初始调用 + 2次重试
+        # Verify it was called 3 times (initial call + 2 retries).
+        assert mock_pool.report_failure.call_count == 3
         mock_pool.report_success.assert_not_called()
 
     def test_exponential_backoff(self):
-        """测试指数退避"""
+        """Tests that the delay between retries increases exponentially."""
         mock_pool, mock_slot = self.create_mock_pool()
 
         call_times = []
@@ -433,25 +442,26 @@ class TestCallWithPool:
             call_times.append(time.time())
             raise Exception("Retry with backoff")
 
+        # Mock `time.sleep` to check the delay values.
         with patch("time.sleep") as mock_sleep:
             try:
                 call_with_pool(mock_pool, failing_call, max_retries=2)
             except Exception:
-                pass  # 预期会失败
+                pass  # An exception is expected.
 
-        # 验证sleep被调用了正确的次数（重试之间）
+        # Verify sleep was called for each retry.
         assert mock_sleep.call_count == 2
 
-        # 验证退避时间递增
+        # Verify the backoff time increases.
         sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
-        assert sleep_calls[0] < sleep_calls[1]  # 第二次退避时间更长
+        assert sleep_calls[0] < sleep_calls[1]  # The second delay is longer than the first.
 
 
 class TestAIStockPick:
-    """测试AI选股数据模型"""
+    """Tests for the AIStockPick Pydantic data model."""
 
     def test_valid_model_creation(self):
-        """测试有效模型创建"""
+        """Tests creating a model instance with valid data."""
         valid_data = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
@@ -467,45 +477,45 @@ class TestAIStockPick:
         assert pick.reasoning == "Strong fundamentals and growth prospects"
 
     def test_confidence_score_validation(self):
-        """测试置信度评分验证"""
+        """Tests the validation for the confidence_score field (must be between 1 and 10)."""
         base_data = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
             "reasoning": "Test reasoning",
         }
 
-        # 测试有效范围
+        # Test valid scores.
         for score in [1, 5, 10]:
             data = {**base_data, "confidence_score": score}
             pick = AIStockPick(**data)
             assert pick.confidence_score == score
 
-        # 测试无效范围
+        # Test invalid scores (should raise a validation error).
         for invalid_score in [0, 11, -1]:
             data = {**base_data, "confidence_score": invalid_score}
             with pytest.raises(ValidationError):
                 AIStockPick(**data)
 
     def test_required_fields(self):
-        """测试必填字段验证"""
-        # 测试缺少ticker
+        """Tests that all required fields must be present."""
+        # Test missing 'ticker'.
         with pytest.raises(ValidationError):
             AIStockPick(company_name="Apple Inc.", confidence_score=8, reasoning="Test")
 
-        # 测试缺少company_name
+        # Test missing 'company_name'.
         with pytest.raises(ValidationError):
             AIStockPick(ticker="AAPL", confidence_score=8, reasoning="Test")
 
-        # 测试缺少confidence_score
+        # Test missing 'confidence_score'.
         with pytest.raises(ValidationError):
             AIStockPick(ticker="AAPL", company_name="Apple Inc.", reasoning="Test")
 
-        # 测试缺少reasoning
+        # Test missing 'reasoning'.
         with pytest.raises(ValidationError):
             AIStockPick(ticker="AAPL", company_name="Apple Inc.", confidence_score=8)
 
     def test_json_parsing(self):
-        """测试JSON解析"""
+        """Tests creating the model from a JSON string."""
         json_data = """
         {
             "ticker": "MSFT",
@@ -523,8 +533,8 @@ class TestAIStockPick:
         assert pick.confidence_score == 9
 
     def test_invalid_json_structure(self):
-        """测试无效JSON结构处理"""
-        # 测试额外字段（应该被忽略）
+        """Tests handling of JSON with an invalid structure."""
+        # Test with extra fields (they should be ignored by Pydantic).
         data_with_extra = {
             "ticker": "GOOGL",
             "company_name": "Alphabet Inc.",
@@ -535,11 +545,12 @@ class TestAIStockPick:
 
         pick = AIStockPick(**data_with_extra)
         assert pick.ticker == "GOOGL"
+        # Verify the extra field was not added to the model instance.
         assert not hasattr(pick, "extra_field")
 
 
 class TestCreateKeyPool:
-    """测试Key池创建函数"""
+    """Tests for the `create_key_pool` factory function."""
 
     @patch.dict(
         "os.environ",
@@ -551,16 +562,15 @@ class TestCreateKeyPool:
     )
     @patch("stock_analysis.ai_stock_pick.genai.GenerativeModel")
     def test_create_pool_with_all_keys(self, mock_model):
-        """测试使用所有三个API key创建池"""
-        # 模拟GenerativeModel
-        mock_model.return_value = Mock()
+        """Tests creating a pool when all expected environment variable keys are present."""
+        mock_model.return_value = Mock() # Mock the AI model client.
 
         pool = create_key_pool()
 
         assert isinstance(pool, KeyPool)
         assert len(pool.slots) == 3
 
-        # 验证槽位名称
+        # Verify that slots were created for all keys.
         slot_names = [slot.name for slot in pool.slots]
         assert "GEMINI_API_KEY" in slot_names
         assert "GEMINI_API_KEY_2" in slot_names
@@ -571,12 +581,12 @@ class TestCreateKeyPool:
         {
             "GEMINI_API_KEY": "key1",
             "GEMINI_API_KEY_2": "key2",
-            # 缺少GEMINI_API_KEY_3
+            # Missing GEMINI_API_KEY_3
         },
     )
     @patch("stock_analysis.ai_stock_pick.genai.GenerativeModel")
     def test_create_pool_with_partial_keys(self, mock_model):
-        """测试使用部分API key创建池"""
+        """Tests creating a pool with only a subset of keys available."""
         mock_model.return_value = Mock()
 
         pool = create_key_pool()
@@ -586,20 +596,20 @@ class TestCreateKeyPool:
 
     @patch.dict("os.environ", {}, clear=True)
     def test_create_pool_no_keys(self):
-        """测试没有API key时的异常处理"""
-        with pytest.raises(ValueError, match="没有可用的 GEMINI_API_KEY"):
+        """Tests that an error is raised if no API keys are found."""
+        with pytest.raises(ValueError, match="No available GEMINI_API_KEY found"):
             create_key_pool()
 
     @patch.dict(
         "os.environ",
         {
-            "GEMINI_API_KEY": "",  # 空字符串应该被过滤
+            "GEMINI_API_KEY": "",  # Empty string should be filtered out.
             "GEMINI_API_KEY_2": "key2",
         },
     )
     @patch("stock_analysis.ai_stock_pick.genai.GenerativeModel")
     def test_create_pool_filter_empty_keys(self, mock_model):
-        """测试过滤空API key"""
+        """Tests that empty string API keys are ignored."""
         mock_model.return_value = Mock()
 
         pool = create_key_pool()
@@ -609,11 +619,11 @@ class TestCreateKeyPool:
 
 
 class TestAIIntegrationScenarios:
-    """AI集成场景测试"""
+    """End-to-end tests for AI integration scenarios."""
 
     def test_complete_ai_workflow_simulation(self):
-        """完整AI工作流程模拟测试"""
-        # 1. 创建模拟Key池
+        """Simulates a complete, successful AI workflow."""
+        # 1. Create a mock KeyPool with one working key.
         mock_slot1 = Mock()
         mock_slot1.name = "key1"
         mock_slot1.dead = False
@@ -626,9 +636,8 @@ class TestAIIntegrationScenarios:
         mock_pool.report_success = Mock()
         mock_pool.report_failure = Mock()
 
-        # 2. 模拟AI API调用
+        # 2. Simulate a successful AI API call.
         def mock_ai_call(slot):
-            # 模拟成功的AI响应
             return {
                 "ticker": "AAPL",
                 "company_name": "Apple Inc.",
@@ -636,19 +645,19 @@ class TestAIIntegrationScenarios:
                 "reasoning": "Strong fundamentals and market position",
             }
 
-        # 3. 执行调用
+        # 3. Execute the call using the pool.
         result = call_with_pool(mock_pool, mock_ai_call, max_retries=3)
 
-        # 4. 验证结果
+        # 4. Verify the result.
         assert result["ticker"] == "AAPL"
         assert result["confidence_score"] == 8
 
-        # 5. 验证成功被报告
+        # 5. Verify that the success was reported back to the pool.
         mock_pool.report_success.assert_called_once_with(mock_slot1)
 
     def test_resilience_under_multiple_failures(self):
-        """测试多重失败下的韧性"""
-        # 创建多个槽位，模拟不同的失败场景
+        """Tests the system's resilience when multiple keys are in failed states."""
+        # Create slots simulating different failure modes.
         dead_slot = Mock()
         dead_slot.name = "dead_key"
         dead_slot.dead = True
@@ -657,17 +666,17 @@ class TestAIIntegrationScenarios:
         circuit_open_slot.name = "circuit_open_key"
         circuit_open_slot.dead = False
         circuit_open_slot.next_ok_at = 0
-        circuit_open_slot.circuit.allow.return_value = False
+        circuit_open_slot.circuit.allow.return_value = False # Circuit is open.
 
         working_slot = Mock()
         working_slot.name = "working_key"
         working_slot.dead = False
         working_slot.next_ok_at = 0
-        working_slot.circuit.allow.return_value = True
+        working_slot.circuit.allow.return_value = True # Circuit is closed.
 
-        # 模拟池的acquire逻辑
+        # Simulate the pool's logic to find a working key.
         def mock_acquire():
-            # 跳过死亡和熔断的槽位，返回工作的槽位
+            # This logic mimics the real pool's `acquire` method.
             candidates = [
                 s
                 for s in [dead_slot, circuit_open_slot, working_slot]
@@ -684,33 +693,35 @@ class TestAIIntegrationScenarios:
 
         result = call_with_pool(mock_pool, successful_call, max_retries=3)
 
-        # 应该使用工作的槽位
+        # It should have skipped the failed slots and used the working one.
         assert result["slot"] == "working_key"
 
     def test_json_parsing_error_handling(self):
-        """测试JSON解析错误处理"""
-        # 测试无效JSON
+        """Tests how parsing errors from malformed JSON are handled."""
+        # A list of invalid JSON strings.
         invalid_json_cases = [
-            '{"ticker": "AAPL", "confidence_score": "not_a_number"}',  # 类型错误
-            '{"ticker": "AAPL"}',  # 缺少必填字段
-            '{"ticker": "AAPL", "confidence_score": 15}',  # 超出范围
-            "invalid json string",  # 无效JSON格式
+            '{"ticker": "AAPL", "confidence_score": "not_a_number"}',  # Wrong data type
+            '{"ticker": "AAPL"}',  # Missing required fields
+            '{"ticker": "AAPL", "confidence_score": 15}',  # Value out of range
+            "invalid json string",  # Completely invalid format
         ]
 
+        # Loop through each case and ensure it raises the expected error.
         for invalid_json in invalid_json_cases:
             try:
                 data = json.loads(invalid_json)
                 AIStockPick(**data)
+                # If no exception is raised, the test fails.
                 raise AssertionError(
                     f"Should have raised exception for: {invalid_json}"
                 )
             except (json.JSONDecodeError, ValidationError, TypeError):
-                # 预期的异常
+                # This is the expected outcome.
                 pass
 
     def test_concurrent_key_pool_access(self):
-        """测试并发访问Key池"""
-        # 创建真实的Key池进行并发测试
+        """Tests concurrent access to the KeyPool from multiple threads."""
+        # Create a real KeyPool for this test.
         mock_client = Mock()
         mock_limiter = Mock()
         mock_limiter.allow.return_value = True
@@ -722,13 +733,13 @@ class TestAIIntegrationScenarios:
 
         pool = KeyPool(slots)
 
-        # 并发获取槽位
         acquired_slots = []
 
+        # A function for each thread to run.
         def acquire_slot():
             slot = pool.acquire()
             acquired_slots.append(slot)
-            time.sleep(0.1)  # 模拟使用时间
+            time.sleep(0.1)  # Simulate using the key for a short time.
 
         threads = []
         for _ in range(3):
@@ -739,7 +750,7 @@ class TestAIIntegrationScenarios:
         for thread in threads:
             thread.join()
 
-        # 验证所有线程都获得了槽位
+        # Verify that all 3 threads successfully acquired a slot.
         assert len(acquired_slots) == 3
-        # 验证没有重复分配
+        # Verify that each thread got a unique slot.
         assert len(set(acquired_slots)) == 3
