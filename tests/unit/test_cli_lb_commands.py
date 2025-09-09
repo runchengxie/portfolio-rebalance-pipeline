@@ -9,21 +9,21 @@ import stock_analysis.cli as cli
 
 @pytest.mark.unit
 def test_cli_dispatch_lb_quote(monkeypatch):
-    """测试CLI将lb-quote命令分发到run_lb_quote函数。"""
-    # 创建探针函数记录调用
+    """Test that the CLI dispatches the lb-quote command to the run_lb_quote function."""
+    # Create a probe function to record calls
     called = {}
 
     def fake_run_lb_quote(tickers):
         called["tickers"] = tickers
         return 0
 
-    # 替换真实函数
+    # Replace the real function
     monkeypatch.setattr(cli, "run_lb_quote", fake_run_lb_quote)
 
-    # 模拟命令行参数
+    # Simulate command-line arguments
     test_args = ["prog", "lb-quote", "AAPL", "MSFT"]
     with patch.object(sys, "argv", test_args):
-        # 直接测试分发逻辑
+        # Directly test the dispatch logic
         result = cli.run_lb_quote(["AAPL", "MSFT"])
 
         assert result == 0
@@ -32,7 +32,7 @@ def test_cli_dispatch_lb_quote(monkeypatch):
 
 @pytest.mark.unit
 def test_cli_dispatch_lb_rebalance(monkeypatch):
-    """测试CLI将lb-rebalance命令分发到run_lb_rebalance函数。"""
+    """Test that the CLI dispatches the lb-rebalance command to the run_lb_rebalance function."""
     called = {}
 
     def fake_run_lb_rebalance(input_file, account="main", dry_run=True, env="real"):
@@ -44,14 +44,14 @@ def test_cli_dispatch_lb_rebalance(monkeypatch):
 
     monkeypatch.setattr(cli, "run_lb_rebalance", fake_run_lb_rebalance)
 
-    # 测试默认参数
+    # Test with default arguments
     result = cli.run_lb_rebalance("test.xlsx")
     assert result == 0
     assert called["input_file"] == "test.xlsx"
     assert called["account"] == "main"
     assert called["dry_run"]
 
-    # 测试自定义参数
+    # Test with custom arguments
     result = cli.run_lb_rebalance("test2.xlsx", "account2", False)
     assert result == 0
     assert called["input_file"] == "test2.xlsx"
@@ -61,8 +61,8 @@ def test_cli_dispatch_lb_rebalance(monkeypatch):
 
 @pytest.mark.unit
 def test_main_command_routing():
-    """测试main函数的命令路由逻辑。"""
-    # 创建模拟的args对象
+    """Test the command routing logic of the main function."""
+    # Create a mock args object
     args = SimpleNamespace()
 
     with patch.object(cli, "create_parser") as mock_parser:
@@ -70,11 +70,11 @@ def test_main_command_routing():
             with patch.object(
                 cli, "run_lb_rebalance", return_value=0
             ) as mock_lb_rebalance:
-                # 模拟parser返回
+                # Mock the parser's return value
                 mock_parser_instance = Mock()
                 mock_parser.return_value = mock_parser_instance
 
-                # 测试lb-quote命令
+                # Test the lb-quote command
                 args.command = "lb-quote"
                 args.tickers = ["AAPL", "GOOGL"]
                 mock_parser_instance.parse_args.return_value = args
@@ -83,28 +83,28 @@ def test_main_command_routing():
                 assert result == 0
                 mock_lb_quote.assert_called_once_with(["AAPL", "GOOGL"])
 
-                # 重置mock
+                # Reset the mocks
                 mock_lb_quote.reset_mock()
                 mock_lb_rebalance.reset_mock()
 
-                # 测试lb-rebalance命令
+                # Test the lb-rebalance command
                 args.command = "lb-rebalance"
                 args.input_file = "portfolio.xlsx"
                 args.account = "test_account"
-                args.execute = False  # dry_run = True
+                args.execute = False  # This means dry_run = True
 
                 result = cli.main()
                 assert result == 0
-                # 断言前三个参数（第四个为 env='real'）
-                args, kwargs = mock_lb_rebalance.call_args
-                assert args[0] == "portfolio.xlsx"
-                assert args[1] == "test_account"
-                assert args[2] is True
+                # Assert the first three arguments (the fourth, env, defaults to 'real')
+                call_args, kwargs = mock_lb_rebalance.call_args
+                assert call_args[0] == "portfolio.xlsx"
+                assert call_args[1] == "test_account"
+                assert call_args[2] is True
 
 
 @pytest.mark.unit
 def test_main_no_command():
-    """测试没有提供命令时显示帮助信息。"""
+    """Test that help information is displayed when no command is provided."""
     args = SimpleNamespace()
     args.command = None
 
@@ -120,7 +120,7 @@ def test_main_no_command():
 
 @pytest.mark.unit
 def test_main_unknown_command():
-    """测试未知命令的处理。"""
+    """Test the handling of an unknown command."""
     args = SimpleNamespace()
     args.command = "unknown-command"
 
@@ -132,13 +132,13 @@ def test_main_unknown_command():
         with patch("builtins.print") as mock_print:
             result = cli.main()
             assert result == 1
-            mock_print.assert_called_with("未知命令：unknown-command", file=sys.stderr)
+            mock_print.assert_called_with("Unknown command: unknown-command", file=sys.stderr)
 
 
 @pytest.mark.unit
 def test_run_lb_quote_import_error(monkeypatch):
-    """测试run_lb_quote在导入错误时的处理。"""
-    # 模拟导入longport_client模块时的错误
+    """Test the handling of an ImportError in run_lb_quote."""
+    # Simulate an error when importing the longport_client module
     original_import = __builtins__["__import__"]
 
     def mock_import(name, *args, **kwargs):
@@ -150,7 +150,7 @@ def test_run_lb_quote_import_error(monkeypatch):
         with patch("builtins.print") as mock_print:
             result = cli.run_lb_quote(["AAPL"])
             assert result == 1
-            # 验证错误信息被打印
+            # Verify that the error message is printed
             assert any(
                 "longport" in str(call) or "LongPort" in str(call)
                 for call in mock_print.call_args_list
@@ -159,17 +159,17 @@ def test_run_lb_quote_import_error(monkeypatch):
 
 @pytest.mark.unit
 def test_run_lb_rebalance_file_not_found():
-    """测试run_lb_rebalance在文件不存在时的处理。"""
+    """Test the handling of a non-existent file in run_lb_rebalance."""
     with patch("builtins.print") as mock_print:
         result = cli.run_lb_rebalance("non_existent_file.xlsx")
         assert result == 1
-        # 验证错误信息被打印
-        assert any("文件不存在" in str(call) for call in mock_print.call_args_list)
+        # Verify that the error message is printed
+        assert any("File not found" in str(call) for call in mock_print.call_args_list)
 
 
 @pytest.mark.unit
 def test_app_function():
-    """测试app函数作为入口点。"""
+    """Test the app function as the entry point."""
     with patch.object(cli, "main", return_value=0) as mock_main:
         with patch.object(sys, "exit") as mock_exit:
             cli.app()

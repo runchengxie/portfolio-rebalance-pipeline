@@ -1,11 +1,11 @@
-"""AI结果解析的单元测试
+"""Unit tests for AI result parsing.
 
-测试AI模型输出的容错解析：
-- 格式烂尾的JSON处理
-- 尾随逗号和多余字符
-- 数组长度非10的情况
-- 字段缺失或类型错误
-- "十选十"硬性要求的验证
+Tests the fault-tolerant parsing of AI model output, including:
+- Handling of incomplete or malformed JSON.
+- Trailing commas and extraneous text.
+- Cases where the array length is not 10.
+- Missing fields or incorrect data types.
+- Validation of the "ten picks out of ten" hard requirement.
 """
 
 import json
@@ -18,10 +18,10 @@ from stock_analysis.ai_stock_pick import AIStockPick, parse_response_robust
 
 @pytest.mark.unit
 class TestAIStockPickModel:
-    """测试AIStockPick数据模型的验证"""
+    """Tests the validation of the AIStockPick data model."""
 
     def test_valid_stock_pick(self):
-        """测试有效的股票选择数据"""
+        """Tests with valid stock pick data."""
         valid_data = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
@@ -36,20 +36,20 @@ class TestAIStockPickModel:
         assert pick.reasoning == "Strong fundamentals and market position"
 
     def test_confidence_score_validation(self):
-        """测试置信度分数的验证（必须是1-10的整数）"""
+        """Tests the confidence score validation (must be an integer from 1 to 10)."""
         base_data = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
             "reasoning": "Test reasoning",
         }
 
-        # 有效分数
+        # Valid scores
         for score in [1, 5, 10]:
             data = {**base_data, "confidence_score": score}
             pick = AIStockPick(**data)
             assert pick.confidence_score == score
 
-        # 无效分数应该抛出验证错误
+        # Invalid scores should raise a validation error
         invalid_scores = [0, 11, -1, 5.5, "8", None]
         for score in invalid_scores:
             data = {**base_data, "confidence_score": score}
@@ -57,7 +57,7 @@ class TestAIStockPickModel:
                 AIStockPick(**data)
 
     def test_required_fields(self):
-        """测试必填字段验证"""
+        """Tests the validation of required fields."""
         complete_data = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
@@ -65,7 +65,7 @@ class TestAIStockPickModel:
             "reasoning": "Strong fundamentals",
         }
 
-        # 测试每个字段都是必需的
+        # Test that each field is required
         for field in complete_data.keys():
             incomplete_data = {k: v for k, v in complete_data.items() if k != field}
             with pytest.raises(Exception):  # Pydantic ValidationError
@@ -74,10 +74,10 @@ class TestAIStockPickModel:
 
 @pytest.mark.unit
 class TestJSONParsingRobustness:
-    """测试JSON解析的健壮性"""
+    """Tests the robustness of JSON parsing."""
 
     def test_perfect_json_parsing(self):
-        """测试完美JSON的解析"""
+        """Tests parsing of a perfectly formatted JSON."""
         perfect_json = """[
             {
                 "ticker": "AAPL",
@@ -93,7 +93,7 @@ class TestJSONParsingRobustness:
             }
         ]"""
 
-        # 模拟response对象
+        # Simulate a response object
         response = SimpleNamespace()
         response.text = perfect_json
         response.parsed = None
@@ -107,7 +107,7 @@ class TestJSONParsingRobustness:
         assert result[1].ticker == "MSFT"
 
     def test_trailing_comma_json(self):
-        """测试带尾随逗号的JSON"""
+        """Tests JSON with a trailing comma."""
         trailing_comma_json = """[
             {
                 "ticker": "AAPL",
@@ -121,12 +121,12 @@ class TestJSONParsingRobustness:
         response.text = trailing_comma_json
         response.parsed = None
 
-        # 标准JSON解析应该失败，函数应该返回None
+        # Standard JSON parsing would fail; the robust function should return None.
         result = parse_response_robust(response)
         assert result is None
 
     def test_malformed_json_with_extra_text(self):
-        """测试包含额外文本的格式错误JSON"""
+        """Tests malformed JSON that includes extra text before or after."""
         malformed_json = """Here are my stock picks:
         [
             {
@@ -147,7 +147,7 @@ class TestJSONParsingRobustness:
         assert result is None
 
     def test_incomplete_json(self):
-        """测试不完整的JSON（突然截断）"""
+        """Tests incomplete JSON (abruptly truncated)."""
         incomplete_json = """[
             {
                 "ticker": "AAPL",
@@ -163,7 +163,7 @@ class TestJSONParsingRobustness:
         assert result is None
 
     def test_non_array_json(self):
-        """测试非数组格式的JSON"""
+        """Tests JSON that is not in an array format at the root."""
         non_array_json = """{
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
@@ -179,7 +179,7 @@ class TestJSONParsingRobustness:
         assert result is None
 
     def test_empty_response(self):
-        """测试空响应"""
+        """Tests an empty response."""
         response = SimpleNamespace()
         response.text = ""
         response.parsed = None
@@ -188,7 +188,7 @@ class TestJSONParsingRobustness:
         assert result is None
 
     def test_null_response(self):
-        """测试null响应"""
+        """Tests a null response."""
         response = SimpleNamespace()
         response.text = None
         response.parsed = None
@@ -199,10 +199,10 @@ class TestJSONParsingRobustness:
 
 @pytest.mark.unit
 class TestTenStockRequirement:
-    """测试"十选十"硬性要求"""
+    """Tests the strict requirement of exactly ten stock picks."""
 
     def test_exactly_ten_stocks_valid(self):
-        """测试恰好10只股票的有效情况"""
+        """Tests a valid case with exactly 10 stocks."""
         ten_stocks_data = []
         for i in range(10):
             ten_stocks_data.append(
@@ -228,7 +228,7 @@ class TestTenStockRequirement:
             assert pick.ticker == f"STOCK{i + 1}"
 
     def test_less_than_ten_stocks(self):
-        """测试少于10只股票的情况"""
+        """Tests a case with fewer than 10 stocks."""
         five_stocks_data = []
         for i in range(5):
             five_stocks_data.append(
@@ -247,12 +247,12 @@ class TestTenStockRequirement:
 
         result = parse_response_robust(response)
 
-        # 解析成功但数量不对
+        # Parsing succeeds, but the count is incorrect.
         assert result is not None
-        assert len(result) == 5  # 应该检测到数量不符合要求
+        assert len(result) == 5  # The caller should validate this count.
 
     def test_more_than_ten_stocks(self):
-        """测试超过10只股票的情况"""
+        """Tests a case with more than 10 stocks."""
         fifteen_stocks_data = []
         for i in range(15):
             fifteen_stocks_data.append(
@@ -271,21 +271,21 @@ class TestTenStockRequirement:
 
         result = parse_response_robust(response)
 
-        # 解析成功但数量不对
+        # Parsing succeeds, but the count is incorrect.
         assert result is not None
-        assert len(result) == 15  # 应该检测到数量不符合要求
+        assert len(result) == 15  # The caller should validate this count.
 
 
 @pytest.mark.unit
 class TestFieldValidationEdgeCases:
-    """测试字段验证的边界情况"""
+    """Tests edge cases for field validation."""
 
     def test_missing_fields_in_json(self):
-        """测试JSON中缺少字段的情况"""
+        """Tests a case where fields are missing in the JSON."""
         incomplete_stock = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
-            # 缺少 confidence_score 和 reasoning
+            # Missing confidence_score and reasoning
         }
 
         json_text = json.dumps([incomplete_stock])
@@ -293,16 +293,16 @@ class TestFieldValidationEdgeCases:
         response.text = json_text
         response.parsed = None
 
-        # 应该在创建AIStockPick对象时失败
+        # Should fail during the creation of the AIStockPick object.
         result = parse_response_robust(response)
         assert result is None
 
     def test_wrong_field_types(self):
-        """测试字段类型错误的情况"""
+        """Tests a case with incorrect field types."""
         wrong_type_stock = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
-            "confidence_score": "eight",  # 应该是整数
+            "confidence_score": "eight",  # Should be an integer
             "reasoning": "Good company",
         }
 
@@ -315,9 +315,9 @@ class TestFieldValidationEdgeCases:
         assert result is None
 
     def test_empty_string_fields(self):
-        """测试空字符串字段"""
+        """Tests fields with empty strings."""
         empty_fields_stock = {
-            "ticker": "",  # 空ticker
+            "ticker": "",  # Empty ticker
             "company_name": "Apple Inc.",
             "confidence_score": 8,
             "reasoning": "",
@@ -328,14 +328,15 @@ class TestFieldValidationEdgeCases:
         response.text = json_text
         response.parsed = None
 
-        # 根据模型定义，空字符串可能是有效的，但业务逻辑上不合理
+        # According to the model definition, an empty string might be valid,
+        # but this may not be desirable for the business logic.
         result = parse_response_robust(response)
         if result is not None:
             assert len(result) == 1
             assert result[0].ticker == ""
 
     def test_null_fields_in_json(self):
-        """测试JSON中null字段"""
+        """Tests null fields in the JSON."""
         null_fields_stock = {
             "ticker": "AAPL",
             "company_name": None,
@@ -348,17 +349,18 @@ class TestFieldValidationEdgeCases:
         response.text = json_text
         response.parsed = None
 
+        # Null fields for required string/int types should cause validation to fail.
         result = parse_response_robust(response)
-        assert result is None  # null字段应该导致验证失败
+        assert result is None
 
 
 @pytest.mark.unit
 class TestResponseObjectVariations:
-    """测试不同response对象格式的处理"""
+    """Tests handling of different response object variations."""
 
     def test_response_with_parsed_attribute(self):
-        """测试有parsed属性的response"""
-        # 创建模拟的已解析对象
+        """Tests a response object that has a pre-populated 'parsed' attribute."""
+        # Create a mock list of already parsed objects.
         parsed_picks = [
             AIStockPick(
                 ticker="AAPL",
@@ -370,7 +372,7 @@ class TestResponseObjectVariations:
 
         response = SimpleNamespace()
         response.parsed = parsed_picks
-        response.text = "some text"
+        response.text = "some text that should be ignored"
 
         result = parse_response_robust(response)
 
@@ -379,7 +381,7 @@ class TestResponseObjectVariations:
         assert result[0].ticker == "AAPL"
 
     def test_response_with_empty_parsed(self):
-        """测试parsed为空但text有内容的response"""
+        """Tests a response where 'parsed' is empty but 'text' has valid content."""
         valid_json = """[
             {
                 "ticker": "MSFT",
@@ -390,7 +392,7 @@ class TestResponseObjectVariations:
         ]"""
 
         response = SimpleNamespace()
-        response.parsed = None  # 或者 []
+        response.parsed = None  # or []
         response.text = valid_json
 
         result = parse_response_robust(response)
@@ -400,25 +402,25 @@ class TestResponseObjectVariations:
         assert result[0].ticker == "MSFT"
 
     def test_response_without_attributes(self):
-        """测试缺少属性的response对象"""
+        """Tests a response object missing 'parsed' and 'text' attributes."""
         response = SimpleNamespace()
-        # 既没有parsed也没有text
+        # Has neither 'parsed' nor 'text'
 
         result = parse_response_robust(response)
         assert result is None
 
     def test_response_parsing_exception(self):
-        """测试解析过程中的异常处理"""
+        """Tests exception handling during the parsing process."""
 
-        # 创建一个会导致异常的response对象
+        # Create a response object whose properties raise an exception.
         class BadResponse:
             @property
             def parsed(self):
-                raise Exception("Parsing error")
+                raise Exception("Forced parsing error")
 
             @property
             def text(self):
-                return "some text"
+                raise Exception("Forced text access error")
 
         response = BadResponse()
         result = parse_response_robust(response)
