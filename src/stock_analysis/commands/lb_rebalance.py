@@ -52,6 +52,7 @@ def run_lb_rebalance(
         file_path = Path(input_file)
         if not file_path.exists():
             logger.error(f"文件不存在: {input_file}")
+            print(f"File not found: {input_file}")
             return 1
 
         # Read target stock list (JSON targets or Excel latest sheet)

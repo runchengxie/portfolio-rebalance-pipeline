@@ -4,7 +4,6 @@ Handles command logic for stock quote queries.
 """
 
 from ..renderers.table import render_quotes
-from ..services.account_snapshot import get_quotes
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,6 +20,16 @@ def run_lb_quote(tickers: list[str]) -> int:
         int: Exit code (0 indicates success)
     """
     try:
+        # Explicitly import LongPort client module so tests can simulate ImportError
+        __import__("stock_analysis.broker.longport_client")
+        from ..services.account_snapshot import get_quotes
+    except ImportError as e:  # pragma: no cover - exercised in tests
+        logger.error(f"无法导入LongPort模块: {e}")
+        print(f"LongPort module import error: {e}")
+        print("请确保已安装 longport 包：pip install longport")
+        return 1
+
+    try:
         logger.info(f"正在获取 {', '.join(tickers)} 的实时报价... (REAL)")
 
         # Get quote data
@@ -32,10 +41,9 @@ def run_lb_quote(tickers: list[str]) -> int:
         print(output)
 
         return 0
-
     except ImportError as e:
         logger.error(f"无法导入LongPort模块: {e}")
-        logger.error("请确保已安装 longport 包：pip install longport")
+        print(f"LongPort module import error: {e}")
         return 1
     except Exception as e:
         logger.error(f"获取报价失败：{e}")
