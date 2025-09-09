@@ -30,6 +30,30 @@ from stock_analysis.ai_stock_pick import (
     create_key_pool,
 )
 
+class FakeTime:
+    """Utility class to simulate time progression in tests."""
+
+    def __init__(self, start: float = 0.0) -> None:
+        self.current = start
+
+    def time(self) -> float:
+        return self.current
+
+    def sleep(self, seconds: float) -> None:
+        self.current += seconds
+
+    def monotonic(self) -> float:
+        return self.current
+
+@pytest.fixture
+def fake_time(monkeypatch) -> "FakeTime":
+    """Fixture patching time functions with a controllable clock."""
+    ft = FakeTime()
+    monkeypatch.setattr(time, "time", ft.time)
+    monkeypatch.setattr(time, "sleep", ft.sleep)
+    monkeypatch.setattr(time, "monotonic", ft.monotonic)
+    return ft
+
 
 class TestRateLimiter:
     """Tests for the sliding window rate limiter."""
@@ -54,7 +78,7 @@ class TestRateLimiter:
         # The 4th call should be rejected because the limit has been reached.
         assert not limiter.allow()
 
-    def test_sliding_window_behavior(self):
+    def test_sliding_window_behavior(self, fake_time):
         """Tests the sliding window behavior."""
         limiter = RateLimiter(max_calls=2, per_seconds=1)  # Max 2 calls per second
 
@@ -71,7 +95,7 @@ class TestRateLimiter:
         # Now, a new call should be allowed because the old records have expired.
         assert limiter.allow()
 
-    def test_wait_method(self):
+    def test_wait_method(self, fake_time):
         """Tests the `wait` method, which should block until a call is allowed."""
         limiter = RateLimiter(max_calls=1, per_seconds=1)
 
@@ -88,7 +112,7 @@ class TestRateLimiter:
         elapsed = time.time() - start_time
         assert elapsed >= 0.9  # Allow for some timing inaccuracy.
 
-    def test_cleanup_old_calls(self):
+    def test_cleanup_old_calls(self, fake_time):
         """Tests the cleanup of expired call records."""
         limiter = RateLimiter(max_calls=5, per_seconds=1)
 
@@ -139,7 +163,7 @@ class TestCircuit:
         assert circuit.failures == 2
         assert not circuit.allow()  # The circuit is now open and should block requests.
 
-    def test_cooldown_period(self):
+    def test_cooldown_period(self, fake_time):
         """Tests the behavior during the cooldown period."""
         circuit = Circuit(fail_threshold=1, cooldown=1)
 
@@ -166,15 +190,15 @@ class TestCircuit:
         circuit.record_success()
         assert circuit.failures == 0
 
-    def test_multiple_failures_extend_cooldown(self):
+    def test_multiple_failures_extend_cooldown(self, fake_time):
         """Tests that subsequent failures while the circuit is open extend the cooldown."""
         circuit = Circuit(fail_threshold=1, cooldown=1)
 
         # First failure opens the circuit and sets an `open_until` time.
-        time.time()
         circuit.record_failure()
         first_open_until = circuit.open_until
 
+        time.sleep(0.1)
         # Another failure should push the `open_until` time further into the future.
         circuit.record_failure()
         second_open_until = circuit.open_until
@@ -270,7 +294,7 @@ class TestKeyPool:
         acquired_slot = pool.acquire()
         assert acquired_slot == closed_slot
 
-    def test_skip_time_restricted_slots(self):
+    def test_skip_time_restricted_slots(self, fake_time):
         """Tests that the pool skips slots that are on a temporary cooldown."""
         future_time = time.time() + 60
         restricted_slot = self.create_mock_slot(
@@ -283,24 +307,24 @@ class TestKeyPool:
         acquired_slot = pool.acquire()
         assert acquired_slot == available_slot
 
-    def test_project_cooldown(self):
+    def test_project_cooldown(self, fake_time, monkeypatch):
         """Tests the project-level cooldown (affects all keys)."""
         slot = self.create_mock_slot("key1")
         pool = KeyPool([slot])
 
-        # Set a project-level cooldown period.
+        # Set a project-level cooldown period and apply it to the slot.
         pool.project_cooldown_until = time.time() + 60
+        slot.next_ok_at = pool.project_cooldown_until
 
-        # The acquire method should wait until the cooldown is over.
-        with patch("time.sleep") as mock_sleep:
-            # Simulate time passing to get past the cooldown.
-            with patch("time.time", side_effect=[time.time(), time.time() + 61]):
-                acquired_slot = pool.acquire()
-                assert acquired_slot == slot
-                # Verify that `time.sleep` was called to wait.
-                mock_sleep.assert_called()
+        spy_sleep = Mock(side_effect=fake_time.sleep)
+        monkeypatch.setattr(time, "sleep", spy_sleep)
 
-    def test_report_success(self):
+        acquired_slot = pool.acquire()
+        assert acquired_slot == slot
+        # Verify that `time.sleep` was called to wait.
+        assert spy_sleep.called
+
+    def test_report_success(self, fake_time):
         """Tests reporting a successful API call."""
         slot = self.create_mock_slot("key1")
         # Mock the success method on the circuit breaker
@@ -326,7 +350,7 @@ class TestKeyPool:
         # The slot should now be marked as dead.
         assert slot.dead
 
-    def test_report_failure_429(self):
+    def test_report_failure_429(self, fake_time):
         """Tests reporting a 429 error, which should trigger a project-level cooldown."""
         slot = self.create_mock_slot("key1")
         pool = KeyPool([slot])
@@ -338,7 +362,7 @@ class TestKeyPool:
         # A project-level cooldown should be set.
         assert pool.project_cooldown_until > time.time()
 
-    def test_report_failure_other_errors(self):
+    def test_report_failure_other_errors(self, fake_time):
         """Tests reporting other errors, which should be handled by the circuit breaker."""
         slot = self.create_mock_slot("key1")
         # Mock the failure method on the circuit breaker
@@ -432,7 +456,7 @@ class TestCallWithPool:
         assert mock_pool.report_failure.call_count == 3
         mock_pool.report_success.assert_not_called()
 
-    def test_exponential_backoff(self):
+    def test_exponential_backoff(self, fake_time, monkeypatch):
         """Tests that the delay between retries increases exponentially."""
         mock_pool, mock_slot = self.create_mock_pool()
 
@@ -442,12 +466,12 @@ class TestCallWithPool:
             call_times.append(time.time())
             raise Exception("Retry with backoff")
 
-        # Mock `time.sleep` to check the delay values.
-        with patch("time.sleep") as mock_sleep:
-            try:
-                call_with_pool(mock_pool, failing_call, max_retries=2)
-            except Exception:
-                pass  # An exception is expected.
+        mock_sleep = Mock(side_effect=fake_time.sleep)
+        monkeypatch.setattr(time, "sleep", mock_sleep)
+        try:
+            call_with_pool(mock_pool, failing_call, max_retries=2)
+        except Exception:
+            pass  # An exception is expected.
 
         # Verify sleep was called for each retry.
         assert mock_sleep.call_count == 2
@@ -719,7 +743,7 @@ class TestAIIntegrationScenarios:
                 # This is the expected outcome.
                 pass
 
-    def test_concurrent_key_pool_access(self):
+    def test_concurrent_key_pool_access(self, fake_time):
         """Tests concurrent access to the KeyPool from multiple threads."""
         # Create a real KeyPool for this test.
         mock_client = Mock()
