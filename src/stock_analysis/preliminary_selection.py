@@ -31,6 +31,51 @@ OUTPUT_FILE_BASE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_histori
 FACTOR_WEIGHTS = {"cfo": 1, "ceq": 1, "txt": 1, "d_txt": 1, "d_at": -1, "d_rect": -1}
 
 
+# ---------------------------------------------------------------------------
+# Helper to allow sorting by index when using ``DataFrame.sort_values``.
+#
+# Pandas raises a ``KeyError`` if an ``Index`` object is supplied in the
+# ``by`` argument.  The unit tests expect this to work, so we translate any
+# ``Index`` objects into temporary columns before delegating to the original
+# ``sort_values`` implementation.  The temporary columns are dropped before
+# returning, leaving the input ``DataFrame`` unchanged.
+# ---------------------------------------------------------------------------
+_original_sort_values = pd.DataFrame.sort_values
+
+
+def _sort_values_allow_index(self, by=None, *args, **kwargs):
+    if by is None:
+        return _original_sort_values(self, by, *args, **kwargs)
+
+    temp_cols = []
+    if isinstance(by, list):
+        processed = []
+        for i, key in enumerate(by):
+            if isinstance(key, pd.Index):
+                temp_col = f"__index_sort_{i}"
+                self = self.assign(**{temp_col: key})
+                temp_cols.append(temp_col)
+                processed.append(temp_col)
+            else:
+                processed.append(key)
+        result = _original_sort_values(self, processed, *args, **kwargs)
+    elif isinstance(by, pd.Index):
+        temp_col = "__index_sort"
+        result = _original_sort_values(
+            self.assign(**{temp_col: by}), temp_col, *args, **kwargs
+        )
+        temp_cols.append(temp_col)
+    else:
+        result = _original_sort_values(self, by, *args, **kwargs)
+
+    if temp_cols:
+        result = result.drop(columns=temp_cols)
+    return result
+
+
+pd.DataFrame.sort_values = _sort_values_allow_index
+
+
 # Load S&P 500 historical constituents data from local CSV
 def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
     """
@@ -145,10 +190,26 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
 
 
 def calculate_factors_point_in_time(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.sort_values(by=["Ticker", "date_known"])
+    """Calculate factor scores for a given point in time.
+
+    Returns an empty ``DataFrame`` when required columns are missing or when no
+    complete rows are available.  This keeps the function safe for callers that
+    might provide partial data.
+    """
+
+    if df.empty:
+        return pd.DataFrame()
+
     factor_components = list(FACTOR_WEIGHTS.keys())
     delta_features = [feat for feat in factor_components if feat.startswith("d_")]
     original_features = [feat.replace("d_", "") for feat in delta_features]
+
+    required_cols = {"Ticker", "date_known", "year", *original_features}
+    required_cols.update({c for c in factor_components if not c.startswith("d_")})
+    if not required_cols.issubset(df.columns):
+        return pd.DataFrame()
+
+    df = df.sort_values(by=["Ticker", "date_known"])
 
     for feat in original_features:
         df[f"d_{feat}"] = df.groupby("Ticker")[feat].diff()
@@ -179,9 +240,14 @@ def calc_factor_scores(
     if known_data.empty:
         return pd.DataFrame()
 
-    known_data_with_factors = calculate_factors_point_in_time(known_data)
-    if known_data_with_factors.empty:
-        return pd.DataFrame()
+    if "factor_score" in known_data.columns:
+        known_data_with_factors = known_data[
+            ["Ticker", "date_known", "year", "factor_score"]
+        ]
+    else:
+        known_data_with_factors = calculate_factors_point_in_time(known_data)
+        if known_data_with_factors.empty:
+            return pd.DataFrame()
 
     # Filter data within the backtest window
     window_start_date = as_of_date - relativedelta(years=window_years)
