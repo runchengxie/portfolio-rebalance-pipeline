@@ -6,8 +6,6 @@ Handles command logic for position adjustments.
 from pathlib import Path
 
 from ..renderers.diff import render_rebalance_diff
-from ..services.account_snapshot import get_account_snapshot, get_quotes
-from ..services.rebalancer import RebalanceService
 from ..utils.excel import read_latest_sheet_tickers
 from ..utils.logging import get_logger
 from ..utils.targets import read_targets_json
@@ -57,6 +55,10 @@ def run_lb_rebalance(
             logger.error(f"文件不存在: {input_file}")
             print(f"File not found: {input_file}")
             return 1
+
+        # Import heavy dependencies lazily after basic validation
+        from ..services.account_snapshot import get_account_snapshot, get_quotes
+        from ..services.rebalancer import RebalanceService
 
         # Read target stock list (JSON targets or Excel latest sheet)
         try:

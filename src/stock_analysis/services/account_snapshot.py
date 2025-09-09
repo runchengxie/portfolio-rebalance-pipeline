@@ -3,7 +3,12 @@
 Provides business logic for account snapshots, returning structured data.
 """
 
-from ..broker.longport_client import LongPortClient
+from __future__ import annotations
+
+try:
+    from ..broker.longport_client import LongPortClient
+except ImportError:  # pragma: no cover - allow tests without LongPort dependencies
+    LongPortClient = None  # type: ignore
 from ..models import AccountSnapshot, Position, Quote
 from ..utils.fx import to_usd
 from ..utils.logging import get_logger
@@ -31,6 +36,10 @@ def get_account_snapshot(
     try:
         created_here = False
         if client is None:
+            if LongPortClient is None:  # pragma: no cover - guards missing dependency
+                raise ImportError(
+                    "LongPort client library is not installed"
+                )
             client = LongPortClient(env=env)
             created_here = True
         cash_usd, stock_position_map, net_assets, base_ccy = client.portfolio_snapshot()
@@ -123,6 +132,8 @@ def get_quotes(
     try:
         created_here = False
         if client is None:
+            if LongPortClient is None:  # pragma: no cover
+                raise ImportError("LongPort client library is not installed")
             client = LongPortClient()
             created_here = True
         quote_data = client.quote_last(symbols)
