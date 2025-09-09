@@ -106,7 +106,7 @@ def _load_csv_in_chunks(
     ):
         if "Ticker" in df.columns:
             df["Ticker"] = tidy_ticker(df["Ticker"])
-            df = df.dropna(subset=["Ticker"])
+            df.dropna(subset=["Ticker"], inplace=True)
 
         # Financial statement field renaming logic
         if table in {"balance_sheet", "cash_flow", "income"}:
@@ -137,7 +137,12 @@ def _load_csv_in_chunks(
 
             df = df.drop_duplicates(subset=["Ticker", "Date"], keep="last")
 
-        df.to_sql(table, con, if_exists="replace" if first else "append", index=False)
+        df.to_sql(
+            table,
+            con=con,
+            if_exists="replace" if first else "append",
+            index=False,
+        )
         first = False
         rows += len(df)
     return rows
@@ -160,17 +165,21 @@ def main(
         date_start: Optional start date (YYYY-MM-DD) for price import
         date_end: Optional end date (YYYY-MM-DD) for price import
     """
-    print(f"Creating SQLite database at: {DB_PATH}")
-    with sqlite3.connect(DB_PATH) as con:
+    # Allow patching of DATA_DIR/DB_PATH with callables in tests
+    data_dir = DATA_DIR() if callable(DATA_DIR) else DATA_DIR
+    db_path = DB_PATH() if callable(DB_PATH) else DB_PATH
+
+    print(f"Creating SQLite database at: {db_path}")
+    with sqlite3.connect(db_path) as con:
         _fast_pragmas(con, fast=True)
 
         # Financial statement data
         if not only_prices:
             print("Processing financial statements...")
             files = {
-                "balance_sheet": DATA_DIR / "us-balance-ttm.csv",
-                "cash_flow": DATA_DIR / "us-cashflow-ttm.csv",
-                "income": DATA_DIR / "us-income-ttm.csv",
+                "balance_sheet": data_dir / "us-balance-ttm.csv",
+                "cash_flow": data_dir / "us-cashflow-ttm.csv",
+                "income": data_dir / "us-income-ttm.csv",
             }
 
             # Define data types to reduce SQLite type inference overhead
@@ -192,12 +201,16 @@ def main(
             print("Skipping price data import due to SKIP_PRICES=1")
         else:
             print("Processing price data...")
-            price_csv = DATA_DIR / "us-shareprices-daily.csv"
+            price_csv = data_dir / "us-shareprices-daily.csv"
             # Schema file (prefer schema_prices.sql, compatible with old schema.sql) located in project root
-            sql_dir = DATA_DIR.parent / "sql"
+            sql_dir = data_dir.parent / "sql"
             preferred = sql_dir / "schema_prices.sql"
             fallback = sql_dir / "schema.sql"
             schema_sql = preferred if preferred.exists() else fallback
+            if not schema_sql.exists():
+                alt_schema = data_dir.parent / "schema.sql"
+                if alt_schema.exists():
+                    schema_sql = alt_schema
 
             if price_csv.exists():
                 # Check file size, prioritize CLI import for large files
@@ -224,7 +237,7 @@ def main(
                 if not has_filters and _check_sqlite3_cli() and schema_sql.exists():
                     print("    - SQLite CLI available, attempting fast import...")
                     cli_success = _import_prices_with_cli(
-                        price_csv, DB_PATH, schema_sql
+                        price_csv, db_path, schema_sql
                     )
 
                 if not cli_success:
