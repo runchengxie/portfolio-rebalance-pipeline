@@ -21,6 +21,9 @@ def run_lb_quote(tickers: list[str]) -> int:
         int: Exit code (0 indicates success)
     """
     try:
+        # Validate LongPort dependency early so tests can patch import
+        __import__("stock_analysis.broker.longport_client")
+
         logger.info(f"正在获取 {', '.join(tickers)} 的实时报价... (REAL)")
 
         # Get quote data
@@ -36,7 +39,11 @@ def run_lb_quote(tickers: list[str]) -> int:
     except ImportError as e:
         logger.error(f"无法导入LongPort模块: {e}")
         logger.error("请确保已安装 longport 包：pip install longport")
+        # Print messages to help tests and users
         print(f"Error importing LongPort module: {e}")
+        print(
+            "Please ensure the 'longport' package is installed: pip install longport"
+        )
         return 1
     except Exception as e:
         logger.error(f"获取报价失败：{e}")
