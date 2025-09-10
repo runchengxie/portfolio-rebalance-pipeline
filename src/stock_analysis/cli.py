@@ -368,7 +368,15 @@ def main() -> int:
                 kwargs["log_level"] = args.log_level
             return run_backtest(args.strategy, getattr(args, "config", None), **kwargs)
         elif args.command == "load-data":
-            return run_load_data(getattr(args, "data_dir", None))
+            # Pass through all supported options to the loader
+            return run_load_data(
+                getattr(args, "data_dir", None),
+                skip_prices=getattr(args, "skip_prices", False),
+                only_prices=getattr(args, "only_prices", False),
+                tickers_file=getattr(args, "tickers_file", None),
+                date_start=getattr(args, "date_start", None),
+                date_end=getattr(args, "date_end", None),
+            )
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
 

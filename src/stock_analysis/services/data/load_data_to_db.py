@@ -64,12 +64,12 @@ def _import_prices_with_cli(csv_path: Path, db_path: Path, schema_path: Path) ->
     try:
         print("    - Using SQLite CLI for fast import...")
 
-        # Build SQLite commands
+        # Build SQLite commands (use CSV mode with semicolon separator)
         indexes_path = schema_path.parent / "indexes_prices.sql"
         commands = [
             f".read {schema_path.as_posix()}",
+            ".mode csv",
             ".separator ;",
-            ".mode ascii",
             f".import --skip 1 {csv_path.as_posix()} share_prices",
         ]
         if indexes_path.exists():
