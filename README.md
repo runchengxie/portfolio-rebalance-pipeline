@@ -16,22 +16,22 @@
 ==================================================
 Time Period Covered:     2016-10-04 to 2025-08-31
 Initial Portfolio Value: $1,000,000.00
-Final Portfolio Value:   $4,071,358.78
+Final Portfolio Value:   $4,649,106.03
 --------------------------------------------------
-Total Return:            140.40%
-Annualized Return:       10.35%
-Max Drawdown:            25.57%
+Total Return:            153.67%
+Annualized Return:       11.02%
+Max Drawdown:            25.59%
 ==================================================
 
 ==================================================
        SPY Benchmark Results (Total Return)
 ==================================================
-Time Period Covered:     2016-10-04 to 2025-07-02
+Time Period Covered:     2016-10-04 to 2025-08-29
 Initial Portfolio Value: $1,000,000.00
-Final Portfolio Value:   $3,282,875.08
+Final Portfolio Value:   $3,411,410.08
 --------------------------------------------------
-Total Return:            118.87%
-Annualized Return:       9.37%
+Total Return:            122.71%
+Annualized Return:       9.41%
 Max Drawdown:            33.23%
 ==================================================
 ```

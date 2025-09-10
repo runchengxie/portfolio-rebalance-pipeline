@@ -139,10 +139,12 @@ class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
                 cash = position.size * dividend_value
                 self.log(f"Dividend received for {data._name}: {cash:.2f}")
                 self.broker.add_cash(cash)
-                # Recommended default: accrue dividends as cash.
-                # Reinvestment happens naturally on scheduled rebalancing.
-                if hasattr(self, "order_target_percent"):
-                    self.order_target_percent(target=self.p.target_percent)
+                # Recommended default: accrue dividends as cash. Reinvestment
+                # happens naturally during the next scheduled rebalancing for
+                # this strategy (equal-weight allocation). Do not attempt to
+                # maintain a global target percent here, because this strategy
+                # has no such parameter and calling ``order_target_percent``
+                # without a specific data target can raise errors.
 
         if self.next_rebalance_date and current_date >= self.next_rebalance_date:
             self.log(
