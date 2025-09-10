@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .logging import get_logger
+from ..logging import get_logger
 
 logger = get_logger(__name__)
 
