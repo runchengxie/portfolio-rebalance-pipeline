@@ -6,9 +6,9 @@ Handles command logic for position adjustments.
 from pathlib import Path
 
 from ..renderers.diff import render_rebalance_diff
-from ..utils.excel import read_latest_sheet_tickers
+from ..io.excel import read_latest_sheet_tickers
 from ..utils.targets import read_targets_json
-from ..utils.logging import get_logger
+from ..logging import get_logger
 
 logger = get_logger(__name__)
 

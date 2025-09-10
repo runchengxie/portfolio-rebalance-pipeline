@@ -16,7 +16,7 @@ from scipy.stats import zscore
 
 # --- Path Configuration ---
 try:
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+    PROJECT_ROOT = Path(__file__).resolve().parents[4]
 except NameError:
     PROJECT_ROOT = Path(".").resolve().parent
 

@@ -1,9 +1,9 @@
 import datetime
 
-from .backtest.engine import generate_report, run_benchmark_backtest
-from .backtest.prep import load_spy_data
-from .utils.config import get_backtest_period, get_initial_cash
-from .utils.paths import DB_PATH, OUTPUTS_DIR
+from ..engine import generate_report, run_benchmark_backtest
+from ..prep import load_spy_data
+from ...config import get_backtest_period, get_initial_cash
+from ...utils.paths import DB_PATH, OUTPUTS_DIR
 
 # --- Backtest Configuration ---
 SPY_TICKER = "SPY"

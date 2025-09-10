@@ -20,7 +20,7 @@ from backtrader.metabase import findowner
 # no ``Cerebro`` owner is found.
 from backtrader.strategy import MetaStrategy
 
-from ..utils.logging import StrategyLogger
+from ..logging import StrategyLogger
 from ..utils.paths import OUTPUTS_DIR
 from .prep import DividendPandasData
 
