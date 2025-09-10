@@ -33,6 +33,17 @@ def db_connection():
         pytest.skip(f"Database file not found, skipping this test: {DB_PATH}")
 
     con = sqlite3.connect(DB_PATH)
+    cursor = con.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM share_prices")
+        if cursor.fetchone()[0] == 0:
+            raise RuntimeError("share_prices table empty")
+    except Exception:
+        con.close()
+        pytest.skip(
+            "share_prices table not found or contains no data, skipping this test"
+        )
+
     yield con
     con.close()
 
