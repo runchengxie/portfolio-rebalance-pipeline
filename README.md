@@ -78,6 +78,9 @@ fractional_preview:
   default_step: 0.001
 ```
 
+> fractional_preview 功能用于在生成调仓计划时，预览如果支持碎股交易，理想的目标股数会是多少，以及当前整数股交易策略与理想状态的差异。
+
+
 ### 阶段一：数据准备与量化初筛
 
 1. 步骤 1：只导财报数据进sqlite数据库，跳过价格
@@ -403,6 +406,53 @@ fractional_preview:
 2. AI 决策: Gemini 模型根据上述框架，从20只候选股中筛选出它认为最具投资潜力的10只股票，并为每只股票提供一个置信度分数和详细的选股理由。
 
 3. 结构化输出: AI 的选股结果被解析为结构化的 JSON 数据，便于后续分析和回测。
+
+## 项目流程图
+
+```mermaid
+graph TD;
+    subgraph "阶段〇：数据准备"
+        A[("CSV 数据源<br/>(财务、价格、成分股)")] -->|执行| B{"stockq load-data /<br/>rebuild_db.sh"};
+        B -->|生成/更新| C[("SQLite 数据库<br/>financial_data.db")];
+    end
+
+    subgraph "阶段一：量化初筛"
+        C -->|读取财务数据| D{"stockq preliminary"};
+        D -->|生成| E(["初步候选池<br/>(JSON / Excel)"]);
+    end
+
+    subgraph "阶段二：AI 精选"
+        E -->|作为输入| F{"stockq ai-pick"};
+        F -- "调用 Gemini API" --> G(["AI 精选组合<br/>(JSON / Excel)"]);
+    end
+
+    subgraph "阶段三：策略应用"
+        subgraph "路径 A：回测 (验证策略有效性)"
+            G -->|用于回测| H{"stockq backtest ai"};
+            H -->|生成| I[("回测报告 & 图表")];
+        end
+        
+        subgraph "路径 B：实盘 (执行交易)"
+            G -->|1. 生成可编辑目标| J{"stockq targets gen"};
+            J -->|2. 生成| K(["<strong>Targets.json</strong><br/>(可手动编辑/审核)"]);
+            K -->|3. 作为输入| L{"stockq lb-rebalance"};
+            L -- "连接 LongPort API" --> M[("实盘交易")];
+        end
+    end
+
+    %% --- 样式定义 ---
+    %% 数据和产物节点
+    classDef dataNode fill:#e6f3ff,stroke:#0055cc,stroke-width:2px
+    class A,C,E,G,K dataNode;
+
+    %% 最终输出节点
+    classDef outputNode fill:#e6ffed,stroke:#006400,stroke-width:2px
+    class I,M outputNode;
+
+    %% 命令行节点
+    classDef commandNode fill:#fff2cc,stroke:#d6b656,stroke-width:2px
+    class B,D,F,H,J,L commandNode;
+```
 
 ## 项目结构
 
