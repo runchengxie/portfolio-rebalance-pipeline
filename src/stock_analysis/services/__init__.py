@@ -1,7 +1,7 @@
-"""服务层模块
+"""Service Layer Module
 
-这个包包含所有业务逻辑的纯函数和类。
-服务层函数只接收参数，返回结构化结果，不进行 I/O 操作或打印。
+This package contains all the pure functions and classes for business logic.
+Service layer functions only accept parameters and return structured results, they do not perform I/O operations or print.
 """
 
 from . import data, selection
