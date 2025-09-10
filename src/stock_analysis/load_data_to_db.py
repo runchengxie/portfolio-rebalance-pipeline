@@ -8,7 +8,16 @@ from pathlib import Path
 import pandas as pd
 
 # Use unified path configuration within the project
-from .utils.paths import DATA_DIR, DB_PATH  # ← 用已有模块，别重复造轮子
+from .utils.paths import (  # noqa: F401
+    DATA_DIR,
+    DB_PATH,
+)
+from .utils.paths import (
+    PROJECT_ROOT as _PROJECT_ROOT,
+)
+
+# Re-export project root for tests to patch
+PROJECT_ROOT = _PROJECT_ROOT
 
 
 def _resolve_path(path_candidate):
@@ -178,7 +187,6 @@ def main(
     """
     db_path: Path = _resolve_path(DB_PATH)
     data_dir: Path = _resolve_path(DATA_DIR)
-    
 
     print(f"Creating SQLite database at: {db_path}")
     with sqlite3.connect(db_path) as con:
