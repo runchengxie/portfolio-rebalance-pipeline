@@ -1,9 +1,10 @@
 """Tests for the database reading and data source preparation module.
 
 This file tests database-related functionalities, including:
-- load_spy_data and load_price_feeds: Raise errors if the database doesn't exist or is empty, 
-  fill null Dividend values, and ensure the returned index is 'Date'.
-- load_data_to_db: Confirm successful table creation, data insertion, and composite index creation.
+- load_spy_data and load_price_feeds: Raise errors if the database doesn't exist or
+  is empty, fill null Dividend values, and ensure the returned index is 'Date'.
+- load_data_to_db: Confirm successful table creation, data insertion, and composite
+  index creation.
 """
 
 import datetime
@@ -13,9 +14,10 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
-
 from stock_analysis.backtest.prep import load_price_feeds, load_spy_data
 from stock_analysis.load_data_to_db import main as load_data_main
+
+pytestmark = pytest.mark.integration
 
 
 class TestLoadSpyData:
@@ -155,7 +157,7 @@ class TestLoadSpyData:
         # Create data for multiple tickers
         con.execute("""
             CREATE TABLE share_prices (
-                Date TEXT, Ticker TEXT, Open REAL, High REAL, 
+                Date TEXT, Ticker TEXT, Open REAL, High REAL,
                 Low REAL, Close REAL, Volume INTEGER, Dividend REAL
             )
         """)
@@ -270,7 +272,7 @@ class TestLoadPriceFeeds:
         # Verify each ticker has a corresponding data feed
         for ticker in tickers:
             assert ticker in result
-            # Verify the data feed type (here we mainly check the structure, not backtrader's internals)
+            # Verify the data feed type (checking structure, not backtrader internals)
             assert hasattr(result[ticker], "dataname")
 
     def test_dividend_filling(self, tmp_path):
@@ -313,8 +315,26 @@ class TestLoadPriceFeeds:
         # Insert duplicate data
         test_data = [
             ("2022-01-03", "AAPL", 177.83, 182.88, 177.71, 182.01, 104487900, 0.0),
-            ("2022-01-03", "AAPL", 177.83, 182.88, 177.71, 182.01, 104487900, 0.0),  # Duplicate
-            ("2022-01-03", "AAPL", 178.00, 183.00, 178.00, 182.50, 105000000, 0.0),  # Same date, different data
+            (
+                "2022-01-03",
+                "AAPL",
+                177.83,
+                182.88,
+                177.71,
+                182.01,
+                104487900,
+                0.0,
+            ),  # Duplicate
+            (
+                "2022-01-03",
+                "AAPL",
+                178.00,
+                183.00,
+                178.00,
+                182.50,
+                105000000,
+                0.0,
+            ),  # Same date, different data
             ("2022-01-04", "AAPL", 182.63, 182.94, 179.12, 179.70, 99310400, 0.0),
         ]
 
@@ -339,7 +359,9 @@ class TestLoadPriceFeeds:
         # Verify that the last record was kept (keep='last')
         jan_3_data = aapl_data.loc[aapl_data.index.date == datetime.date(2022, 1, 3)]
         assert len(jan_3_data) == 1
-        assert jan_3_data["Close"].iloc[0] == 182.50  # Should be the value from the last record
+        assert (
+            jan_3_data["Close"].iloc[0] == 182.50
+        )  # Should be the value from the last record
 
 
 class TestLoadDataToDb:
@@ -352,10 +374,26 @@ class TestLoadDataToDb:
         data_dir.mkdir()
 
         # Create minimal test CSV files
-        balance_sheet_data = "Ticker;Total Assets;Total Liabilities;Publish Date;Fiscal Year\nAAPL;100000;50000;2022-01-01;2022\nMSFT;200000;80000;2022-01-01;2022"
-        cash_flow_data = "Ticker;Operating Cash Flow;Publish Date;Fiscal Year\nAAPL;50000;2022-01-01;2022\nMSFT;60000;2022-01-01;2022"
-        income_data = "Ticker;Revenue;Net Income;Publish Date;Fiscal Year\nAAPL;300000;80000;2022-01-01;2022\nMSFT;400000;90000;2022-01-01;2022"
-        price_data = "Date;Ticker;Open;High;Low;Close;Volume;Dividend\n2022-01-03;AAPL;177.83;182.88;177.71;182.01;104487900;0.0\n2022-01-03;MSFT;331.62;336.06;330.59;334.75;23454000;0.0"
+        balance_sheet_data = (
+            "Ticker;Total Assets;Total Liabilities;Publish Date;Fiscal Year\n"
+            "AAPL;100000;50000;2022-01-01;2022\n"
+            "MSFT;200000;80000;2022-01-01;2022"
+        )
+        cash_flow_data = (
+            "Ticker;Operating Cash Flow;Publish Date;Fiscal Year\n"
+            "AAPL;50000;2022-01-01;2022\n"
+            "MSFT;60000;2022-01-01;2022"
+        )
+        income_data = (
+            "Ticker;Revenue;Net Income;Publish Date;Fiscal Year\n"
+            "AAPL;300000;80000;2022-01-01;2022\n"
+            "MSFT;400000;90000;2022-01-01;2022"
+        )
+        price_data = (
+            "Date;Ticker;Open;High;Low;Close;Volume;Dividend\n"
+            "2022-01-03;AAPL;177.83;182.88;177.71;182.01;104487900;0.0\n"
+            "2022-01-03;MSFT;331.62;336.06;330.59;334.75;23454000;0.0"
+        )
 
         (data_dir / "us-balance-ttm.csv").write_text(balance_sheet_data)
         (data_dir / "us-cashflow-ttm.csv").write_text(cash_flow_data)
@@ -401,7 +439,9 @@ class TestLoadDataToDb:
                 assert index in indexes
 
             # Verify data was inserted correctly
-            balance_count = con.execute("SELECT COUNT(*) FROM balance_sheet").fetchone()[0]
+            balance_count = con.execute(
+                "SELECT COUNT(*) FROM balance_sheet"
+            ).fetchone()[0]
             assert balance_count == 2
 
             price_count = con.execute("SELECT COUNT(*) FROM share_prices").fetchone()[0]
@@ -409,7 +449,10 @@ class TestLoadDataToDb:
 
             # Verify ticker cleaning functionality
             tickers = [
-                row[0] for row in con.execute("SELECT DISTINCT Ticker FROM share_prices").fetchall()
+                row[0]
+                for row in con.execute(
+                    "SELECT DISTINCT Ticker FROM share_prices"
+                ).fetchall()
             ]
             assert "AAPL" in tickers
             assert "MSFT" in tickers
@@ -458,19 +501,29 @@ class TestLoadDataToDb:
                 )
             )
 
-        con.executemany("INSERT INTO share_prices VALUES (?, ?, ?, ?, ?, ?, ?, ?)", test_data)
+        con.executemany(
+            "INSERT INTO share_prices VALUES (?, ?, ?, ?, ?, ?, ?, ?)", test_data
+        )
 
         # Create index
-        con.execute("CREATE INDEX idx_prices_ticker_date ON share_prices (Ticker, Date)")
+        con.execute(
+            "CREATE INDEX idx_prices_ticker_date ON share_prices (Ticker, Date)"
+        )
         con.commit()
 
         # Verify index exists
-        indexes = [row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()]
+        indexes = [
+            row[0]
+            for row in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        ]
         assert "idx_prices_ticker_date" in indexes
 
         # Verify the query plan uses the index
         explain_result = con.execute(
-            "EXPLAIN QUERY PLAN SELECT * FROM share_prices WHERE Ticker = 'AAPL' AND Date = '2022-01-01'"
+            "EXPLAIN QUERY PLAN SELECT * FROM share_prices "
+            "WHERE Ticker = 'AAPL' AND Date = '2022-01-01'"
         ).fetchall()
 
         # The query plan should mention the use of the index
@@ -506,7 +559,9 @@ class TestDatabaseIntegration:
             ("2022-01-04", "MSFT", 334.15, 334.91, 329.93, 331.30, 37811700, 0.68),
         ]
 
-        con.executemany("INSERT INTO share_prices VALUES (?, ?, ?, ?, ?, ?, ?, ?)", test_data)
+        con.executemany(
+            "INSERT INTO share_prices VALUES (?, ?, ?, ?, ?, ?, ?, ?)", test_data
+        )
         con.commit()
         con.close()
 

@@ -3,6 +3,8 @@ from datetime import date, timedelta
 
 import pytest
 
+pytestmark = [pytest.mark.integration, pytest.mark.requires_api]
+
 # Try to import longport, skip all tests if it fails
 longport = pytest.importorskip("longport")
 
@@ -14,8 +16,6 @@ def check_longport_credentials():
     required_vars = ["LONGPORT_APP_KEY", "LONGPORT_APP_SECRET", "LONGPORT_ACCESS_TOKEN"]
     return all(os.getenv(var) for var in required_vars)
 
-
-@pytest.mark.integration
 @pytest.mark.skipif(
     not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
@@ -25,8 +25,6 @@ def test_get_config_from_env():
     assert config is not None
     # Do not directly check credential content, only verify successful creation of the config object
 
-
-@pytest.mark.integration
 @pytest.mark.skipif(
     not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
@@ -40,8 +38,6 @@ def test_longport_client_initialization():
     except Exception as e:
         pytest.fail(f"LongPortClient initialization failed: {e}")
 
-
-@pytest.mark.integration
 @pytest.mark.skipif(
     not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
@@ -81,8 +77,6 @@ def test_quote_last_real_api():
         else:
             pytest.fail(f"Failed to get quotes: {e}")
 
-
-@pytest.mark.integration
 @pytest.mark.skipif(
     not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
@@ -115,8 +109,6 @@ def test_candles_real_api():
         else:
             pytest.fail(f"Failed to get candlestick data: {e}")
 
-
-@pytest.mark.integration
 @pytest.mark.skipif(
     not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )
@@ -150,8 +142,6 @@ def test_symbol_conversion_integration():
                 # Other errors might require attention
                 pytest.fail(f"Error while testing {ticker}: {e}")
 
-
-@pytest.mark.integration
 @pytest.mark.skipif(
     not check_longport_credentials(), reason="LongPort API credentials are not configured, skipping integration tests"
 )

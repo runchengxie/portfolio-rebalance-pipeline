@@ -1,10 +1,12 @@
 """Tests for the core behavior of the backtesting engine module.
 
 Tests the core functionality of the backtesting engine in backtest.engine, including:
-- Rebalance date alignment: Rebalancing only on each rebalance day and holding until the start of the next quarter.
+- Rebalance date alignment: Rebalancing only on each rebalance day and holding until
+  the start of the next quarter.
 - Cash initialization and ensuring the cumulative value curve output is not empty.
 - Support for passing parameters for optional benchmark plotting.
-- Graceful degradation and logging warnings when there is no data or partial stock data is missing.
+- Graceful degradation and logging warnings when there is no data or partial
+  stock data is missing.
 """
 
 import datetime
@@ -12,9 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-
 bt = pytest.importorskip("backtrader")
-
 from stock_analysis.backtest.engine import (
     BuyAndHoldStrategy,
     PointInTimeStrategy,
@@ -22,6 +22,8 @@ from stock_analysis.backtest.engine import (
     run_benchmark_backtest,
     run_quarterly_backtest,
 )
+
+pytestmark = pytest.mark.integration
 
 
 class TestPointInTimeStrategy:
@@ -506,7 +508,9 @@ class TestGenerateReport:
         portfolio_value = self.create_test_portfolio_value()
 
         # Create benchmark data.
-        benchmark_value = self.create_test_portfolio_value() * 0.9  # Slightly lower benchmark performance.
+        benchmark_value = (
+            self.create_test_portfolio_value() * 0.9
+        )  # Slightly lower benchmark performance.
 
         generate_report(
             metrics=metrics,

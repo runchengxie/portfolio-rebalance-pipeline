@@ -1,12 +1,14 @@
-"""
-Module for Testing the Robustness of the AI Stock Picking Workflow (Pure Simulation, No Network Access)
+"""Module for testing robustness of the AI stock-picking workflow (simulation).
 
 This module tests the key components of the AI stock-picking workflow, including:
 - RateLimiter: A sliding window for request throttling.
 - Circuit: The open/closed logic of a circuit breaker.
-- KeyPool: Its ability to differentiate between permanently removing a key (for 401/403 errors) and applying a project-level cooldown (for 429 errors).
-- Simulation of `client.models.generate_content`: Tests timeouts, retry backoff, and state reset upon success.
-- Parsing Structured JSON: Validates required fields and handles exception branches.
+- KeyPool: Its ability to differentiate between permanently removing a key
+  (for 401/403 errors) and applying a project-level cooldown (for 429 errors).
+- Simulation of `client.models.generate_content`: Tests timeouts, retry
+  backoff, and state reset upon success.
+- Parsing Structured JSON: Validates required fields and handles exception
+  branches.
 """
 
 # Standard library imports
@@ -32,6 +34,9 @@ from stock_analysis.ai_stock_pick import (
     create_key_pool,
 )
 
+pytestmark = pytest.mark.integration
+
+
 class FakeTime:
     """Utility class to simulate time progression in tests."""
 
@@ -46,6 +51,7 @@ class FakeTime:
 
     def monotonic(self) -> float:
         return self.current
+
 
 @pytest.fixture
 def fake_time(monkeypatch) -> "FakeTime":
@@ -193,7 +199,7 @@ class TestCircuit:
         assert circuit.failures == 0
 
     def test_multiple_failures_extend_cooldown(self, fake_time):
-        """Tests that subsequent failures while the circuit is open extend the cooldown."""
+        """Tests repeated failures while circuit open extend cooldown."""
         circuit = Circuit(fail_threshold=1, cooldown=1)
 
         # First failure opens the circuit and sets an `open_until` time.
@@ -222,9 +228,11 @@ class TestKeySlot:
         assert slot.api_key == "api_key_123"
         assert slot.client == mock_client
         assert slot.limiter == mock_limiter
-        assert isinstance(slot.circuit, Circuit) # Each slot has its own circuit breaker.
-        assert not slot.dead # It should not be "dead" initially.
-        assert slot.next_ok_at == 0 # It should be available immediately.
+        assert isinstance(
+            slot.circuit, Circuit
+        )  # Each slot has its own circuit breaker.
+        assert not slot.dead  # It should not be "dead" initially.
+        assert slot.next_ok_at == 0  # It should be available immediately.
 
     def test_slot_states(self):
         """Tests the state management of a slot."""
@@ -353,7 +361,7 @@ class TestKeyPool:
         assert slot.dead
 
     def test_report_failure_429(self, fake_time):
-        """Tests reporting a 429 error, which should trigger a project-level cooldown."""
+        """Tests reporting a 429 error triggering a project-level cooldown."""
         slot = self.create_mock_slot("key1")
         pool = KeyPool([slot])
 
@@ -365,7 +373,7 @@ class TestKeyPool:
         assert pool.project_cooldown_until > time.time()
 
     def test_report_failure_other_errors(self, fake_time):
-        """Tests reporting other errors, which should be handled by the circuit breaker."""
+        """Tests reporting errors handled by the circuit breaker."""
         slot = self.create_mock_slot("key1")
         # Mock the failure method on the circuit breaker
         slot.circuit.record_failure = Mock()
@@ -382,9 +390,9 @@ class TestKeyPool:
 
 
 class TestCallWithPool:
-    """Tests the `call_with_pool` function, which orchestrates API calls using the KeyPool."""
+    """Tests `call_with_pool`, orchestrating API calls via KeyPool."""
 
-    def create_mock_pool(self, success_on_attempt: int = 1) -> Mock:
+    def create_mock_pool(self, success_on_attempt: int = 1) -> tuple[Mock, Mock]:
         """Helper to create a mock KeyPool for testing."""
         mock_pool = Mock()
         mock_slot = Mock()
@@ -480,7 +488,9 @@ class TestCallWithPool:
 
         # Verify the backoff time increases.
         sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
-        assert sleep_calls[0] < sleep_calls[1]  # The second delay is longer than the first.
+        assert (
+            sleep_calls[0] < sleep_calls[1]
+        )  # The second delay is longer than the first.
 
 
 class TestAIStockPick:
@@ -503,7 +513,7 @@ class TestAIStockPick:
         assert pick.reasoning == "Strong fundamentals and growth prospects"
 
     def test_confidence_score_validation(self):
-        """Tests the validation for the confidence_score field (must be between 1 and 10)."""
+        """Tests validation for confidence_score (must be between 1 and 10)."""
         base_data = {
             "ticker": "AAPL",
             "company_name": "Apple Inc.",
@@ -588,8 +598,8 @@ class TestCreateKeyPool:
     )
     @patch("stock_analysis.ai_stock_pick.genai.GenerativeModel")
     def test_create_pool_with_all_keys(self, mock_model):
-        """Tests creating a pool when all expected environment variable keys are present."""
-        mock_model.return_value = Mock() # Mock the AI model client.
+        """Tests creating a pool when all expected API key env vars are present."""
+        mock_model.return_value = Mock()  # Mock the AI model client.
 
         pool = create_key_pool()
 
@@ -692,13 +702,13 @@ class TestAIIntegrationScenarios:
         circuit_open_slot.name = "circuit_open_key"
         circuit_open_slot.dead = False
         circuit_open_slot.next_ok_at = 0
-        circuit_open_slot.circuit.allow.return_value = False # Circuit is open.
+        circuit_open_slot.circuit.allow.return_value = False  # Circuit is open.
 
         working_slot = Mock()
         working_slot.name = "working_key"
         working_slot.dead = False
         working_slot.next_ok_at = 0
-        working_slot.circuit.allow.return_value = True # Circuit is closed.
+        working_slot.circuit.allow.return_value = True  # Circuit is closed.
 
         # Simulate the pool's logic to find a working key.
         def mock_acquire():
