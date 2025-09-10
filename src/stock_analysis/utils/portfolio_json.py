@@ -16,7 +16,7 @@ import re
 
 import pandas as pd
 
-from .logging import get_logger
+from ..logging import get_logger
 from .paths import AI_PORTFOLIO_JSON_DIR
 
 logger = get_logger(__name__)
@@ -121,4 +121,3 @@ def find_ai_json_for_date(asof: str, root: Path | None = None) -> Optional[Path]
         if fp.stem == asof:
             return fp
     return None
-

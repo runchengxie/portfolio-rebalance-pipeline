@@ -40,7 +40,7 @@ strategy_full_project_source.txt
 !.vscode/tasks.json
 
 # Codex CLI
-AGENTS.md
+# AGENTS.md
 
 # Environment variables
 .env
