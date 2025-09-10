@@ -1,36 +1,46 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Source: `src/stock_analysis/` — CLI (`cli.py`); strategies (`preliminary_selection.py`, `ai_stock_pick.py`); backtests (`backtest_*`); broker (`broker/`); plus `services/`, `renderers/`, and `utils/`.
-- Config: copy `config/template.yaml` to `config/config.yaml` before running.
-- Data: `data/` for CSVs and `financial_data.db`; outputs in `outputs/`.
-- Tests: `tests/` with `unit/`, `integration/`, and `e2e/`; markers set in `pyproject.toml`.
+- Source: `src/stock_analysis/`
+  - CLI: `cli.py`, subcommands in `commands/`
+  - Strategies & engine: `backtest/` (engine, prep, strategies)
+  - Data loading: `services/data/`
+  - AI selection: `services/selection/`
+  - Broker: `broker/` (LongPort client and stubs)
+  - Utilities: `utils/`, `logging/`, `io/`, `renderers/`, `config/`
+- Data & outputs: `data/` (CSVs, DB), `outputs/` (charts, JSON, logs)
+- Tests: `tests/` with `unit/`, `integration/`, `e2e/`
 
 ## Build, Test, and Development Commands
-- Install (dev): `uv sync --extra dev` or `pip install -e .`.
-- Pre-commit: `pre-commit install && pre-commit run -a`.
-- Lint/format: `ruff --fix .` then `ruff format .`.
-- Type-check: `mypy src`.
-- Test: `pytest --cov=stock_analysis` (≥ 75% coverage); suites: `pytest -m unit` or `pytest -m integration -o addopts=`.
-- CLI: `stockq load-data`, `stockq preliminary`, `stockq ai-pick`, `stockq backtest ai`, `stockq lb-account --env test|real|both`.
+- Install (dev): `uv sync --extra dev` or `pip install -e .`
+- Lint/format: `ruff --fix .` then `ruff format .`
+- Type-check: `mypy src`
+- Tests (75%+ cov): `pytest --cov=stock_analysis`
+  - Suites: `pytest -m unit`, `pytest -m integration -o addopts=`, `pytest -m e2e`
+- Pre-commit: `pre-commit install && pre-commit run -a`
+- CLI examples:
+  - Load data: `stockq load-data` (see `--skip-prices`, `--only-prices`)
+  - Backtests: `stockq backtest ai|quant|spy`
+  - AI pick: `stockq ai-pick`
+  - Whitelist: `stockq gen-whitelist --from preliminary`
+  - LongPort: `stockq lb-account`, `stockq lb-rebalance targets.json`, `stockq lb-config`
 
 ## Coding Style & Naming Conventions
 - Python 3.10; 4-space indent; 88-char lines; prefer double quotes.
-- Use type hints everywhere. Keep business logic in `services/`; keep CLI glue thin and composable.
+- Use type hints throughout. Keep business logic in `services/`; keep CLI thin and composable.
 - Naming: modules/functions `snake_case`, classes `PascalCase`, constants `UPPER_SNAKE_CASE`.
 
 ## Testing Guidelines
-- Framework: `pytest` with `unit`, `integration`, `e2e` markers.
+- Framework: `pytest` with markers `unit`, `integration`, `e2e`.
 - Naming: files `tests/test_*.py`, functions `def test_*`.
-- Scope: fast tests in `unit/`; broader flows in `integration/` and `e2e/`.
+- Run fast logic in `unit/`; broader flows in `integration/` and end-to-end CLI in `e2e/`.
 
 ## Commit & Pull Request Guidelines
-- Commits: short, imperative, scoped (e.g., `refactor: streamline CLI`, `fix: handle empty quotes`). Update `pyproject.toml`/`uv.lock` when deps change.
-- PRs: include description, rationale, relevant CLI output (snippets/screenshots), linked issues, and commands run (lint, mypy, pytest). Note any config/env changes.
+- Commits: short, imperative, scoped (e.g., `refactor: streamline CLI`, `fix: handle empty quotes`).
+- PRs: include description, rationale, relevant CLI output (snippets/screenshots), linked issues, and commands run (`ruff`, `mypy`, `pytest`). Note any config/env changes.
 
 ## Security & Configuration Tips
 - Seed `.env` from `.env.example`; never commit secrets or API keys.
 - Copy `config/template.yaml` to `config/config.yaml` before running.
-- Use dry runs first; real LongPort trading only with `--execute` and correct `--env`.
-- Keep large CSVs/SQLite in `data/`; avoid committing generated artifacts.
-
+- Use dry runs first; real LongPort trading only with `--execute`.
+- Keep large CSVs/SQLite in `data/`; avoid committing generated artifacts in `outputs/`.
