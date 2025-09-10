@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 
-# Compatibility import: prefer longport, fallback to longbridge
+# Compatibility import: prefer longport, fallback to longbridge and finally local stubs
 try:  # pragma: no cover - depends on external package
     from longport.openapi import (
         Config,
@@ -17,15 +17,26 @@ try:  # pragma: no cover - depends on external package
         TradeContext,
     )
 except ImportError:  # pragma: no cover - executed when longport not available
-    from longbridge.openapi import (
-        Config,
-        Market,
-        OrderSide,
-        OrderType,
-        QuoteContext,
-        TimeInForceType,
-        TradeContext,
-    )
+    try:  # pragma: no cover - depends on optional package
+        from longbridge.openapi import (
+            Config,
+            Market,
+            OrderSide,
+            OrderType,
+            QuoteContext,
+            TimeInForceType,
+            TradeContext,
+        )
+    except ImportError:  # pragma: no cover - executed when neither SDK installed
+        from ._stubs import (
+            Config,
+            Market,
+            OrderSide,
+            OrderType,
+            QuoteContext,
+            TimeInForceType,
+            TradeContext,
+        )
 
 # Timezone support (Python 3.9+), fallback to local time determination when unavailable
 try:
