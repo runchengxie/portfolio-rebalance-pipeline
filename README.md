@@ -92,7 +92,7 @@ Max Drawdown:            33.23%
 
 | 变量 | 示例 | 说明 |
 | --- | --- | --- |
-| `GEMINI_API_KEY[_2|_3]` | `xxxx` | Gemini API 密钥（可多把，轮换限流） |
+| `GEMINI_API_KEY[_2,_3]` | `xxxx` | Gemini API 密钥（可多把，轮换限流） |
 | `LONGPORT_REGION` | `cn` | 长桥区域：`hk` 或 `cn` |
 | `LONGPORT_ENABLE_OVERNIGHT` | `true` | 是否启用隔夜行情（预览友好） |
 | `LONGPORT_APP_KEY` / `LONGPORT_APP_SECRET` | `...` | 长桥应用凭据 |
