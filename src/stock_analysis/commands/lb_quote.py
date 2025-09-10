@@ -5,7 +5,7 @@ Handles command logic for stock quote queries.
 
 from ..renderers.table import render_quotes
 from ..services.account_snapshot import get_quotes
-from ..utils.logging import get_logger
+from ..logging import get_logger
 
 logger = get_logger(__name__)
 

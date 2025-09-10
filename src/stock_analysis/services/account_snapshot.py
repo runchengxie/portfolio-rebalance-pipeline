@@ -11,7 +11,7 @@ except ImportError:  # pragma: no cover - allow tests without LongPort dependenc
     LongPortClient = None  # type: ignore
 from ..models import AccountSnapshot, Position, Quote
 from ..utils.fx import to_usd
-from ..utils.logging import get_logger
+from ..logging import get_logger
 
 logger = get_logger(__name__)
 

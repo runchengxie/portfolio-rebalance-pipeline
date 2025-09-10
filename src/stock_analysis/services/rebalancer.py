@@ -11,8 +11,8 @@ from pathlib import Path
 from ..broker.longport_client import LongPortClient, _to_lb_symbol
 from ..fees import FeeSchedule, estimate_fees
 from ..models import AccountSnapshot, Order, Position, RebalanceResult
-from ..utils.config import load_cfg
-from ..utils.logging import get_logger
+from ..config import load_cfg
+from ..logging import get_logger
 from .account_snapshot import get_quotes
 
 logger = get_logger(__name__)

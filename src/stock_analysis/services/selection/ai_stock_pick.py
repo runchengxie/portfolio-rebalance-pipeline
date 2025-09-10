@@ -20,10 +20,10 @@ if not hasattr(genai, "GenerativeModel"):
     genai.GenerativeModel = GenerativeModel
 from pydantic import BaseModel, Field
 
-from .utils.logging import get_logger
+from ...logging import get_logger
 
 # --- Paths and Configuration ---
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 INPUT_FILE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical.xlsx"

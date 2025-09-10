@@ -11,10 +11,10 @@ from typing import Tuple
 
 import pandas as pd
 
-from ..utils.logging import get_logger
+from ..logging import get_logger
 from ..utils.paths import AI_PORTFOLIO_FILE, OUTPUTS_DIR, AI_PORTFOLIO_JSON_DIR
 from ..utils.targets import write_targets_json
-from ..utils.excel import (
+from ..io.excel import (
     get_sheet_names,
     pick_latest_sheet,
     read_excel_data,

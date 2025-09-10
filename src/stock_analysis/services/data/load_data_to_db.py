@@ -8,11 +8,11 @@ from pathlib import Path
 import pandas as pd
 
 # Use unified path configuration within the project
-from .utils.paths import (  # noqa: F401
+from ...utils.paths import (  # noqa: F401
     DATA_DIR,
     DB_PATH,
 )
-from .utils.paths import (
+from ...utils.paths import (
     PROJECT_ROOT as _PROJECT_ROOT,
 )
 

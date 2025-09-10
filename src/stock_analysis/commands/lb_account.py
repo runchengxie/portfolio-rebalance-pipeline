@@ -8,7 +8,7 @@ import sys
 from ..renderers.jsonout import render_multiple_account_snapshots_json
 from ..renderers.table import render_multiple_account_snapshots
 from ..services.account_snapshot import get_account_snapshot
-from ..utils.logging import get_logger
+from ..logging import get_logger
 
 logger = get_logger(__name__)
 

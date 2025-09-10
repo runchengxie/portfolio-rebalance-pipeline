@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..utils.logging import get_logger
+from ..logging import get_logger
 from ..utils.paths import (
     AI_PORTFOLIO_FILE,
     OUTPUTS_DIR,

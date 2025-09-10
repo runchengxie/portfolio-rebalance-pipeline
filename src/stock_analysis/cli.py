@@ -5,123 +5,10 @@ Responsible only for argument parsing and command dispatching, without business 
 
 import argparse
 import sys
-from collections.abc import Callable
-from pathlib import Path
 
-# Re-exported command for other modules
-# Placeholders for dynamically imported main functions (used in tests)
-ai_main: Callable[..., int] | None = None
-quant_main: Callable[..., int] | None = None
-spy_main: Callable[..., int] | None = None
-load_main: Callable[..., int] | None = None
-ai_pick_main: Callable[..., int] | None = None
-
-# Expose built-in __import__ for patching in tests
-__import__ = __import__
-
-
-def run_backtest(
-    strategy: str,
-    config_path: str | None = None,
-    *,
-    target_percent: float | None = None,
-    log_level: str | None = None,
-) -> int:
-    """Run backtest for the given strategy.
-
-    This function lazily imports the heavy backtest modules so that tests can
-    patch the imported ``*_main`` functions.  Import errors and execution errors
-    are converted to a non-zero exit code.
-    """
-
-    try:
-        global ai_main, quant_main, spy_main
-        if strategy == "ai":
-            if ai_main is None:
-                mod = __import__(
-                    "stock_analysis.backtest_quarterly_ai_pick", fromlist=["main"]
-                )
-                ai_main = mod.main
-            ai_main()  # type: ignore[misc]
-        elif strategy == "quant":
-            if quant_main is None:
-                mod = __import__(
-                    "stock_analysis.backtest_quarterly_unpicked", fromlist=["main"]
-                )
-                quant_main = mod.main
-            quant_main()  # type: ignore[misc]
-        elif strategy == "spy":
-            if spy_main is None:
-                mod = __import__(
-                    "stock_analysis.backtest_benchmark_spy", fromlist=["main"]
-                )
-                spy_main = mod.main
-            spy_main()  # type: ignore[misc]
-        else:
-            raise ValueError(f"Unknown strategy: {strategy}")
-        return 0
-    except ImportError:
-        return 1
-    except Exception:
-        return 1
-
-
-def run_load_data(
-    data_dir: str | None = None,
-    skip_prices: bool = False,
-    only_prices: bool = False,
-    tickers_file: str | None = None,
-    date_start: str | None = None,
-    date_end: str | None = None,
-) -> int:
-    """Load data into the database.
-
-    The implementation intentionally avoids any heavy lifting so that tests can
-    patch ``load_main``.  Extra parameters are accepted for API compatibility but
-    are ignored here.
-    """
-
-    global load_main
-    try:
-        if data_dir is not None and not Path(data_dir).exists():
-            if load_main is None:
-                print(f"Data directory not found: {data_dir}", file=sys.stderr)
-                return 1
-        if load_main is None:
-            mod = __import__("stock_analysis.load_data_to_db", fromlist=["main"])
-            load_main = mod.main
-        load_main()  # type: ignore[misc]
-        return 0
-    except ImportError:
-        return 1
-    except Exception:
-        return 1
-
-
-def run_ai_pick(
-    quarter: str | None = None,
-    output: str | None = None,
-    no_excel: bool = False,
-    no_json: bool = False,
-) -> int:
-    """Run AI stock picking analysis.
-
-    Parameters are accepted for interface compatibility but are not used.  The
-    heavy implementation is lazily imported so that tests can patch
-    ``ai_pick_main``.
-    """
-
-    try:
-        global ai_pick_main
-        if ai_pick_main is None:
-            mod = __import__("stock_analysis.ai_stock_pick", fromlist=["main"])
-            ai_pick_main = mod.main
-        ai_pick_main()  # type: ignore[misc]
-        return 0
-    except ImportError:
-        return 1
-    except Exception:
-        return 1
+from .commands.ai_pick import run_ai_pick
+from .commands.backtest import run_backtest
+from .commands.load_data import run_load_data
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -561,7 +448,7 @@ def main() -> int:
             print(f"Unknown command: {args.command}", file=sys.stderr)
             return 1
     except ImportError as e:
-        from .utils.logging import get_logger
+        from .logging import get_logger
 
         logger = get_logger(__name__)
         logger.error(f"无法导入命令模块: {e}")

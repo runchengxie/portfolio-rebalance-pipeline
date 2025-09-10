@@ -2,45 +2,57 @@ import sys
 import time
 import datetime
 
-from .backtest.engine import (
+# Import new modules
+from ..engine import (
     generate_report,
     run_quarterly_backtest,
     run_benchmark_backtest,
 )
-from .backtest.prep import (
+from ..prep import (
     load_portfolios,
     load_price_feeds,
     load_spy_data,
 )
-from .utils.config import get_backtest_period, get_initial_cash
-from .utils.paths import (
+from ...config import get_backtest_period, get_initial_cash
+from ...logging import setup_logging
+from ...utils.paths import (
+    AI_PORTFOLIO_FILE,
+    AI_PORTFOLIO_JSON_DIR,
     DB_PATH,
     OUTPUTS_DIR,
-    QUANT_PORTFOLIO_FILE,
-    QUANT_PORTFOLIO_JSON_DIR,
 )
+
+# Setup logging
+logger = setup_logging("ai_backtest", "ai_backtest.log")
+
 
 # Strategy classes and helper functions have been moved to backtest.engine and backtest.prep modules
 
 
+# Data loading and logging setup functions have been moved to respective modules
+
+
+# run_backtest function has been moved to backtest.engine module
+
+
 def main(*, log_level: int | None = None):
-    """Main function - Run unselected quarterly backtest
+    """Main function - Run AI quarterly backtest
 
     Args:
         log_level: Optional logging level for strategy logs
     """
-    print("--- Running Quarterly Point-in-Time Backtest (Database Mode) ---")
+    print("--- Running Quarterly AI Pick Backtest (Database Mode) ---")
 
     try:
         # Prefer JSON directory if present, otherwise fall back to Excel workbook
         portfolio_path = (
-            QUANT_PORTFOLIO_JSON_DIR
-            if QUANT_PORTFOLIO_JSON_DIR.exists()
-            else QUANT_PORTFOLIO_FILE
+            AI_PORTFOLIO_JSON_DIR
+            if AI_PORTFOLIO_JSON_DIR.exists()
+            else AI_PORTFOLIO_FILE
         )
 
-        # Load portfolio data (unselected version)
-        portfolios = load_portfolios(portfolio_path, is_ai_selection=False)
+        # Load portfolio data (AI selection version)
+        portfolios = load_portfolios(portfolio_path, is_ai_selection=True)
     except FileNotFoundError as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         sys.exit(1)
@@ -60,7 +72,7 @@ def main(*, log_level: int | None = None):
     BACKTEST_START_DATE, BACKTEST_END_DATE = get_backtest_period(portfolios)
 
     # Get initial cash from config file
-    initial_cash = get_initial_cash("quant")
+    initial_cash = get_initial_cash("ai")
 
     print(f"Backtest period: {BACKTEST_START_DATE} to {BACKTEST_END_DATE}")
     print(f"Initial cash: ${initial_cash:,.2f}")
@@ -92,9 +104,9 @@ def main(*, log_level: int | None = None):
         initial_cash=initial_cash,
         start_date=BACKTEST_START_DATE,
         end_date=BACKTEST_END_DATE,
-        use_logging=False,  # Unselected version uses print
-        add_observers=False,  # Unselected version does not add observers
-        add_annual_return=False,  # Unselected version does not add annual return analyzer
+        use_logging=True,  # AI version uses logging
+        add_observers=True,  # AI version adds observers
+        add_annual_return=True,  # AI version adds annual return analyzer
         log_level=log_level,
     )
 
@@ -114,10 +126,10 @@ def main(*, log_level: int | None = None):
         print(f"[WARN] SPY benchmark skipped: {e}")
 
     # Generate report
-    output_png = OUTPUTS_DIR / "quarterly_strategy_returns.png"
+    output_png = OUTPUTS_DIR / "ai_quarterly_strategy_returns.png"
     generate_report(
         metrics=metrics,
-        title="Quarterly Point-in-Time Strategy Backtest Results",
+        title="AI Quarterly Strategy Backtest Results",
         portfolio_value=portfolio_value,
         output_png=output_png,
         benchmark_value=spy_value,
