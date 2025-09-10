@@ -125,13 +125,13 @@ fractional_preview:
 
     ```bash
     生成白名单（从初筛 Excel 聚合去重，按时间窗筛 sheet）
-    stockq gen-whitelist --from preliminary --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
+    stockq gen-whitelist --from preliminary --out outputs/selected_tickers.txt --date-start 2016-10-01 --date-end 2025-09-01
 
     可选：AI 精选作为来源
-    stockq gen-whitelist --from ai --out outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
+    stockq gen-whitelist --from ai --out outputs/selected_tickers.txt --date-start 2016-10-01 --date-end 2025-09-01
 
     仅导白名单价格，并裁日期
-    stockq load-data --only-prices --tickers-file outputs/selected_tickers.txt --date-start 2015-01-01 --date-end 2025-07-02
+    stockq load-data --only-prices --tickers-file outputs/selected_tickers.txt --date-start 2016-10-01 --date-end 2025-09-01
     ```
 
     * 不传 --excel 时，回测默认优先读取：
@@ -282,7 +282,7 @@ fractional_preview:
     ```bash
     # 基准含DRIP（分红再投），默认用 99% 仓位，留 1% 现金缓冲
     stockq backtest spy
-
+    
     # 调整目标仓位 & 日志级别（仅对 backtest 生效）
     stockq backtest spy --target 1.0 --log-level debug
     
