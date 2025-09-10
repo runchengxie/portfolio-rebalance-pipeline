@@ -74,7 +74,11 @@ def test_candles_parameters():
 @pytest.mark.unit
 def test_submit_limit_buy_order():
     """Test submitting a buy limit order."""
-    from longbridge.openapi import OrderSide, OrderType, TimeInForceType
+    from stock_analysis.broker._stubs import (
+        OrderSide,
+        OrderType,
+        TimeInForceType,
+    )
 
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="12345")
@@ -103,7 +107,11 @@ def test_submit_limit_buy_order():
 @pytest.mark.unit
 def test_submit_limit_sell_order():
     """Test submitting a sell limit order."""
-    from longbridge.openapi import OrderSide, OrderType, TimeInForceType
+    from stock_analysis.broker._stubs import (
+        OrderSide,
+        OrderType,
+        TimeInForceType,
+    )
 
     mock_trade_context = Mock()
     mock_trade_context.submit_order.return_value = SimpleNamespace(order_id="67890")
