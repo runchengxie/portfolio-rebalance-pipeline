@@ -12,6 +12,8 @@ import json
 from types import SimpleNamespace
 
 import pytest
+
+pytest.importorskip("pydantic")
 from pydantic import ValidationError
 from stock_analysis.ai_stock_pick import AIStockPick, parse_response_robust
 

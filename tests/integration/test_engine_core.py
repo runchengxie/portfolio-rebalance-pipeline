@@ -12,9 +12,9 @@ Tests the core functionality of the backtesting engine in backtest.engine, inclu
 import datetime
 from unittest.mock import MagicMock, patch
 
-import backtrader as bt
 import pandas as pd
 import pytest
+bt = pytest.importorskip("backtrader")
 from stock_analysis.backtest.engine import (
     BuyAndHoldStrategy,
     PointInTimeStrategy,

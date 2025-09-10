@@ -19,6 +19,8 @@ from unittest.mock import Mock, patch
 
 # Third-party library imports for testing
 import pytest
+
+pytest.importorskip("pydantic")
 from pydantic import ValidationError
 
 # Imports from the application's own code
