@@ -148,6 +148,12 @@ class KeySlot:
         self.circuit = Circuit()
         self.dead = False  # 401/403 permanent removal
         self.next_ok_at = 0  # Soft backoff time
+        # Track whether the slot is currently in use.  This allows the
+        # :class:`KeyPool` to hand out each key to only one caller at a time,
+        # which is particularly important for concurrent access in tests.
+        # The flag is reset when the caller reports success or failure back to
+        # the pool.
+        self.in_use = False
 
 
 # --- API Key Pool Manager ---
@@ -164,24 +170,37 @@ class KeyPool:
         while True:
             now = time.time()
             with self.lock:
-                # Select an available key: not dead, circuit breaker passed, time window reached
+                # Select an available key: not dead, not currently in use,
+                # circuit breaker passed, and time window reached
                 candidates = [
                     s
                     for s in self.slots
-                    if not s.dead and s.circuit.allow() and now >= s.next_ok_at
+                    if not s.dead
+                    and not s.in_use
+                    and s.circuit.allow()
+                    and now >= s.next_ok_at
                 ]
 
-                if not candidates:
+                if candidates:
+                    # Reserve a slot for the caller before releasing the lock
+                    slot = random.choice(candidates)
+                    slot.in_use = True
+                    limiter = slot.limiter
+                else:
                     # Find the one with earliest next_ok_at
-                    future_ready = [s.next_ok_at for s in self.slots if not s.dead]
+                    future_ready = [
+                        s.next_ok_at
+                        for s in self.slots
+                        if not s.dead and not s.in_use
+                    ]
                     sleep_for = (
                         max(0.05, min(future_ready) - now) if future_ready else 0.5
                     )
-                else:
-                    # Simple polling: select one and wait for rate limit permission
-                    slot = random.choice(candidates)
-                    slot.limiter.wait()
-                    return slot
+                    limiter = None
+
+            if limiter:
+                limiter.wait()
+                return slot
 
             time.sleep(min(2.0, sleep_for or 0.2))
 
@@ -189,6 +208,7 @@ class KeyPool:
         """Report successful API call"""
         slot.circuit.record_success()
         slot.next_ok_at = time.time()
+        slot.in_use = False
 
     def report_failure(self, slot, err):
         """Report API call failure with error classification handling"""
@@ -202,6 +222,7 @@ class KeyPool:
         if is_auth:
             # Authentication error, permanently remove this key
             slot.dead = True
+            slot.in_use = False
             print(f"  ⚠️ API Key {slot.name} authentication failed, permanently removed")
             return
 
@@ -217,11 +238,13 @@ class KeyPool:
                 print(
                     f"  🚨 Detected project-level rate limiting, global cooldown {cooldown:.1f} seconds"
                 )
+            slot.in_use = False
             return
 
         # Key-level backoff/circuit breaking
         slot.circuit.record_failure()
         slot.next_ok_at = time.time() + random.uniform(5, 15)
+        slot.in_use = False
         print(f"  ⚠️ API Key {slot.name} failed, entering backoff state")
 
 
@@ -347,10 +370,20 @@ def save_json_result(trade_date_str: str, df_ai_picks: pd.DataFrame) -> bool:
 
 # --- Create Key Pool ---
 def create_key_pool():
-    """Create and initialize API Key pool"""
+    """Create and initialize API Key pool.
+
+    The pool sources API keys exclusively from environment variables.  This
+    behaviour deliberately ignores any keys that might be present in a local
+    ``.env`` file to ensure deterministic behaviour during testing where
+    ``os.environ`` is patched.
+    """
+
     key_envs = ["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"]
-    found = [(env, _pick(env)) for env in key_envs]
-    keys = [(env, k) for env, k in found if k]
+    keys: list[tuple[str, str]] = []
+    for env in key_envs:
+        val = os.getenv(env)
+        if val:  # Filters out ``None`` and empty strings
+            keys.append((env, val))
 
     if not keys:
         raise ValueError("No available GEMINI_API_KEY found")
