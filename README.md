@@ -40,6 +40,13 @@ Max Drawdown:            33.23%
 
 所有操作均通过`stockq`命令行工具完成。
 
+常用辅助命令：
+
+- `stockq export`: 在 Excel 和分期 JSON 之间双向转换。
+- `stockq validate-exports`: 校验 Excel 与 JSON 的一致性。
+- `stockq lb-config`: 显示 LongPort 相关环境配置。
+- `stockq targets gen`: 从最新 AI 结果生成可编辑的 `targets.json`，推荐作为实盘起点。
+
 ### 配置环境
 
 * 安装依赖: `uv sync`
@@ -57,6 +64,7 @@ Max Drawdown:            33.23%
 | `LONGPORT_ENABLE_OVERNIGHT` | `true` | 是否启用隔夜行情（预览友好） |
 | `LONGPORT_APP_KEY` / `LONGPORT_APP_SECRET` | `...` | 长桥应用凭据 |
 | `LONGPORT_ACCESS_TOKEN` | `...` | 真实账户访问令牌 |
+| `LONGPORT_DEFAULT_ENV` | `real` | 默认账户环境（当前实现仅使用 `real`） |
 | `LONGPORT_MAX_NOTIONAL_PER_ORDER` | `20000` | 本地单笔名义金额上限（0=不限制） |
 | `LONGPORT_MAX_QTY_PER_ORDER` | `500` | 本地单笔数量上限（0=不限制） |
 | `LONGPORT_TRADING_WINDOW_START/END` | `09:30/16:00` | 本地交易时间窗（降级判定） |
@@ -176,23 +184,18 @@ fractional_preview:
     stockq lb-account --format json
    ```
 
-6. 生成可编辑的调仓目标（targets JSON）并执行调仓
+6. 生成可编辑的调仓目标（targets JSON）
 
-    为避免“回测产物 = 实盘目标”的耦合，实盘调仓目标与 AI pick 拆分：
-
-    - 先从最新一期 AI 结果生成一份独立的 targets JSON（可手动修订）。
-    - 再用 `lb-rebalance` 读取这份 targets JSON 进行干跑/执行。
-
-    生成 targets JSON（默认读取最新 AI JSON，按文件名日期选取）：
+    为避免“回测产物 = 实盘目标”的耦合，推荐先从最新一期 AI 结果生成一份独立的 targets JSON（可手动修订）。
 
     ```bash
     # 生成 outputs/targets/{YYYY-MM-DD}.json（自动选取最新 AI JSON）
     stockq targets gen --from ai
-    
+
     # 指定日期（按 outputs/ai_pick/YYYY/{asof}.json 匹配）
     stockq targets gen --from ai --asof 2025-09-05
-    
-    # 或者显式指定 Excel/日期/输出位置（Excel 兜底/兼容旧流程）
+
+    # 或显式指定 Excel/日期/输出位置（Excel 兜底/兼容旧流程）
     stockq targets gen --from ai \
       --excel outputs/point_in_time_ai_stock_picks_all_sheets.xlsx \
       --asof 2025-09-05 \
@@ -201,43 +204,28 @@ fractional_preview:
 
     你可以手动编辑这份 JSON（增加/删除票、加权重/备注），AI 回测产物不会被污染。
 
-    执行仓位调整/交易: 为了最大限度地保障您的资金安全，`lb-rebalance`命令默认使用真实账户进行干跑预览，只有添加 `--execute` 时才会真实下单。
+7. 使用 targets JSON 干跑预览 / 执行调仓
 
-    请在执行前务必理解以下**行为矩阵**：
+    `lb-rebalance` 命令默认读取真实账户并生成调仓计划，但不下单；只有添加 `--execute` 时才会真实下单。输入文件支持 targets JSON（推荐）或 AI Excel（总表）。
 
-    | 命令组合 | 行为描述 |
-    | :--- | :--- |
-    | `stockq lb-rebalance ...` | 真实账户干跑：读取真实账户、统一抓取行情、生成等额调仓计划，但不下单。 |
-    | `stockq lb-rebalance ... --execute` | 真实交易：在真实账户下按计划下单；所有风控（交易时段/最小单位/单笔上限）生效。 |
+    干跑预览（推荐先预览）:
 
-    推荐的执行流程：
+    ```bash
+    # 使用 targets JSON（推荐）
+    stockq lb-rebalance outputs/targets/2025-07-02.json
 
-    输入文件支持：targets JSON（推荐）或 AI Excel（总表）。
+    # 向后兼容：直接读取 AI Excel 最新期
+    stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
+    ```
 
-    示例流程：
+    审查输出后，如需执行真实交易（谨慎）:
 
-    * 干跑预览（推荐先预览）:
+    ```bash
+    stockq lb-rebalance outputs/targets/2025-09-05.json --execute
 
-        ```bash
-        # 使用 targets JSON（推荐）
-        stockq lb-rebalance outputs/targets/2025-07-02.json
-        
-        # 向后兼容：直接读取 AI Excel 最新期
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
-        ```
-
-    3. 仔细检查输出: 审查上一步打印的交易计划，包括股票代码、数量和方向。
-
-    4. 执行真实交易（谨慎操作）:
-
-        ```bash
-        # 确认所有信息无误后，才执行真实下单
-        # 使用 targets JSON 执行（谨慎）
-        stockq lb-rebalance outputs/targets/2025-09-05.json --execute
-        
-        # 或：AI Excel 最新期（谨慎）
-        stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
-        ```
+    # 或：AI Excel 最新期
+    stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
+    ```
 
 ## 可选步骤
 
@@ -282,10 +270,10 @@ fractional_preview:
     ```bash
     # 基准含DRIP（分红再投），默认用 99% 仓位，留 1% 现金缓冲
     stockq backtest spy
-    
+
     # 调整目标仓位 & 日志级别（仅对 backtest 生效）
     stockq backtest spy --target 1.0 --log-level debug
-    
+
     # 同样可为策略回测调整日志级别（分红与再平衡日志更详细）
     stockq backtest ai --log-level info
     stockq backtest quant --log-level debug
@@ -431,7 +419,7 @@ graph TD;
             G -->|用于回测| H{"stockq backtest ai"};
             H -->|生成| I[("回测报告 & 图表")];
         end
-        
+
         subgraph "路径 B：实盘 (执行交易)"
             G -->|1. 生成可编辑目标| J{"stockq targets gen"};
             J -->|2. 生成| K(["<strong>Targets.json</strong><br/>(可手动编辑/审核)"]);
@@ -556,17 +544,17 @@ graph TD;
     ```bash
     # 确保pip是最新版本
     pip install --upgrade pip
-    
+
     # 从项目根目录运行
     pip install -e .
 
     # --- 或者使用uv ---
     # 开发环境下使用
     uv sync
-    
+
     # CI/发布环境
     uv sync --no-dev
-    
+
     # 仅安装开发的依赖
     uv sync --only-dev
     ```
@@ -592,7 +580,7 @@ graph TD;
     # 从 LongPort 开发者中心获取
     LONGPORT_APP_KEY="your_app_key_here"
     LONGPORT_APP_SECRET="your_app_secret_here"
-    
+
     # 使用真实账户 Token 即可
     LONGPORT_ACCESS_TOKEN="your_real_access_token_here"
     ```
