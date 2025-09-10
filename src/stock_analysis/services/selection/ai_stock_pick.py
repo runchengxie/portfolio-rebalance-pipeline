@@ -11,11 +11,11 @@ import pandas as pd
 from dotenv import dotenv_values
 
 # The Google Generative AI client library may not be installed in lightweight
-# test environments.  We attempt to import it but gracefully fall back to a
-# minimal stub implementation that provides the ``GenerativeModel`` class used
-# by the code and patched by the tests.
+# test environments. Prefer the "google.generativeai" package (which exposes
+# ``GenerativeModel``) so tests can patch ``genai.GenerativeModel`` reliably.
+# If unavailable, provide a minimal stub with the same attribute.
 try:  # pragma: no cover - exercised in integration tests
-    from google import genai  # type: ignore
+    import google.generativeai as genai  # type: ignore
 except Exception:  # pragma: no cover - library is optional
 
     class _DummyGenAI:
@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover - library is optional
             def __init__(self, *args, **kwargs):
                 pass
 
-    genai = _DummyGenAI()
+    genai = _DummyGenAI()  # type: ignore
 from pydantic import BaseModel, Field
 
 from ...logging import get_logger
