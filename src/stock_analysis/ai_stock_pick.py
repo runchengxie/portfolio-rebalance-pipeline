@@ -81,7 +81,13 @@ class RateLimiter:
         self.calls = deque()
 
     def _cleanup(self, now):
-        while self.calls and now - self.calls[0] > self.per:
+        # Remove any call timestamps that fall outside the sliding window.
+        #
+        # Using ">=" ensures that calls exactly on the boundary of the
+        # window are also considered expired. Without this, entries could
+        # persist one extra cycle and cause the ``wait`` method to spin
+        # indefinitely when time advances exactly by ``per`` seconds.
+        while self.calls and now - self.calls[0] >= self.per:
             self.calls.popleft()
 
     def allow(self):
