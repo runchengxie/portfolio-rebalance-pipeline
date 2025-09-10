@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 
-from .config import load_cfg
+from ..config import load_cfg
 
 
 def _from_env(ccy: str) -> float | None:
