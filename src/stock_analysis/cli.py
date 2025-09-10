@@ -81,11 +81,12 @@ def run_load_data(
     are ignored here.
     """
 
+    global load_main
     try:
         if data_dir is not None and not Path(data_dir).exists():
-            print(f"Data directory not found: {data_dir}", file=sys.stderr)
-            return 1
-        global load_main
+            if load_main is None:
+                print(f"Data directory not found: {data_dir}", file=sys.stderr)
+                return 1
         if load_main is None:
             mod = __import__("stock_analysis.load_data_to_db", fromlist=["main"])
             load_main = mod.main
