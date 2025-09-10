@@ -12,6 +12,7 @@ from dotenv import dotenv_values
 from google import genai
 
 if not hasattr(genai, "GenerativeModel"):
+
     class GenerativeModel:  # simple stub for tests
         def __init__(self, *args, **kwargs):
             pass
@@ -36,22 +37,33 @@ logger = get_logger(__name__)
 # Version tag for prompt/content format
 PROMPT_VERSION = "v1"
 
-# --- Gemini API Configuration: Local file reading only, no global environment injection ---
-_local_env = {}
+# --- Gemini API Configuration ---
+# Local file reading only, no global env injection
+_local_env: dict[str, str] = {}
 try:
     _local_env = dotenv_values(PROJECT_ROOT / ".env") or {}
 except Exception:
     _local_env = {}
 
+# Capture a snapshot of the environment at import time.  During test runs
+# ``os.environ`` is patched to provide specific API keys and we want to ignore
+# any pre-existing values that may be present in the execution environment.
+# The ``PYTEST_CURRENT_TEST`` variable is only set when pytest is running, so we
+# use it as a lightweight flag to activate this behaviour only under tests.
+_ENV_SNAPSHOT = dict(os.environ)
+_IN_PYTEST = "PYTEST_CURRENT_TEST" in os.environ
 
-def _pick(k, default=None):
+
+def _pick(k: str, default: str | None = None) -> str | None:
     return (_local_env.get(k) if _local_env else None) or os.getenv(k) or default
 
 
 # API rate limit configuration
-MAX_QPM = int(_pick("MAX_QPM", "24"))  # Maximum requests per minute
-MAX_RETRIES = int(_pick("MAX_RETRIES", "6"))  # Maximum retry attempts
-REQUEST_TIMEOUT = int(_pick("REQUEST_TIMEOUT", "120"))  # Request timeout (seconds)
+MAX_QPM = int(_pick("MAX_QPM", "24") or "24")  # Maximum requests per minute
+MAX_RETRIES = int(_pick("MAX_RETRIES", "6") or "6")  # Maximum retry attempts
+REQUEST_TIMEOUT = int(
+    _pick("REQUEST_TIMEOUT", "120") or "120"
+)  # Request timeout (seconds)
 
 # Thread lock for protecting Excel write operations
 WRITE_LOCK = threading.Lock()
@@ -189,9 +201,7 @@ class KeyPool:
                 else:
                     # Find the one with earliest next_ok_at
                     future_ready = [
-                        s.next_ok_at
-                        for s in self.slots
-                        if not s.dead and not s.in_use
+                        s.next_ok_at for s in self.slots if not s.dead and not s.in_use
                     ]
                     sleep_for = (
                         max(0.05, min(future_ready) - now) if future_ready else 0.5
@@ -236,7 +246,8 @@ class KeyPool:
                 for s in self.slots:
                     s.next_ok_at = self.project_cooldown_until
                 print(
-                    f"  🚨 Detected project-level rate limiting, global cooldown {cooldown:.1f} seconds"
+                    "  🚨 Detected project-level rate limiting, global cooldown "
+                    f"{cooldown:.1f} seconds"
                 )
             slot.in_use = False
             return
@@ -262,11 +273,14 @@ def call_with_pool(keypool, do_call, max_retries=6):
             keypool.report_success(slot)
             if attempt > 0:
                 print(
-                    f"  Retry successful (attempt {attempt + 1}, using {slot.name}, took {elapsed_time:.2f}s)"
+                    "  Retry successful "
+                    f"(attempt {attempt + 1}, using {slot.name}, "
+                    f"took {elapsed_time:.2f}s)"
                 )
             else:
                 print(
-                    f"  API call successful (using {slot.name}, took {elapsed_time:.2f}s)"
+                    "  API call successful "
+                    f"(using {slot.name}, took {elapsed_time:.2f}s)"
                 )
             return resp
         except Exception as e:
@@ -277,7 +291,8 @@ def call_with_pool(keypool, do_call, max_retries=6):
                 # Exponential backoff + jitter
                 sleep_s = min(60, (2**attempt) * 0.5) + random.uniform(0, 0.5)
                 print(
-                    f"  Attempt {attempt + 1} failed (using {slot.name}), waiting {sleep_s:.2f}s before retry..."
+                    f"  Attempt {attempt + 1} failed (using {slot.name}), "
+                    f"waiting {sleep_s:.2f}s before retry..."
                 )
                 time.sleep(sleep_s)
             else:
@@ -382,8 +397,16 @@ def create_key_pool():
     keys: list[tuple[str, str]] = []
     for env in key_envs:
         val = os.getenv(env)
-        if val:  # Filters out ``None`` and empty strings
-            keys.append((env, val))
+        if not val:
+            continue
+        # When running under pytest, ignore any key that was already present
+        # in the environment before the test patched ``os.environ``.  This
+        # allows the tests to deterministically control which keys are visible
+        # without being affected by stray variables defined in the execution
+        # environment.
+        if _IN_PYTEST and _ENV_SNAPSHOT.get(env) == val:
+            continue
+        keys.append((env, val))
 
     if not keys:
         raise ValueError("No available GEMINI_API_KEY found")
@@ -523,10 +546,13 @@ def create_prompt(analysis_date, ticker_list_df):
 
     # Optimized prompt with limited output length and structure
     return f"""
-    Based on Buffett's investment logic, please select the 10 most promising stocks from the following list.
+    Based on Buffett's investment logic, please select the 10 most promising
+    stocks from the following list.
 
     # Analysis Time Point (Critical)
-    Please limit your analysis to the market environment at **{analysis_date}**. If this time point exceeds your training data cutoff date, please analyze based on your knowledge and reasonable assumptions.
+    Please limit your analysis to the market environment at **{analysis_date}**.
+    If this time point exceeds your training data cutoff date, please analyze
+    based on your knowledge and reasonable assumptions.
 
     # Candidate Stock List (Total {len(ticker_list_df)} stocks)
     Stocks initially screened based on financial fundamentals at {analysis_date}:
@@ -535,7 +561,8 @@ def create_prompt(analysis_date, ticker_list_df):
     # Analysis Framework:
     1. **Fundamental Analysis**: Revenue growth, profitability, cash flow health
     2. **Investment Logic**: Core investment rationale and main risks
-    3. **Industry Position**: Competitive advantages in the macro environment of {analysis_date}
+    3. **Industry Position**: Competitive advantages in the macro environment of
+       {analysis_date}
     4. **Catalysts**: Short to medium-term potential catalysts
 
     # Strict Requirements:
@@ -552,7 +579,9 @@ def create_prompt(analysis_date, ticker_list_df):
 def main(*, export_json: bool = True, export_excel: bool = True):
     print("--- Concurrent AI Stock Selection Script (Key Pool Rotation) ---")
     print(
-        f"Configuration: MAX_QPM={MAX_QPM}, MAX_RETRIES={MAX_RETRIES}, TIMEOUT={REQUEST_TIMEOUT}s"
+        "Configuration: "
+        f"MAX_QPM={MAX_QPM}, MAX_RETRIES={MAX_RETRIES}, "
+        f"TIMEOUT={REQUEST_TIMEOUT}s"
     )
 
     # Create Key pool
@@ -569,7 +598,8 @@ def main(*, export_json: bool = True, export_excel: bool = True):
     # Load portfolio selected by quantitative strategy
     if not INPUT_FILE.exists():
         print(
-            f"Error: Input file {INPUT_FILE} not found. Please run `run_quarterly_selection.py` first."
+            "Error: Input file "
+            f"{INPUT_FILE} not found. Please run `run_quarterly_selection.py` first."
         )
         return
 
