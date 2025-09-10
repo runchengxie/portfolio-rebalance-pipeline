@@ -37,6 +37,34 @@ Max Drawdown:            33.23%
 ```
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [快速开始](#%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
+  - [配置环境](#%E9%85%8D%E7%BD%AE%E7%8E%AF%E5%A2%83)
+  - [阶段一：数据准备与量化初筛](#%E9%98%B6%E6%AE%B5%E4%B8%80%E6%95%B0%E6%8D%AE%E5%87%86%E5%A4%87%E4%B8%8E%E9%87%8F%E5%8C%96%E5%88%9D%E7%AD%9B)
+  - [阶段二：AI 精选与回测](#%E9%98%B6%E6%AE%B5%E4%BA%8Cai-%E7%B2%BE%E9%80%89%E4%B8%8E%E5%9B%9E%E6%B5%8B)
+  - [阶段三：券商集成与实盘操作 (长桥)](#%E9%98%B6%E6%AE%B5%E4%B8%89%E5%88%B8%E5%95%86%E9%9B%86%E6%88%90%E4%B8%8E%E5%AE%9E%E7%9B%98%E6%93%8D%E4%BD%9C-%E9%95%BF%E6%A1%A5)
+- [可选步骤](#%E5%8F%AF%E9%80%89%E6%AD%A5%E9%AA%A4)
+  - [导出与一致性校验（Excel ↔ JSON）](#%E5%AF%BC%E5%87%BA%E4%B8%8E%E4%B8%80%E8%87%B4%E6%80%A7%E6%A0%A1%E9%AA%8Cexcel--json)
+- [核心特性](#%E6%A0%B8%E5%BF%83%E7%89%B9%E6%80%A7)
+- [核心策略流程](#%E6%A0%B8%E5%BF%83%E7%AD%96%E7%95%A5%E6%B5%81%E7%A8%8B)
+  - [阶段一：多因子量化初筛](#%E9%98%B6%E6%AE%B5%E4%B8%80%E5%A4%9A%E5%9B%A0%E5%AD%90%E9%87%8F%E5%8C%96%E5%88%9D%E7%AD%9B)
+  - [阶段二：Gemini AI 精选与分析](#%E9%98%B6%E6%AE%B5%E4%BA%8Cgemini-ai-%E7%B2%BE%E9%80%89%E4%B8%8E%E5%88%86%E6%9E%90)
+- [项目流程图](#%E9%A1%B9%E7%9B%AE%E6%B5%81%E7%A8%8B%E5%9B%BE)
+- [项目结构](#%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84)
+- [数据源](#%E6%95%B0%E6%8D%AE%E6%BA%90)
+- [输出文件](#%E8%BE%93%E5%87%BA%E6%96%87%E4%BB%B6)
+- [如何运行](#%E5%A6%82%E4%BD%95%E8%BF%90%E8%A1%8C)
+  - [准备工作: 环境设置](#%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C-%E7%8E%AF%E5%A2%83%E8%AE%BE%E7%BD%AE)
+- [JSON格式选股提示词](#json%E6%A0%BC%E5%BC%8F%E9%80%89%E8%82%A1%E6%8F%90%E7%A4%BA%E8%AF%8D)
+- [项目测试](#%E9%A1%B9%E7%9B%AE%E6%B5%8B%E8%AF%95)
+  - [测试分类](#%E6%B5%8B%E8%AF%95%E5%88%86%E7%B1%BB)
+  - [运行测试](#%E8%BF%90%E8%A1%8C%E6%B5%8B%E8%AF%95)
+  - [CI/CD 配置](#cicd-%E9%85%8D%E7%BD%AE)
+  - [测试编写指南](#%E6%B5%8B%E8%AF%95%E7%BC%96%E5%86%99%E6%8C%87%E5%8D%97)
+  - [故障排除](#%E6%95%85%E9%9A%9C%E6%8E%92%E9%99%A4)
+  - [最佳实践](#%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5)
+  - [示例测试结构](#%E7%A4%BA%E4%BE%8B%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%84)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
