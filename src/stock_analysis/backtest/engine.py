@@ -12,12 +12,53 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import pandas as pd
 
+# ``backtrader`` strategies require a ``Cerebro`` instance during
+# instantiation.  For unit tests where strategies are created in isolation this
+# instance is absent, leading to attribute errors.  A lightweight metaclass is
+# provided to safely handle this scenario by giving the strategy a dummy id when
+# no ``Cerebro`` owner is found.
+from backtrader.strategy import MetaStrategy
+from backtrader.metabase import findowner
+
 from ..utils.logging import StrategyLogger
 from ..utils.paths import OUTPUTS_DIR
 from .prep import DividendPandasData
 
 
-class PointInTimeStrategy(bt.Strategy):
+class _SafeMetaStrategy(MetaStrategy):
+    """Metaclass that tolerates missing ``Cerebro`` when instantiating.
+
+    When strategies are instantiated outside of a Backtrader ``Cerebro``
+    environment (as the tests in this repository do), the original
+    :class:`MetaStrategy` attempts to access ``cerebro._next_stid()`` and raises
+    an ``AttributeError``.  This subclass assigns a dummy identifier instead of
+    failing, allowing the strategy object to be constructed and its logic to be
+    tested in isolation.
+    """
+
+    def donew(cls, *args, **kwargs):
+        # Call ``MetaBase.donew`` directly to avoid the default ``MetaStrategy``
+        # implementation which assumes the presence of a ``Cerebro`` instance.
+        _obj, args, kwargs = super(MetaStrategy, cls).donew(*args, **kwargs)
+        cerebro = findowner(_obj, bt.Cerebro)
+        _obj.env = _obj.cerebro = cerebro
+        _obj._id = cerebro._next_stid() if cerebro else 0
+        return _obj, args, kwargs
+
+    def dopreinit(cls, _obj, *args, **kwargs):
+        # Skip heavy initialisation when running outside of Cerebro.  This
+        # avoids dependencies on data feeds during unit tests.
+        if getattr(_obj, "cerebro", None) is None:
+            return _obj, args, kwargs
+        return super().dopreinit(_obj, *args, **kwargs)
+
+    def dopostinit(cls, _obj, *args, **kwargs):
+        if getattr(_obj, "cerebro", None) is None:
+            return _obj, args, kwargs
+        return super().dopostinit(_obj, *args, **kwargs)
+
+
+class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
     """Unified point-in-time strategy class
 
     Integrates AI version and unfiltered version strategy logic, controlling differences through parameters.
@@ -34,7 +75,8 @@ class PointInTimeStrategy(bt.Strategy):
         self.rebalance_dates = sorted(self.p.portfolios.keys())
         self.next_rebalance_idx = 0
         self.get_next_rebalance_date()
-        self.timeline = self.datas[0]
+        # ``datas`` may be empty when instantiated outside of Cerebro
+        self.timeline = self.datas[0] if getattr(self, "datas", []) else None
         self.rebalance_log = []
 
         # Initialize logger
@@ -46,7 +88,11 @@ class PointInTimeStrategy(bt.Strategy):
 
     def log(self, txt, dt=None):
         """Log message"""
-        dt = dt or self.timeline.datetime.date(0)
+        if dt is None and self.timeline is not None and hasattr(self.timeline, "datetime"):
+            try:
+                dt = self.timeline.datetime.date(0)
+            except Exception:
+                dt = None
         self.strategy_logger.log(txt, dt)
 
     def get_next_rebalance_date(self):
@@ -159,7 +205,7 @@ class PointInTimeStrategy(bt.Strategy):
             self.log(f"Rebalancing diagnostics saved to: {log_path}")
 
 
-class BuyAndHoldStrategy(bt.Strategy):
+class BuyAndHoldStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
     """Buy and hold strategy with dividend reinvestment into the same asset.
 
     - On the first bar, invest a target percentage of equity (default 99%).
@@ -176,7 +222,8 @@ class BuyAndHoldStrategy(bt.Strategy):
 
     def __init__(self):
         self.bought = False
-        self.timeline = self.datas[0]
+        # ``datas`` may be empty when instantiated outside of Cerebro (tests).
+        self.timeline = self.datas[0] if getattr(self, "datas", []) else None
         self.strategy_logger = StrategyLogger(
             use_logging=self.p.use_logging,
             logger_name=self.p.logger_name,
@@ -184,28 +231,37 @@ class BuyAndHoldStrategy(bt.Strategy):
         )
 
     def log(self, txt: str) -> None:
-        dt = self.timeline.datetime.date(0)
+        dt = None
+        if self.timeline is not None and hasattr(self.timeline, "datetime"):
+            try:
+                dt = self.timeline.datetime.date(0)
+            except Exception:
+                dt = None
         self.strategy_logger.log(txt, dt)
 
     def next(self):
-        data = self.datas[0]
+        data = self.datas[0] if getattr(self, "datas", []) else None
 
         # Initial purchase
         if not self.bought:
+            name = getattr(data, "_name", "asset") if data else "asset"
             self.log(
-                f"Initial buy to target {self.p.target_percent:.2%} for {data._name}"
+                f"Initial buy to target {self.p.target_percent:.2%} for {name}"
             )
             self.order_target_percent(target=self.p.target_percent)
             self.bought = True
             return
 
+        if data is None:
+            return
+
         # Dividend handling: add cash, then keep target allocation to reinvest
-        position = self.getposition(data)
-        if position.size > 0:
+        position = self.getposition(data) if hasattr(self, "getposition") else None
+        if position is not None and getattr(position, "size", 0) > 0:
             dividend = getattr(data, "dividend", None)
             if dividend is not None:
                 dividend_value = dividend[0]
-                if dividend_value > 0:
+                if dividend_value > 0 and hasattr(self, "broker"):
                     cash = position.size * dividend_value
                     self.log(
                         f"Dividend received for {data._name}: {cash:.2f}"
