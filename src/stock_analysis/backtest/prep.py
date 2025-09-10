@@ -199,6 +199,7 @@ def load_price_feeds(
                 bt_feed = DividendPandasData(
                     dataname=group, openinterest=None, name=ticker
                 )
+                object.__setattr__(bt_feed, "dataname", group)
                 data_feeds[ticker] = bt_feed
                 print(f"Prepared data for {ticker}: {len(group)} rows")
             else:

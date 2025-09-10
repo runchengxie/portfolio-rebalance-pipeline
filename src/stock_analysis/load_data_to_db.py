@@ -299,12 +299,13 @@ def main(
         # Financial statement indexes: create once and align with queries
         if not only_prices:
             print("Creating optimized indexes for financial data...")
-            con.executescript("""
-            -- Financial statements: group by Ticker, year and take latest by date_known
-            CREATE INDEX IF NOT EXISTS idx_bs_ty_date  ON balance_sheet (Ticker, year, date_known DESC);
-            CREATE INDEX IF NOT EXISTS idx_cf_ty_date  ON cash_flow     (Ticker, year, date_known DESC);
-            CREATE INDEX IF NOT EXISTS idx_in_ty_date  ON income        (Ticker, year, date_known DESC);
-            """)
+            con.executescript(
+                """
+            CREATE INDEX IF NOT EXISTS idx_balance_sheet_ticker_date ON balance_sheet (Ticker, date_known DESC);
+            CREATE INDEX IF NOT EXISTS idx_cash_flow_ticker_date     ON cash_flow     (Ticker, date_known DESC);
+            CREATE INDEX IF NOT EXISTS idx_income_ticker_date        ON income        (Ticker, date_known DESC);
+                """
+            )
 
         _fast_pragmas(con, fast=False)
 

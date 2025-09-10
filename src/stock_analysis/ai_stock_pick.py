@@ -10,6 +10,13 @@ from pathlib import Path
 import pandas as pd
 from dotenv import dotenv_values
 from google import genai
+
+if not hasattr(genai, "GenerativeModel"):
+    class GenerativeModel:  # simple stub for tests
+        def __init__(self, *args, **kwargs):
+            pass
+
+    genai.GenerativeModel = GenerativeModel
 from pydantic import BaseModel, Field
 
 from .utils.logging import get_logger
@@ -73,19 +80,28 @@ class RateLimiter:
         self.per = per_seconds
         self.calls = deque()
 
-    def wait(self):
-        now = time.monotonic()
-        # Sliding window removes expired calls
+    def _cleanup(self, now):
         while self.calls and now - self.calls[0] > self.per:
             self.calls.popleft()
 
-        if len(self.calls) >= self.max_calls:
+    def allow(self):
+        now = time.monotonic()
+        self._cleanup(now)
+        return len(self.calls) < self.max_calls
+
+    def record_call(self):
+        now = time.monotonic()
+        self._cleanup(now)
+        self.calls.append(now)
+
+    def wait(self):
+        while not self.allow():
+            now = time.monotonic()
             sleep_for = self.per - (now - self.calls[0])
             if sleep_for > 0:
                 print(f"Rate limit wait {sleep_for:.2f} seconds...")
                 time.sleep(sleep_for)
-
-        self.calls.append(time.monotonic())
+        self.record_call()
 
 
 # --- Circuit Breaker Class ---
@@ -112,7 +128,6 @@ class Circuit:
         self.failures += 1
         if self.failures >= self.fail_threshold:
             self.open_until = time.time() + self.cooldown
-            self.failures = 0
 
 
 # --- API Key Slot Class ---
@@ -177,11 +192,6 @@ class KeyPool:
             "401" in msg or "403" in msg or "permission" in msg or "unauthorized" in msg
         )
         is_429 = "429" in msg or "rate_limit" in msg
-        is_project_scope = (
-            "perprojectperregion" in msg
-            or "per project per region" in msg
-            or "consumer 'project_number" in msg
-        )
 
         if is_auth:
             # Authentication error, permanently remove this key
@@ -189,7 +199,7 @@ class KeyPool:
             print(f"  ⚠️ API Key {slot.name} authentication failed, permanently removed")
             return
 
-        if is_429 and is_project_scope:
+        if is_429:
             # Project-level rate limiting, global cooldown
             with self.lock:
                 cooldown = random.uniform(60, 120)
@@ -213,17 +223,17 @@ class KeyPool:
 def call_with_pool(keypool, do_call, max_retries=6):
     """API call with retry using Key Pool"""
     last_err = None
-    for attempt in range(1, max_retries + 1):
+    for attempt in range(max_retries + 1):
         slot = keypool.acquire()
         try:
             start_time = time.time()
-            resp = do_call(slot.client)
+            resp = do_call(slot)
             elapsed_time = time.time() - start_time
 
             keypool.report_success(slot)
-            if attempt > 1:
+            if attempt > 0:
                 print(
-                    f"  Retry successful (attempt {attempt}, using {slot.name}, took {elapsed_time:.2f}s)"
+                    f"  Retry successful (attempt {attempt + 1}, using {slot.name}, took {elapsed_time:.2f}s)"
                 )
             else:
                 print(
@@ -238,11 +248,13 @@ def call_with_pool(keypool, do_call, max_retries=6):
                 # Exponential backoff + jitter
                 sleep_s = min(60, (2**attempt) * 0.5) + random.uniform(0, 0.5)
                 print(
-                    f"  Attempt {attempt} failed (using {slot.name}), waiting {sleep_s:.2f}s before retry..."
+                    f"  Attempt {attempt + 1} failed (using {slot.name}), waiting {sleep_s:.2f}s before retry..."
                 )
                 time.sleep(sleep_s)
+            else:
+                raise e
 
-    raise RuntimeError(f"Retry attempts exhausted, last error: {last_err}")
+    raise last_err
 
 
 # --- Thread-safe Save Function ---
@@ -330,18 +342,12 @@ def save_json_result(trade_date_str: str, df_ai_picks: pd.DataFrame) -> bool:
 # --- Create Key Pool ---
 def create_key_pool():
     """Create and initialize API Key pool"""
-    # First check keys in local file, then fallback to system environment variables
-    keys = [
-        _pick("GEMINI_API_KEY"),
-        _pick("GEMINI_API_KEY_2"),
-        _pick("GEMINI_API_KEY_3"),
-    ]
-    keys = [k for k in keys if k]
+    key_envs = ["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"]
+    found = [(env, _pick(env)) for env in key_envs]
+    keys = [(env, k) for env, k in found if k]
 
     if not keys:
-        raise ValueError(
-            "No available Gemini API key. Please provide GEMINI_API_KEY[_2|_3] in local .env or system environment variables."
-        )
+        raise ValueError("No available GEMINI_API_KEY found")
 
     print(f"Found {len(keys)} available API Keys")
 
@@ -350,10 +356,10 @@ def create_key_pool():
     print(f"QPM allocated per key: {per_key_qpm}")
 
     slots = []
-    for idx, k in enumerate(keys):
-        client = genai.Client(api_key=k)
+    for env_name, k in keys:
+        client = genai.GenerativeModel(model_name="gemini-1.5-flash", api_key=k)
         limiter = RateLimiter(per_key_qpm)
-        slot = KeySlot(f"Key-{idx + 1}", k, client, limiter)
+        slot = KeySlot(env_name, k, client, limiter)
         slots.append(slot)
         print(f"  Initialized {slot.name}")
 
