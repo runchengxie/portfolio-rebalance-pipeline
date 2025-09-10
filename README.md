@@ -36,6 +36,10 @@ Max Drawdown:            33.23%
 ==================================================
 ```
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## 快速开始
 
 所有操作均通过`stockq`命令行工具完成。
