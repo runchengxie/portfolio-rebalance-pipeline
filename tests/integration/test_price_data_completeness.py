@@ -2,14 +2,14 @@ import sqlite3
 
 import pandas as pd
 import pytest
-
-# --- Path Configuration ---
 from stock_analysis.utils.paths import (
     DB_PATH,
     QUANT_PORTFOLIO_FILE,
 )
 
 PORTFOLIO_FILE = QUANT_PORTFOLIO_FILE
+
+pytestmark = [pytest.mark.integration, pytest.mark.requires_db]
 
 # --- Test Constants Configuration ---
 # A quarter has approximately 252/4 = 63 trading days
