@@ -6,16 +6,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # Write permission is needed to push the changes back
+  contents: write
 
 concurrency:
-  group: toc-${{ github.ref }} # Avoid concurrent runs on the same branch
+  group: toc-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   toc:
-    # Avoid infinite loops: skip if the trigger is the workflow's own "chore: update TOC" commit
-    if: ${{ !contains(github.event.head_commit.message, 'chore: update TOC') }}
+    if: >-
+      ${{ github.event_name != 'push' ||
+          !contains(github.event.head_commit.message, 'chore: update TOC') }}
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +31,8 @@ jobs:
       - name: Install doctoc
         run: npm i -g doctoc@2
 
-      - name: Update TOC in all markdown files
-        run: |
-          # Run it on the entire repository to avoid figuring out which files changed
-          doctoc README.md --github --maxlevel 3 --notitle
+      - name: Update TOC in README
+        run: doctoc README.md --github --maxlevel 3 --notitle
 
       - name: Commit changes if any
         run: |
@@ -43,4 +43,4 @@ jobs:
             git push
           else
             echo "No TOC changes."
-          fi```
+          fi
