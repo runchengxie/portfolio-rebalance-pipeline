@@ -11,6 +11,7 @@ import backtrader as bt
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import pandas as pd
+from backtrader.metabase import findowner
 
 # ``backtrader`` strategies require a ``Cerebro`` instance during
 # instantiation.  For unit tests where strategies are created in isolation this
@@ -18,7 +19,6 @@ import pandas as pd
 # provided to safely handle this scenario by giving the strategy a dummy id when
 # no ``Cerebro`` owner is found.
 from backtrader.strategy import MetaStrategy
-from backtrader.metabase import findowner
 
 from ..utils.logging import StrategyLogger
 from ..utils.paths import OUTPUTS_DIR
@@ -61,7 +61,8 @@ class _SafeMetaStrategy(MetaStrategy):
 class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
     """Unified point-in-time strategy class
 
-    Integrates AI version and unfiltered version strategy logic, controlling differences through parameters.
+    Integrates AI version and unfiltered version strategy logic,
+    controlling differences through parameters.
     """
 
     params = (
@@ -72,7 +73,19 @@ class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
     )
 
     def __init__(self):
-        self.rebalance_dates = sorted(self.p.portfolios.keys())
+        """Initialise strategy state.
+
+        ``PointInTimeStrategy`` is often instantiated in tests without passing
+        the ``portfolios`` parameter and later re-initialised after the
+        attribute has been populated.  The original implementation assumed that
+        ``self.p.portfolios`` was always a dictionary, which caused an
+        ``AttributeError`` when it was ``None``.  To make the strategy more
+        robust and idempotent we gracefully handle a missing portfolio
+        configuration by defaulting to an empty dictionary.
+        """
+
+        self.portfolios = self.p.portfolios or {}
+        self.rebalance_dates = sorted(self.portfolios.keys())
         self.next_rebalance_idx = 0
         self.get_next_rebalance_date()
         # ``datas`` may be empty when instantiated outside of Cerebro
@@ -88,7 +101,11 @@ class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
 
     def log(self, txt, dt=None):
         """Log message"""
-        if dt is None and self.timeline is not None and hasattr(self.timeline, "datetime"):
+        if (
+            dt is None
+            and self.timeline is not None
+            and hasattr(self.timeline, "datetime")
+        ):
             try:
                 dt = self.timeline.datetime.date(0)
             except Exception:
@@ -108,32 +125,37 @@ class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
 
         # Process dividends for all held positions
         for data in self.datas:
-            position = self.getposition(data)
-            if position.size <= 0:
+            if hasattr(self, "broker") and hasattr(self, "getposition"):
+                position = self.getposition(data)
+            else:
+                position = None
+            if position is None or getattr(position, "size", 0) <= 0:
                 continue
             dividend = getattr(data, "dividend", None)
             if dividend is None:
                 continue
             dividend_value = dividend[0]
-            if dividend_value > 0:
+            if dividend_value > 0 and hasattr(self, "broker"):
                 cash = position.size * dividend_value
-                self.log(
-                    f"Dividend received for {data._name}: {cash:.2f}"
-                )
+                self.log(f"Dividend received for {data._name}: {cash:.2f}")
                 self.broker.add_cash(cash)
                 # Recommended default: accrue dividends as cash.
                 # Reinvestment happens naturally on scheduled rebalancing.
+                if hasattr(self, "order_target_percent"):
+                    self.order_target_percent(target=self.p.target_percent)
 
         if self.next_rebalance_date and current_date >= self.next_rebalance_date:
             self.log(
-                f"--- Rebalancing on {current_date} for signal date {self.next_rebalance_date} ---"
+                f"--- Rebalancing on {current_date} for signal date "
+                f"{self.next_rebalance_date} ---"
             )
 
             target_tickers_df = self.p.portfolios[self.next_rebalance_date]
             target_tickers = set(target_tickers_df["Ticker"])
 
             self.log(
-                f"Diagnosis: Model selected {len(target_tickers)} tickers: {target_tickers}"
+                "Diagnosis: Model selected "
+                f"{len(target_tickers)} tickers: {target_tickers}"
             )
 
             available_data_tickers = {d._name for d in self.datas}
@@ -142,7 +164,9 @@ class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
             missing_tickers = target_tickers - available_data_tickers
 
             self.log(
-                f"Diagnosis: {len(available_data_tickers)} tickers have price data available in the database."
+                "Diagnosis: "
+                f"{len(available_data_tickers)} tickers have price data "
+                "available in the database."
             )
             self.log(
                 f"Diagnosis: Intersection has {len(final_target_tickers)} tickers: "
@@ -160,11 +184,14 @@ class PointInTimeStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
 
             if not final_target_tickers:
                 self.log(
-                    "CRITICAL WARNING: All-cash period. No selected tickers were found in the price database."
+                    "CRITICAL WARNING: All-cash period. "
+                    "No selected tickers were found in the price database."
                 )
                 if missing_tickers:
                     self.log(
-                        f"CRITICAL WARNING: The following {len(missing_tickers)} tickers were missing price data: {missing_tickers}"
+                        "CRITICAL WARNING: The following "
+                        f"{len(missing_tickers)} tickers were missing price data: "
+                        f"{missing_tickers}"
                     )
 
                 self.next_rebalance_idx += 1
@@ -245,9 +272,7 @@ class BuyAndHoldStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
         # Initial purchase
         if not self.bought:
             name = getattr(data, "_name", "asset") if data else "asset"
-            self.log(
-                f"Initial buy to target {self.p.target_percent:.2%} for {name}"
-            )
+            self.log(f"Initial buy to target {self.p.target_percent:.2%} for {name}")
             self.order_target_percent(target=self.p.target_percent)
             self.bought = True
             return
@@ -263,13 +288,12 @@ class BuyAndHoldStrategy(bt.Strategy, metaclass=_SafeMetaStrategy):
                 dividend_value = dividend[0]
                 if dividend_value > 0 and hasattr(self, "broker"):
                     cash = position.size * dividend_value
-                    self.log(
-                        f"Dividend received for {data._name}: {cash:.2f}"
-                    )
+                    self.log(f"Dividend received for {data._name}: {cash:.2f}")
                     self.broker.add_cash(cash)
                     # Maintain target percent to reinvest available cash
                     self.log(
-                        f"Reinvesting dividends to maintain target {self.p.target_percent:.2%}"
+                        "Reinvesting dividends to maintain target "
+                        f"{self.p.target_percent:.2%}"
                     )
                     self.order_target_percent(target=self.p.target_percent)
 
@@ -301,7 +325,8 @@ def run_quarterly_backtest(
         Tuple[pd.Series, Dict]: Portfolio value series and metrics dictionary
     """
     print(
-        f"\n--- Running Quarterly {'AI Pick' if use_logging else 'Point-in-Time'} Strategy (Total Return) ---"
+        "\n--- Running Quarterly "
+        f"{'AI Pick' if use_logging else 'Point-in-Time'} Strategy (Total Return) ---"
     )
 
     # Create Cerebro instance
@@ -490,7 +515,9 @@ def generate_report(
     print(f"{title:^50}")
     print("=" * 50)
     print(
-        f"Time Period Covered:     {metrics['start_date'].strftime('%Y-%m-%d')} to {metrics['end_date'].strftime('%Y-%m-%d')}"
+        "Time Period Covered:     "
+        f"{metrics['start_date'].strftime('%Y-%m-%d')} "
+        f"to {metrics['end_date'].strftime('%Y-%m-%d')}"
     )
     print(f"Initial Portfolio Value: ${metrics['initial_value']:,.2f}")
     print(f"Final Portfolio Value:   ${metrics['final_value']:,.2f}")
