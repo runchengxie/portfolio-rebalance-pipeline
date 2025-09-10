@@ -6,7 +6,6 @@ Responsible only for argument parsing and command dispatching, without business 
 import argparse
 import sys
 from collections.abc import Callable
-from pathlib import Path
 
 # Re-exported command for other modules
 # Placeholders for dynamically imported main functions (used in tests)
@@ -82,10 +81,6 @@ def run_load_data(
     """
 
     try:
-        if data_dir is not None and not Path(data_dir).exists():
-            print(f"Data directory not found: {data_dir}", file=sys.stderr)
-            return 1
-
         global load_main
         if load_main is None:
             mod = __import__("stock_analysis.load_data_to_db", fromlist=["main"])
@@ -463,6 +458,7 @@ def main() -> int:
         code = e.code if isinstance(e.code, int) else 1
         if code != 0 and len(sys.argv) > 1:
             print(f"Unknown command: {sys.argv[1]}", file=sys.stderr)
+            return 1
         return code
 
     # Show help if no command is provided
