@@ -243,7 +243,7 @@ fractional_preview:
     ```bash
     # 使用 targets JSON（推荐）
     stockq lb-rebalance outputs/targets/2025-07-02.json
-
+    
     # 向后兼容：直接读取 AI Excel 最新期
     stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx
     ```
@@ -252,7 +252,7 @@ fractional_preview:
 
     ```bash
     stockq lb-rebalance outputs/targets/2025-09-05.json --execute
-
+    
     # 或：AI Excel 最新期
     stockq lb-rebalance outputs/point_in_time_ai_stock_picks_all_sheets.xlsx --execute
     ```
@@ -300,10 +300,10 @@ fractional_preview:
     ```bash
     # 基准含DRIP（分红再投），默认用 99% 仓位，留 1% 现金缓冲
     stockq backtest spy
-
+    
     # 调整目标仓位 & 日志级别（仅对 backtest 生效）
     stockq backtest spy --target 1.0 --log-level debug
-
+    
     # 同样可为策略回测调整日志级别（分红与再平衡日志更详细）
     stockq backtest ai --log-level info
     stockq backtest quant --log-level debug

@@ -36,6 +36,9 @@ def test_longport_client_initialization():
         assert client.q is not None
         assert client.t is not None
     except Exception as e:
+        # Network/endpoint issues should not fail the suite
+        if "network" in str(e).lower() or "timeout" in str(e).lower() or "connect" in str(e).lower():
+            pytest.skip(f"Network/endpoint issue, skipping: {e}")
         pytest.fail(f"LongPortClient initialization failed: {e}")
 
 @pytest.mark.skipif(
@@ -47,12 +50,11 @@ def test_quote_last_real_api():
     Note: This test calls the real LongPort API and requires
     valid API credentials and a network connection.
     """
-    client = LongPortClient()
-
     # Use common US stocks for testing
     test_tickers = ["AAPL", "MSFT"]
 
     try:
+        client = LongPortClient()
         quotes = client.quote_last(test_tickers)
 
         # Verify the structure of the returned result
@@ -70,7 +72,7 @@ def test_quote_last_real_api():
 
     except Exception as e:
         # If it's a network error or API limit, provide a more user-friendly error message
-        if "network" in str(e).lower() or "timeout" in str(e).lower():
+        if "network" in str(e).lower() or "timeout" in str(e).lower() or "connect" in str(e).lower():
             pytest.skip(f"Network connection issue, skipping test: {e}")
         elif "rate limit" in str(e).lower() or "quota" in str(e).lower():
             pytest.skip(f"API limit reached, skipping test: {e}")
@@ -85,13 +87,12 @@ def test_candles_real_api():
 
     Note: This test calls the real LongPort API.
     """
-    client = LongPortClient()
-
     # Get data for the last 30 days
     end_date = date.today()
     start_date = end_date - timedelta(days=30)
 
     try:
+        client = LongPortClient()
         candles = client.candles("AAPL", start_date, end_date)
 
         # Verify the returned result
@@ -100,7 +101,7 @@ def test_candles_real_api():
         # Here, we only perform a basic non-null check
 
     except Exception as e:
-        if "network" in str(e).lower() or "timeout" in str(e).lower():
+        if "network" in str(e).lower() or "timeout" in str(e).lower() or "connect" in str(e).lower():
             pytest.skip(f"Network connection issue, skipping test: {e}")
         elif "rate limit" in str(e).lower() or "quota" in str(e).lower():
             pytest.skip(f"API limit reached, skipping test: {e}")
@@ -134,7 +135,13 @@ def test_symbol_conversion_integration():
 
         except Exception as e:
             # It's normal to not have permission for some markets or for them to be outside trading hours
-            if "permission" in str(e).lower() or "access" in str(e).lower():
+            if (
+                "network" in str(e).lower()
+                or "timeout" in str(e).lower()
+                or "connect" in str(e).lower()
+            ):
+                pytest.skip(f"Network connection issue, skipping: {e}")
+            elif "permission" in str(e).lower() or "access" in str(e).lower():
                 pytest.skip(f"No permission to access {ticker}, skipping: {e}")
             elif "not found" in str(e).lower() or "invalid" in str(e).lower():
                 pytest.skip(f"Ticker {ticker} is invalid or not found, skipping: {e}")
@@ -147,23 +154,25 @@ def test_symbol_conversion_integration():
 )
 def test_api_error_handling():
     """Test API error handling."""
-    client = LongPortClient()
-
     # Test with invalid stock tickers
     invalid_tickers = ["INVALID_TICKER_12345"]
 
     try:
+        client = LongPortClient()
         quotes = client.quote_last(invalid_tickers)
         # If no exception is thrown, check if the result is empty or contains an error message
         assert isinstance(quotes, dict)
 
     except Exception as e:
         # An error is expected, which is normal
-        assert (
-            "invalid" in str(e).lower()
-            or "not found" in str(e).lower()
-            or "error" in str(e).lower()
-        )
+        if "network" in str(e).lower() or "timeout" in str(e).lower() or "connect" in str(e).lower():
+            pytest.skip(f"Network connection issue, skipping test: {e}")
+        else:
+            assert (
+                "invalid" in str(e).lower()
+                or "not found" in str(e).lower()
+                or "error" in str(e).lower()
+            )
 
 
 # Note: The submit_limit method involves real trading and is not tested in integration tests.

@@ -216,8 +216,50 @@ class LongPortClient:
         # Uniformly use SDK recommended from_env to ensure correct region and routing
         self.config = Config.from_env()
 
-        self.quote = QuoteContext(self.config)
-        self.trade = TradeContext(self.config)
+        # Lazily construct quote/trade contexts to avoid failing at init time
+        # in environments with intermittent connectivity or region mismatch.
+        # Use lightweight wrappers that only create the underlying contexts
+        # when a method is actually invoked.
+
+        class _LazyContext:
+            def __init__(self, factory):
+                self._factory = factory
+                self._ctx = None
+
+            def _ensure(self):
+                if self._ctx is None:
+                    self._ctx = self._factory()
+                return self._ctx
+
+            def __getattr__(self, name):
+                return getattr(self._ensure(), name)
+
+        # Region-aware factory with fallback on connection timeout
+        def _mk_ctx(kind: str):
+            def _factory():
+                # Try current region first, then fall back to common regions
+                tried: list[str] = []
+                for rg in [self.region, "us", "hk", "sg"]:
+                    if not rg or rg in tried:
+                        continue
+                    tried.append(rg)
+                    os.environ["LONGPORT_REGION"] = rg
+                    try:
+                        cfg = Config.from_env()
+                        return QuoteContext(cfg) if kind == "quote" else TradeContext(cfg)
+                    except Exception as e:  # Defer raising until all options tried
+                        # Only retry on probable connectivity/endpoint issues
+                        msg = str(e).lower()
+                        if "timeout" in msg or "connect" in msg or "dns" in msg:
+                            continue
+                        raise
+                # Should not reach here; raise a generic error if we do
+                raise RuntimeError("无法初始化 LongPort 上下文：网络或区域配置异常")
+
+            return _factory
+
+        self.quote = _LazyContext(_mk_ctx("quote"))
+        self.trade = _LazyContext(_mk_ctx("trade"))
         # Backward compatible attribute names expected by older code/tests
         self.q = self.quote
         self.t = self.trade
