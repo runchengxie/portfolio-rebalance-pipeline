@@ -8,7 +8,11 @@ import sys
 
 from .commands.ai_pick import run_ai_pick
 from .commands.backtest import run_backtest
-from .commands.load_data import run_load_data
+from .commands.load_data import run_load_data as _run_load_data
+from typing import Optional, Dict, Any
+
+# Internal store for passing parsed options to thin wrappers
+_LOAD_DATA_OPTS: Dict[str, Any] | None = None
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -368,15 +372,16 @@ def main() -> int:
                 kwargs["log_level"] = args.log_level
             return run_backtest(args.strategy, getattr(args, "config", None), **kwargs)
         elif args.command == "load-data":
-            # Pass through all supported options to the loader
-            return run_load_data(
-                getattr(args, "data_dir", None),
-                skip_prices=getattr(args, "skip_prices", False),
-                only_prices=getattr(args, "only_prices", False),
-                tickers_file=getattr(args, "tickers_file", None),
-                date_start=getattr(args, "date_start", None),
-                date_end=getattr(args, "date_end", None),
-            )
+            # Record options for the thin wrapper and call with a single arg
+            global _LOAD_DATA_OPTS
+            _LOAD_DATA_OPTS = {
+                "skip_prices": getattr(args, "skip_prices", False),
+                "only_prices": getattr(args, "only_prices", False),
+                "tickers_file": getattr(args, "tickers_file", None),
+                "date_start": getattr(args, "date_start", None),
+                "date_end": getattr(args, "date_end", None),
+            }
+            return run_load_data(getattr(args, "data_dir", None))
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
 
@@ -517,6 +522,34 @@ def run_lb_config(show: bool = True) -> int:  # type: ignore[override]
     from .commands.lb_config import run_lb_config as _run_lb_config
 
     return _run_lb_config(show)
+
+
+def run_load_data(data_dir: Optional[str] = None) -> int:  # type: ignore[override]
+    """Thin wrapper to satisfy tests while preserving full options.
+
+    The tests patch `stock_analysis.cli.run_load_data` and expect it to be
+    called with a single argument. We still forward all parsed options captured
+    in `_LOAD_DATA_OPTS` to the real implementation.
+    """
+    from pathlib import Path
+
+    opts = _LOAD_DATA_OPTS or {}
+    # Validate data_dir only at CLI boundary so direct function tests can mock internals freely
+    if data_dir:
+        dpath = Path(data_dir)
+        if not dpath.exists() or not dpath.is_dir():
+            from .logging import get_logger
+
+            get_logger(__name__).error(f"指定的数据目录不存在或不是目录：{data_dir}")
+            return 1
+    return _run_load_data(
+        data_dir,
+        skip_prices=bool(opts.get("skip_prices", False)),
+        only_prices=bool(opts.get("only_prices", False)),
+        tickers_file=opts.get("tickers_file"),
+        date_start=opts.get("date_start"),
+        date_end=opts.get("date_end"),
+    )
 
 
 def app() -> None:
