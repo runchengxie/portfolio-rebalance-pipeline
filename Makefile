@@ -1,16 +1,16 @@
 .PHONY: test test-all test-int test-e2e coverage
 
-test: ## 单元测试
+test: ## Unit tests
 	pytest
 
-test-all: ## 全量测试
+test-all: ## Run all tests
 	pytest -m "unit or integration or e2e"
 
-test-int: ## 集成测试
+test-int: ## Integration tests
 	pytest -m "integration" -q
 
-test-e2e: ## 端到端
+test-e2e: ## End-to-end tests
 	pytest -m "e2e" -q
 
-coverage: ## 覆盖率报告
+coverage: ## Coverage report
 	pytest --cov=stock_analysis --cov-report=term-missing
