@@ -21,6 +21,8 @@ Final Portfolio Value:   $4,649,106.03
 Total Return:            153.67%
 Annualized Return:       11.02%
 Max Drawdown:            25.59%
+Sharpe Ratio:           1.08
+Risk-free Series:       DGS3MO
 ==================================================
 
 ==================================================
@@ -33,6 +35,8 @@ Final Portfolio Value:   $3,411,410.08
 Total Return:            122.71%
 Annualized Return:       9.41%
 Max Drawdown:            33.23%
+Sharpe Ratio:           0.86
+Risk-free Series:       DGS3MO
 ==================================================
 ```
 
@@ -76,6 +80,7 @@ Max Drawdown:            33.23%
 - `stockq validate-exports`: 校验 Excel 与 JSON 的一致性。
 - `stockq lb-config`: 显示 LongPort 相关环境配置。
 - `stockq targets gen`: 从最新 AI 结果生成可编辑的 `targets.json`，推荐作为实盘起点。
+- `stockq rf info`: 查看/刷新无风险利率（FRED）缓存状态，供 Sharpe 计算复用。
 
 ### 配置环境
 
@@ -86,11 +91,23 @@ Max Drawdown:            33.23%
 
 * 复制 `config/template.yaml` 为 `config/config.yaml`。
 
+无风险利率（Sharpe 计算）相关配置示例：
+
+```yaml
+risk_free:
+  series: DGS3MO        # 默认使用 3 个月美债收益率
+  ttl_days: 5           # 缓存超过 5 天自动刷新（设为 null 禁用）
+  fallback_rate: 0.0    # API 不可用时的日化兜底利率（小数）
+```
+
+> CLI 会读取同一份配置：`stockq rf update --series DGS1 --force` 可按需覆盖。
+
 环境变量要点（.env）：
 
 | 变量 | 示例 | 说明 |
 | --- | --- | --- |
 | `GEMINI_API_KEY[_2,_3]` | `xxxx` | Gemini API 密钥（可多把，轮换限流） |
+| `FRED_API_KEY` | `xxxx` | FRED 数据接口密钥（用于无风险利率） |
 | `LONGPORT_REGION` | `cn` | 长桥区域：`hk` 或 `cn` |
 | `LONGPORT_ENABLE_OVERNIGHT` | `true` | 是否启用隔夜行情（预览友好） |
 | `LONGPORT_APP_KEY` / `LONGPORT_APP_SECRET` | `...` | 长桥应用凭据 |
@@ -183,7 +200,19 @@ fractional_preview:
         * 初筛：`outputs/point_in_time_backtest_quarterly_sp500_historical.xlsx`
         * AI：`outputs/point_in_time_ai_stock_picks_all_sheets.xlsx`
 
-5. 步骤 5: 运行 AI 筛选组合的回测
+5. （推荐）预热无风险利率缓存（Sharpe 所需）
+
+    无风险利率序列按需自动刷新，但首次回测前可手动预热，避免 CLI 第一次运行时命中 FRED 限流。
+
+    ```bash
+    # 覆盖 AI/量化回测涉及的时间窗
+    stockq rf update --start 2016-01-01 --end 2025-12-31
+
+    # 查看缓存范围与最近刷新时间
+    stockq rf info
+    ```
+
+6. 运行 AI 筛选组合的回测
 
     此脚本读取 AI 筛选的股票列表，使用`backtrader`引擎进行回测，并生成最终的累计收益图和性能指标。默认情况下，它会优先从 `outputs/ai_pick/` 和 `outputs/preliminary/` 目录中按日期读取 JSON 文件；若缺失则回退到对应的 Excel 文件。
 
@@ -376,6 +405,8 @@ fractional_preview:
 
 * 命令行工具: 通过`stockq`命令及其子命令（如`load-data`, `ai-pick`, `backtest`, `lb-rebalance`）执行所有核心工作流，实现流程自动化。
 
+* Sharpe 比率自动化: 回测时自动读取/刷新 FRED 无风险利率缓存，输出 Sharpe Ratio 与所用序列，亦可通过 `stockq rf` 独立维护缓存。
+
 * 集中化配置: 所有回测参数（如时间范围、初始资金）均在`config/config.yaml`中统一管理，便于快速调整和复现实验。
 
 * 模块化与可测试的代码: 项目被重构为逻辑清晰的模块（如`backtest`, `utils`），并配备了`pytest`单元测试，保证了核心逻辑的正确性。
@@ -500,8 +531,11 @@ graph TD;
 │       │   ├── ai_pick.py
 │       │   ├── backtest.py
 │       │   ├── lb_account.py
+│       │   ├── risk_free.py
 │       │   └── ...
 │       ├── services/               # 业务逻辑层
+│       │   ├── marketdata/         # 市场数据服务（FRED 无风险利率等）
+│       │   │   └── risk_free.py
 │       │   ├── account_snapshot.py
 │       │   └── rebalancer.py
 │       ├── renderers/              # 输出渲染层

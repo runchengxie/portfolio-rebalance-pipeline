@@ -147,6 +147,44 @@ def create_parser() -> argparse.ArgumentParser:
         "--no-json", action="store_true", help="仅生成Excel，不写JSON"
     )
 
+    # Risk-free rate management command
+    rf_parser = subparsers.add_parser(
+        "rf",
+        help="管理无风险利率缓存",
+        description="更新与检查无风险利率（FRED）缓存",
+    )
+    rf_parser.add_argument(
+        "--series",
+        type=str,
+        help="FRED 序列 ID（默认读取配置中的 series）",
+    )
+    rf_parser.add_argument(
+        "--ttl-days",
+        type=int,
+        help="覆盖配置中的缓存刷新天数（单位：天）",
+    )
+    rf_sub = rf_parser.add_subparsers(dest="rf_command", metavar="SUBCOMMAND")
+    rf_sub.add_parser("info", help="显示缓存状态（默认子命令）")
+    rf_update = rf_sub.add_parser(
+        "update",
+        help="抓取并缓存指定时间范围内的无风险利率",
+    )
+    rf_update.add_argument("--start", type=str, help="起始日期 YYYY-MM-DD")
+    rf_update.add_argument("--end", type=str, help="结束日期 YYYY-MM-DD")
+    rf_update.add_argument(
+        "--force",
+        action="store_true",
+        help="忽略 TTL 限制并强制刷新",
+    )
+    rf_show = rf_sub.add_parser("show", help="查看最近的缓存记录")
+    rf_show.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="显示最近N条记录（默认10）",
+    )
+    rf_sub.add_parser("purge", help="清除当前序列的缓存")
+
     # Export command
     export_parser = subparsers.add_parser(
         "export",
@@ -418,6 +456,10 @@ def main() -> int:
                     getattr(args, "output", None),
                 )
             )
+        elif args.command == "rf":
+            from .commands.risk_free import run_risk_free
+
+            return _handle_command_result(run_risk_free(args))
         elif args.command == "export":
             from .commands.export import run_export
 

@@ -27,6 +27,12 @@ backtest:
   #   ai: 1000000      # AI stock picking strategy
   #   quant: 1000000   # Quantitative preliminary selection strategy
   #   spy: 1000000     # SPY benchmark strategy
+
+risk_free:
+  series: DGS3MO        # FRED series ID for risk-free rate (3-month T-bill)
+  ttl_days: 5           # Refresh cache if older than this number of days (null to disable)
+  fallback_rate: 0.0    # Daily fallback rate (decimal) when FRED API is unavailable
+  calendar: US          # Trading calendar for alignment (reserved for future use)
   
 # Broker fees and fractional preview (Phase 1)
 fees:

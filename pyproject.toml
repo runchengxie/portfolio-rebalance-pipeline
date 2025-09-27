@@ -10,6 +10,7 @@ dependencies = [
     "scipy",
     "backtrader",
     "python-dotenv",
+    "requests",
     "google-genai",
     "longport>=0.2.77",
     "pyyaml",
