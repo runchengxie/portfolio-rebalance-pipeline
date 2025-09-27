@@ -10,11 +10,36 @@ Provides utilities to:
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 
 from ..utils.paths import AI_PORTFOLIO_FILE, OUTPUTS_DIR, QUANT_PORTFOLIO_FILE
+from ..logging import get_logger
+
+
+LOGGER = get_logger(__name__)
+
+
+def _emit(level: str, message: str, *, asof: Any | None = None, **context: Any) -> None:
+    base_context: dict[str, Any] = {"component": "exports", "asof": asof}
+    base_context.update({k: v for k, v in context.items() if v is not None})
+    context_parts = [f"{key}={value}" for key, value in base_context.items() if value is not None]
+    if context_parts:
+        message = f"{message} [{' '.join(context_parts)}]"
+    getattr(LOGGER, level)(message)
+
+
+def _info(message: str, *, asof: Any | None = None, **context: Any) -> None:
+    _emit("info", message, asof=asof, **context)
+
+
+def _warning(message: str, *, asof: Any | None = None, **context: Any) -> None:
+    _emit("warning", message, asof=asof, **context)
+
+
+def _error(message: str, *, asof: Any | None = None, **context: Any) -> None:
+    _emit("error", message, asof=asof, **context)
 
 
 def _prelim_json_dir(root: Path | None = None) -> Path:
@@ -45,7 +70,7 @@ def export_excel_to_json(
         out_root = _ai_json_dir(json_root)
 
     if not excel.exists():
-        print(f"[export] Excel not found: {excel}")
+        _error("[export] Excel not found", source=source, path=excel)
         return 0
 
     xls = pd.ExcelFile(excel)
@@ -54,7 +79,11 @@ def export_excel_to_json(
         try:
             trade_date = pd.to_datetime(sheet).date()
         except Exception:
-            print(f"[export] Skip non-date sheet: {sheet}")
+            _warning(
+                "[export] Skip non-date sheet",
+                source=source,
+                sheet=sheet,
+            )
             continue
 
         df = pd.read_excel(xls, sheet_name=sheet)
@@ -128,7 +157,10 @@ def export_excel_to_json(
         )
         written += 1
 
-    print(f"[export] Wrote {written} JSON files under {out_root}")
+    _info(
+        f"[export] Wrote {written} JSON files under {out_root}",
+        source=source,
+    )
     return written
 
 
@@ -149,12 +181,12 @@ def export_json_to_excel(
         excel = Path(excel_out) if excel_out else AI_PORTFOLIO_FILE
 
     if not root.exists():
-        print(f"[export] JSON root not found: {root}")
+        _error("[export] JSON root not found", source=source, path=root)
         return 0
 
     files = sorted(root.rglob("*.json"))
     if not files:
-        print(f"[export] No JSON files under {root}")
+        _warning("[export] No JSON files found", source=source, path=root)
         return 0
 
     written = 0
@@ -201,7 +233,11 @@ def export_json_to_excel(
             df.to_excel(writer, sheet_name=str(trade_date), index=False)
             written += 1
 
-    print(f"[export] Wrote {written} sheets to {excel}")
+    _info(
+        f"[export] Wrote {written} sheets to {excel}",
+        source=source,
+        path=excel,
+    )
     return written
 
 
@@ -222,10 +258,10 @@ def validate_exports(
         root = _ai_json_dir(json_root)
 
     if not excel.exists():
-        print(f"[validate] Excel not found: {excel}")
+        _error("[validate] Excel not found", source=source, path=excel)
         return False
     if not root.exists():
-        print(f"[validate] JSON root not found: {root}")
+        _error("[validate] JSON root not found", source=source, path=root)
         return False
 
     xls = pd.ExcelFile(excel)
@@ -239,7 +275,12 @@ def validate_exports(
         year_dir = root / f"{trade_date.year}"
         fp = year_dir / f"{trade_date}.json"
         if not fp.exists():
-            print(f"[validate] Missing JSON for {trade_date}: {fp}")
+            _error(
+                "[validate] Missing JSON file",
+                source=source,
+                asof=trade_date,
+                path=fp,
+            )
             ok = False
             continue
         payload = pd.read_json(fp)
@@ -275,11 +316,16 @@ def validate_exports(
             ok = False
             only_in_json = sorted(set(json_tickers) - set(excel_tickers))
             only_in_excel = sorted(set(excel_tickers) - set(json_tickers))
-            print(
-                f"[validate] MISMATCH {trade_date}: json={len(json_tickers)} excel={len(excel_tickers)}\n"
-                f"  only_in_json={only_in_json}\n  only_in_excel={only_in_excel}"
+            _error(
+                (
+                    f"[validate] MISMATCH json={len(json_tickers)} "
+                    f"excel={len(excel_tickers)} only_in_json={only_in_json} "
+                    f"only_in_excel={only_in_excel}"
+                ),
+                source=source,
+                asof=trade_date,
             )
 
     if ok:
-        print("[validate] Excel and JSON exports are consistent.")
+        _info("[validate] Excel and JSON exports are consistent.", source=source)
     return ok
