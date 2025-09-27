@@ -6,9 +6,21 @@
 
 ## 回测结果图
 
-![AI策略回测示例](assets/ai_quarterly_strategy_returns.png)
+> 相比SPY，该策略有相对更低的回撤（22.81% vs 33.23%），更高的夏普比率（0.984 vs 0.721），以及略微更高的总收益（145.50% vs 122.71%）
 
-相比SPY，该策略有相对更低的回撤和略微更高的总收益
+### 收益率曲线和回测对比
+
+![收益率曲线和回测对比](assets/ai_quarterly_strategy_returns.png)
+
+### 每月损益热力图
+
+![每月损益热力图](assets/ai_quarterly_strategy_returns_heatmap.png)
+
+### 252天滚动夏普比率和波动率
+
+![](assets/ai_quarterly_strategy_returns_rolling.png)
+
+### 数据面板
 
 ```bash
 ==================================================
@@ -16,17 +28,17 @@
 ==================================================
 Time Period Covered:     2016-10-04 to 2025-08-31
 Initial Portfolio Value: $1,000,000.00
-Final Portfolio Value:   $4,649,106.03
+Final Portfolio Value:   $4,284,430.93
 --------------------------------------------------
-Total Return:            153.67%
-Annualized Return:       11.02%
-Max Drawdown:            25.59%
-Sharpe Ratio:           1.08
+Total Return:            145.50%
+Annualized Return:       10.61%
+Max Drawdown:            22.81%
+Sharpe Ratio:           0.984
 Risk-free Series:       DGS3MO
 ==================================================
 
 ==================================================
-        SPY Benchmark Results
+              SPY Benchmark Results
 ==================================================
 Time Period Covered:     2016-10-04 to 2025-08-29
 Initial Portfolio Value: $1,000,000.00
@@ -35,17 +47,28 @@ Final Portfolio Value:   $3,411,410.08
 Total Return:            122.71%
 Annualized Return:       9.41%
 Max Drawdown:            33.23%
-Sharpe Ratio:           0.86
+Sharpe Ratio:           0.721
 Risk-free Series:       DGS3MO
 ==================================================
 
 Benchmark Comparison (Unified Methodology):
-Metric              AI Quarterly Strategy Backtest        SPY
----------------------------------------------------------------------------
-Total Return        153.67%                               122.71%
-Annualized Return   11.02%                                9.41%
-Max Drawdown        25.59%                                33.23%
-Sharpe Ratio        1.080                                 0.860
+Metric              AI Quarterly Strategy BacktestSPY
+--------------------------------------------------------------------------------
+Total Return        145.50%                       122.71%
+Annualized Return   10.61%                        9.41%
+Max Drawdown        22.81%                        33.23%
+Sharpe Ratio        0.984                         0.721
+--------------------------------------------------------------------------------
+Period Covered:2016-10-04 to 2025-08-31 | 2016-10-04 to 2025-08-29
+Initial / Final: $1,000,000.00 → $4,284,430.93 | $1,000,000.00 → $3,411,410.08
+Risk-free Series: DGS3MO
+
+Segmented Performance (ending on latest observation):
+Horizon           CAGR     MaxDD    Calmar   Sortino       Vol     InfoR  TrackErr
+----------------------------------------------------------------------------------
+Last 1Y         21.73%   -16.22%      1.34      1.04    16.21%      0.53     7.66%
+Last 3Y         21.21%   -16.22%      1.31      1.09    14.43%      0.28     7.46%
+Last 5Y         17.97%   -16.22%      1.11      0.98    14.32%      0.31     8.32%
 ```
 
 ## 目录
