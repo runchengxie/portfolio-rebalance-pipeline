@@ -26,7 +26,7 @@ Risk-free Series:       DGS3MO
 ==================================================
 
 ==================================================
-       SPY Benchmark Results (Total Return)
+        SPY Benchmark Results
 ==================================================
 Time Period Covered:     2016-10-04 to 2025-08-29
 Initial Portfolio Value: $1,000,000.00
@@ -38,6 +38,14 @@ Max Drawdown:            33.23%
 Sharpe Ratio:           0.86
 Risk-free Series:       DGS3MO
 ==================================================
+
+Benchmark Comparison (Unified Methodology):
+Metric              AI Quarterly Strategy Backtest        SPY
+---------------------------------------------------------------------------
+Total Return        153.67%                               122.71%
+Annualized Return   11.02%                                9.41%
+Max Drawdown        25.59%                                33.23%
+Sharpe Ratio        1.080                                 0.860
 ```
 
 ## 目录

@@ -542,6 +542,7 @@ def generate_report(
     output_png: Path | None = None,
     benchmark_value: pd.Series | None = None,
     benchmark_label: str = "Benchmark",
+    benchmark_metrics: dict[str, Any] | None = None,
 ) -> None:
     """Generate unified backtest report
 
@@ -552,28 +553,93 @@ def generate_report(
         output_png: Output image path (optional)
         benchmark_value: Benchmark value series (optional)
         benchmark_label: Benchmark label
+        benchmark_metrics: Optional metrics dictionary for benchmark comparison
     """
-    # Print text report
-    print("\n" + "=" * 50)
-    print(f"{title:^50}")
-    print("=" * 50)
-    print(
-        "Time Period Covered:     "
-        f"{metrics['start_date'].strftime('%Y-%m-%d')} "
-        f"to {metrics['end_date'].strftime('%Y-%m-%d')}"
-    )
-    print(f"Initial Portfolio Value: ${metrics['initial_value']:,.2f}")
-    print(f"Final Portfolio Value:   ${metrics['final_value']:,.2f}")
-    print("-" * 50)
-    print(f"Total Return:            {metrics['total_return'] * 100:.2f}%")
-    print(f"Annualized Return:       {metrics['annualized_return'] * 100:.2f}%")
-    print(f"Max Drawdown:            {metrics['max_drawdown']:.2f}%")
-    if metrics.get("sharpe") is not None:
-        print(f"Sharpe Ratio:           {metrics['sharpe']:.3f}")
-        rf_series = metrics.get("risk_free_series")
-        if rf_series:
-            print(f"Risk-free Series:       {rf_series}")
-    print("=" * 50)
+
+    def _render_metrics_block(block_title: str, block_metrics: dict[str, Any]) -> None:
+        print("\n" + "=" * 50)
+        print(f"{block_title:^50}")
+        print("=" * 50)
+        print(
+            "Time Period Covered:     "
+            f"{block_metrics['start_date'].strftime('%Y-%m-%d')} "
+            f"to {block_metrics['end_date'].strftime('%Y-%m-%d')}"
+        )
+        print(f"Initial Portfolio Value: ${block_metrics['initial_value']:,.2f}")
+        print(f"Final Portfolio Value:   ${block_metrics['final_value']:,.2f}")
+        print("-" * 50)
+        print(f"Total Return:            {block_metrics['total_return'] * 100:.2f}%")
+        print(
+            "Annualized Return:       "
+            f"{block_metrics['annualized_return'] * 100:.2f}%"
+        )
+        print(f"Max Drawdown:            {block_metrics['max_drawdown']:.2f}%")
+        if block_metrics.get("sharpe") is not None:
+            print(f"Sharpe Ratio:           {block_metrics['sharpe']:.3f}")
+            rf_series = block_metrics.get("risk_free_series")
+            if rf_series:
+                print(f"Risk-free Series:       {rf_series}")
+        print("=" * 50)
+
+    def _format_percent(value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value * 100:.2f}%"
+
+    def _format_drawdown(value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.2f}%"
+
+    def _format_sharpe(value: float | None) -> str:
+        if value is None:
+            return "N/A"
+        return f"{value:.3f}"
+
+    # Print text report for strategy and benchmark (if provided)
+    _render_metrics_block(title, metrics)
+
+    benchmark_section_title = f"{benchmark_label} Benchmark Results"
+    if benchmark_metrics is not None:
+        _render_metrics_block(benchmark_section_title, benchmark_metrics)
+
+        strategy_label = title.replace("Results", "").strip()
+        benchmark_column_label = benchmark_label
+        column_width = max(len(strategy_label), len(benchmark_column_label), 20)
+
+        print("\nBenchmark Comparison (Unified Methodology):")
+        header = f"{'Metric':<20}{strategy_label:<{column_width}}{benchmark_column_label:<{column_width}}"
+        print(header)
+        print("-" * len(header))
+
+        comparison_rows = [
+            (
+                "Total Return",
+                _format_percent(metrics.get("total_return")),
+                _format_percent(benchmark_metrics.get("total_return")),
+            ),
+            (
+                "Annualized Return",
+                _format_percent(metrics.get("annualized_return")),
+                _format_percent(benchmark_metrics.get("annualized_return")),
+            ),
+            (
+                "Max Drawdown",
+                _format_drawdown(metrics.get("max_drawdown")),
+                _format_drawdown(benchmark_metrics.get("max_drawdown")),
+            ),
+            (
+                "Sharpe Ratio",
+                _format_sharpe(metrics.get("sharpe")),
+                _format_sharpe(benchmark_metrics.get("sharpe")),
+            ),
+        ]
+
+        for metric_name, strategy_value, benchmark_value_str in comparison_rows:
+            print(
+                f"{metric_name:<20}{strategy_value:<{column_width}}"
+                f"{benchmark_value_str:<{column_width}}"
+            )
 
     # Generate chart
     print("\nGenerating plot...")

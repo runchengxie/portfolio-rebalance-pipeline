@@ -1,4 +1,5 @@
 import datetime
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pandas.testing as pdt
@@ -7,6 +8,24 @@ from stock_analysis.backtest.engine import run_quarterly_backtest
 from stock_analysis.backtest.prep import DividendPandasData
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def mock_risk_free_service():
+    """Patch risk-free service for deterministic Sharpe calculations."""
+
+    with patch("stock_analysis.backtest.engine._get_risk_free_service") as mock_factory:
+        service = MagicMock()
+        service.default_series = "DGS3MO"
+
+        def _compute_sharpe(returns: pd.Series) -> float | None:
+            if isinstance(returns, pd.Series) and not returns.empty:
+                return 0.5
+            return None
+
+        service.compute_sharpe.side_effect = _compute_sharpe
+        mock_factory.return_value = service
+        yield service
 
 
 def test_dividend_reinvestment():
@@ -26,7 +45,7 @@ def test_dividend_reinvestment():
     feed = DividendPandasData(dataname=price, openinterest=None, name="TEST")
     portfolios = {datetime.date(2022, 1, 3): pd.DataFrame({"Ticker": ["TEST"]})}
 
-    portfolio_value, _ = run_quarterly_backtest(
+    portfolio_value, metrics = run_quarterly_backtest(
         portfolios,
         {"TEST": feed},
         initial_cash=100,
@@ -41,3 +60,5 @@ def test_dividend_reinvestment():
     expected = pd.Series([100.0, 100.0, 100.0, 101.0], index=expected_index)
 
     pdt.assert_series_equal(portfolio_value, expected)
+    assert metrics["sharpe"] == 0.5
+    assert metrics["risk_free_series"] == "DGS3MO"

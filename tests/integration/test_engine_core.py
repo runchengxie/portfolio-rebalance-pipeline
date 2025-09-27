@@ -26,6 +26,23 @@ from stock_analysis.backtest.engine import (
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def mock_risk_free_service():
+    """Patch the risk-free service to avoid network/database dependencies."""
+
+    with patch("stock_analysis.backtest.engine._get_risk_free_service") as mock_factory:
+        service = MagicMock()
+
+        def _compute_sharpe(returns: pd.Series) -> float | None:
+            if isinstance(returns, pd.Series) and not returns.empty:
+                return 0.5
+            return None
+
+        service.compute_sharpe.side_effect = _compute_sharpe
+        service.default_series = "DGS3MO"
+        mock_factory.return_value = service
+        yield service
+
 class TestPointInTimeStrategy:
     """Tests for the PointInTimeStrategy class."""
 
@@ -241,7 +258,7 @@ class TestRunQuarterlyBacktest:
 
         return data_feeds
 
-    def test_successful_backtest_execution(self):
+    def test_successful_backtest_execution(self, mock_risk_free_service):
         """Tests successful backtest execution."""
         # Create a test portfolio.
         portfolios = {
@@ -281,6 +298,8 @@ class TestRunQuarterlyBacktest:
             "total_return",
             "annualized_return",
             "max_drawdown",
+            "sharpe",
+            "risk_free_series",
         ]
         for field in required_fields:
             assert field in metrics
@@ -288,6 +307,9 @@ class TestRunQuarterlyBacktest:
         # Verify the reasonableness of the metric values.
         assert metrics["initial_value"] == initial_cash
         assert metrics["final_value"] > 0
+        assert metrics["sharpe"] == 0.5
+        assert metrics["risk_free_series"] == "DGS3MO"
+        assert mock_risk_free_service.compute_sharpe.called
         assert metrics["start_date"] == start_date
         assert metrics["end_date"] == end_date
 
@@ -395,7 +417,7 @@ class TestRunBenchmarkBacktest:
             index=dates,
         )
 
-    def test_benchmark_backtest_execution(self):
+    def test_benchmark_backtest_execution(self, mock_risk_free_service):
         """Tests benchmark backtest execution."""
         spy_data = self.create_spy_data()
         initial_cash = 100000.0
@@ -421,6 +443,8 @@ class TestRunBenchmarkBacktest:
             "total_return",
             "annualized_return",
             "max_drawdown",
+            "sharpe",
+            "risk_free_series",
         ]
         for field in required_fields:
             assert field in metrics
@@ -428,7 +452,7 @@ class TestRunBenchmarkBacktest:
         assert metrics["initial_value"] == initial_cash
         assert metrics["final_value"] > 0
 
-    def test_custom_ticker(self):
+    def test_custom_ticker(self, mock_risk_free_service):
         """Tests using a custom ticker."""
         data = self.create_spy_data()
 
@@ -440,6 +464,9 @@ class TestRunBenchmarkBacktest:
         assert isinstance(portfolio_value, pd.Series)
         assert isinstance(metrics, dict)
         assert metrics["initial_value"] == 50000.0
+        assert metrics["sharpe"] == 0.5
+        assert metrics["risk_free_series"] == "DGS3MO"
+        assert mock_risk_free_service.compute_sharpe.called
 
 
 class TestGenerateReport:
@@ -527,7 +554,7 @@ class TestGenerateReport:
 class TestEngineIntegration:
     """Integration tests for the backtest engine."""
 
-    def test_end_to_end_backtest_flow(self):
+    def test_end_to_end_backtest_flow(self, mock_risk_free_service):
         """Tests the end-to-end backtest workflow."""
         # 1. Prepare test data.
         portfolios = {
@@ -595,6 +622,11 @@ class TestEngineIntegration:
         assert benchmark_metrics["final_value"] > 0
         assert metrics["total_return"] != 0  # There should be a change in returns.
         assert benchmark_metrics["total_return"] != 0
+        assert metrics["sharpe"] == 0.5
+        assert benchmark_metrics["sharpe"] == 0.5
+        assert metrics["risk_free_series"] == "DGS3MO"
+        assert benchmark_metrics["risk_free_series"] == "DGS3MO"
+        assert mock_risk_free_service.compute_sharpe.call_count >= 2
 
         # 6. Test report generation (without actually showing the plot).
         with patch("matplotlib.pyplot.show"):
