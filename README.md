@@ -105,10 +105,25 @@ Sharpe Ratio        1.080                                 0.860
 risk_free:
   series: DGS3MO        # 默认使用 3 个月美债收益率
   ttl_days: 5           # 缓存超过 5 天自动刷新（设为 null 禁用）
-  fallback_rate: 0.0    # API 不可用时的日化兜底利率（小数）
+  fallback_rate: null   # API 异常时是否使用常量兜底（null=禁用，建议保留 null）
 ```
 
 > CLI 会读取同一份配置：`stockq rf update --series DGS1 --force` 可按需覆盖。
+
+Sharpe 计算在回测阶段会自动尝试按需求预热缓存，若仍缺少数据会给出明确提示（含 `stockq rf update --start ... --end ...` 命令）。
+
+回测报告相关开关集中在 `report` 段，可统一控制文本输出与附加图表：
+
+```yaml
+report:
+  report_mode: both       # comparison_only | strategy_only | both
+  with_underwater: true   # 是否绘制回撤图
+  index_to_100: true      # 净值曲线是否按 100 归一
+  use_log_scale: false    # 净值曲线是否使用对数坐标
+  show_rolling: true      # 是否绘制滚动波动率/Sharpe
+  rolling_window: 252     # 滚动窗口（交易日）
+  show_heatmap: true      # 是否绘制月度收益热力图
+```
 
 环境变量要点（.env）：
 
@@ -228,7 +243,7 @@ fractional_preview:
     stockq backtest ai
     ```
 
-> 关于回测图表：默认在水下图中以填充展示策略回撤，同时叠加基准的表现。净值面板左上角/右上角会自动嵌入策略与基准的关键指标（TotRet、CAGR、MaxDD、Sharpe），方便对比。还可以通过 `generate_report(..., show_rolling=True, show_heatmap=True)` 打开滚动波动率/Sharpe 与月度收益热力图，或利用 `report_mode` 切换文本输出（仅对比表、仅策略段、或全量）。
+> 关于回测图表：默认在水下图中以填充展示策略回撤，同时叠加基准的表现。净值面板左上角/右上角会自动嵌入策略与基准的关键指标（TotRet、CAGR、MaxDD、Sharpe），方便对比。所有图表与文本输出开关都集中在 `config.yaml` 的 `report` 段，可切换 `report_mode`、启用/禁用滚动波动率与月度收益热力图、调整滚动窗口或是否对数坐标。
 
 ### 阶段三：券商集成与实盘操作 (长桥)
 

@@ -152,6 +152,27 @@ def test_get_series_for_index_uses_fallback(tmp_path, monkeypatch, caplog):
 
 
 @pytest.mark.unit
+def test_get_series_for_index_without_fallback_prompts_update(tmp_path, monkeypatch):
+    """If fetching fails and no fallback is configured, an actionable error is raised."""
+
+    service = _build_service(tmp_path, fallback_rate=None)
+
+    def boom(*_: Any, **__: Any) -> RiskFreeCacheInfo:
+        raise RiskFreeRateServiceError("no data")
+
+    monkeypatch.setattr(service, "ensure_range", boom)
+
+    index = pd.date_range("2024-04-01", periods=2, freq="D")
+
+    with pytest.raises(RiskFreeRateServiceError) as excinfo:
+        service.get_series_for_index(index)
+
+    message = str(excinfo.value)
+    assert "stockq rf update" in message
+    assert "no data" in message
+
+
+@pytest.mark.unit
 def test_compute_sharpe_uses_cached_series(tmp_path):
     """Sharpe ratio is computed using cached daily risk-free observations."""
 

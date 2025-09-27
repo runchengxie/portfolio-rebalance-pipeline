@@ -31,8 +31,17 @@ backtest:
 risk_free:
   series: DGS3MO        # FRED series ID for risk-free rate (3-month T-bill)
   ttl_days: 5           # Refresh cache if older than this number of days (null to disable)
-  fallback_rate: 0.0    # Daily fallback rate (decimal) when FRED API is unavailable
+  fallback_rate: null   # Optional constant fallback when FRED API is unavailable (null to disable)
   calendar: US          # Trading calendar for alignment (reserved for future use)
+
+report:
+  report_mode: both       # comparison_only | strategy_only | both
+  with_underwater: true   # Include drawdown subplot
+  index_to_100: true      # Rebase equity curves to 100
+  use_log_scale: false    # Plot equity curve using log scale
+  show_rolling: true      # Enable rolling volatility/Sharpe panel
+  rolling_window: 252     # Window (trading days) for rolling metrics
+  show_heatmap: true      # Enable monthly return heatmap
   
 # Broker fees and fractional preview (Phase 1)
 fees:

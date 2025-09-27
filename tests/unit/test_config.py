@@ -15,7 +15,13 @@ import pytest
 import yaml
 from dateutil.relativedelta import relativedelta
 
-from stock_analysis.config import get_backtest_period, get_initial_cash, load_cfg
+from stock_analysis.config import (
+    ReportSettings,
+    get_backtest_period,
+    get_initial_cash,
+    get_report_settings,
+    load_cfg,
+)
 
 
 class TestLoadCfg:
@@ -346,3 +352,57 @@ backtest:
             assert get_initial_cash("ai") == 1000000.0
             assert get_initial_cash("quant") == 1000000.0
             assert get_initial_cash("spy") == 1000000.0
+
+
+class TestGetReportSettings:
+    """Tests for the consolidated report settings loader."""
+
+    def test_report_settings_defaults(self):
+        """When no report section is configured, defaults are returned."""
+
+        with patch("stock_analysis.config.load_cfg", return_value={}):
+            settings = get_report_settings()
+
+        assert settings == ReportSettings()
+
+    def test_report_settings_parsing_and_validation(self, caplog):
+        """Values are coerced and invalid options fall back to defaults."""
+
+        config_data = {
+            "report": {
+                "report_mode": "comparison_only",
+                "with_underwater": "false",
+                "index_to_100": "0",
+                "use_log_scale": "yes",
+                "show_rolling": "True",
+                "show_heatmap": "FALSE",
+                "rolling_window": "126",
+            }
+        }
+
+        with patch("stock_analysis.config.load_cfg", return_value=config_data):
+            settings = get_report_settings()
+
+        assert settings.report_mode == "comparison_only"
+        assert settings.with_underwater is False
+        assert settings.index_to_100 is False
+        assert settings.use_log_scale is True
+        assert settings.show_rolling is True
+        assert settings.show_heatmap is False
+        assert settings.rolling_window == 126
+
+        bad_config = {
+            "report": {
+                "report_mode": "totally_invalid",
+                "rolling_window": 0,
+            }
+        }
+
+        with patch("stock_analysis.config.load_cfg", return_value=bad_config):
+            with caplog.at_level("WARNING"):
+                settings = get_report_settings()
+
+        assert settings.report_mode == ReportSettings().report_mode
+        assert settings.rolling_window == ReportSettings().rolling_window
+        assert "Invalid report_mode" in caplog.text
+        assert "Invalid rolling_window" in caplog.text

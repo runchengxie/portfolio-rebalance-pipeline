@@ -13,7 +13,7 @@ from ..prep import (
     load_price_feeds,
     load_spy_data,
 )
-from ...config import get_backtest_period, get_initial_cash
+from ...config import get_backtest_period, get_initial_cash, get_report_settings
 from ...utils.paths import (
     DB_PATH,
     OUTPUTS_DIR,
@@ -117,6 +117,7 @@ def main(*, log_level: int | None = None):
 
     # Generate report
     output_png = OUTPUTS_DIR / "quarterly_strategy_returns.png"
+    report_settings = get_report_settings()
     generate_report(
         metrics=metrics,
         title="Quarterly Point-in-Time Strategy Backtest Results",
@@ -125,6 +126,13 @@ def main(*, log_level: int | None = None):
         benchmark_value=spy_value,
         benchmark_label="SPY",
         benchmark_metrics=spy_metrics,
+        report_mode=report_settings.report_mode,
+        with_underwater=report_settings.with_underwater,
+        index_to_100=report_settings.index_to_100,
+        use_log_scale=report_settings.use_log_scale,
+        show_rolling=report_settings.show_rolling,
+        rolling_window=report_settings.rolling_window,
+        show_heatmap=report_settings.show_heatmap,
     )
 
 

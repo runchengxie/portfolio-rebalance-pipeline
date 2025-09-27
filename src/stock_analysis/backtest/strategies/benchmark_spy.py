@@ -2,7 +2,7 @@ import datetime
 
 from ..engine import generate_report, run_benchmark_backtest
 from ..prep import load_spy_data
-from ...config import get_backtest_period, get_initial_cash
+from ...config import get_backtest_period, get_initial_cash, get_report_settings
 from ...utils.paths import DB_PATH, OUTPUTS_DIR
 
 # --- Backtest Configuration ---
@@ -50,11 +50,19 @@ def main(*, target_percent: float | None = None, log_level: int | None = None):
 
     # Generate report
     output_png = OUTPUTS_DIR / "spy_benchmark_returns.png"
+    report_settings = get_report_settings()
     generate_report(
         metrics=metrics,
         title="SPY Benchmark Results (Total Return)",
         portfolio_value=portfolio_value,
         output_png=output_png,
+        report_mode=report_settings.report_mode,
+        with_underwater=report_settings.with_underwater,
+        index_to_100=report_settings.index_to_100,
+        use_log_scale=report_settings.use_log_scale,
+        show_rolling=report_settings.show_rolling,
+        rolling_window=report_settings.rolling_window,
+        show_heatmap=report_settings.show_heatmap,
     )
 
 
