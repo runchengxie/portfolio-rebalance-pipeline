@@ -182,13 +182,18 @@ def load_price_feeds(
         # Create data feeds for each stock
         data_feeds = {}
 
+        price_columns = ["Open", "High", "Low", "Close", "Volume"]
+
         for ticker, group in all_data.groupby("Ticker"):
             group = group.set_index("Date")
 
-            # Reindex to master trading day timeline, forward fill missing data
-            group = group.reindex(master_index, method="ffill")
+            # Reindex to master trading day timeline
+            group = group.reindex(master_index)
 
-            # Fill missing values in dividend column
+            # Forward fill price-related columns without affecting dividends
+            group[price_columns] = group[price_columns].ffill()
+
+            # Fill missing values in dividend column without forward filling
             group["Dividend"] = group["Dividend"].fillna(0.0)
 
             # Remove still missing rows (usually early data for newly listed stocks)

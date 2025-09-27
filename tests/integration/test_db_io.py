@@ -300,6 +300,27 @@ class TestLoadPriceFeeds:
         assert not aapl_data["Dividend"].isna().any()
         assert not msft_data["Dividend"].isna().any()
 
+    def test_dividend_not_forward_filled(self, tmp_path):
+        """Ensure dividends are not forward filled across the timeline."""
+        db_path = tmp_path / "test.db"
+        self.create_multi_ticker_database(db_path)
+
+        tickers = {"MSFT"}
+        start_date = datetime.date(2022, 1, 1)
+        end_date = datetime.date(2022, 12, 31)
+
+        result = load_price_feeds(db_path, tickers, start_date, end_date)
+
+        msft_data = result["MSFT"].dataname
+
+        # Dividend should only appear on the actual dividend date
+        non_zero_dividends = msft_data[msft_data["Dividend"] > 0]
+        assert len(non_zero_dividends) == 1
+        assert non_zero_dividends.index[0].date() == datetime.date(2022, 1, 6)
+
+        # All other dates should have zero dividend
+        assert (msft_data.loc[msft_data.index.date != datetime.date(2022, 1, 6), "Dividend"] == 0).all()
+
     def test_data_deduplication(self, tmp_path):
         """Test the data deduplication functionality."""
         db_path = tmp_path / "test.db"
