@@ -5,7 +5,7 @@
 import json
 import sqlite3
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta  # type: ignore[import-untyped]
 from scipy.stats import zscore
+
+from ...logging import get_logger
 
 # --- Path Configuration ---
 try:
@@ -25,6 +27,31 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 PRELIM_JSON_DIR = OUTPUTS_DIR / "preliminary"
 PRELIM_JSON_DIR.mkdir(parents=True, exist_ok=True)
+
+LOGGER = get_logger(__name__)
+STRATEGY_NAME = "preliminary_selection"
+
+
+def _emit(level: str, message: str, *, asof: Any | None = None, **context: Any) -> None:
+    base_context: dict[str, Any] = {"strategy": STRATEGY_NAME, "asof": asof}
+    base_context.update({k: v for k, v in context.items() if v is not None})
+    context_parts = [f"{key}={value}" for key, value in base_context.items() if value is not None]
+    if context_parts:
+        message = f"{message} [{' '.join(context_parts)}]"
+    log_method = getattr(LOGGER, level)
+    log_method(message)
+
+
+def _info(message: str, *, asof: Any | None = None, **context: Any) -> None:
+    _emit("info", message, asof=asof, **context)
+
+
+def _warning(message: str, *, asof: Any | None = None, **context: Any) -> None:
+    _emit("warning", message, asof=asof, **context)
+
+
+def _error(message: str, *, asof: Any | None = None, **context: Any) -> None:
+    _emit("error", message, asof=asof, **context)
 
 # --- Strategy Configuration ---
 BACKTEST_FREQUENCY = "QE"
@@ -87,7 +114,7 @@ def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
     Load S&P 500 historical constituents data from local CSV file.
     The file should contain 'ticker', 'start_date', 'end_date' columns.
     """
-    print("正在从本地CSV文件加载S&P 500历史成分股数据...")
+    _info("正在从本地CSV文件加载S&P 500历史成分股数据...", source="csv")
     csv_path = data_dir / "sp500_historical_constituents.csv"
     try:
         df_constituents = pd.read_csv(csv_path)
@@ -102,10 +129,17 @@ def load_sp500_constituents(data_dir: Path) -> pd.DataFrame:
         # Clean ticker format to match financial data
         df_constituents["ticker"] = df_constituents["ticker"].str.upper().str.strip()
 
-        print(f"成功加载 {len(df_constituents)} 条历史成分股记录。")
+        _info(
+            f"成功加载 {len(df_constituents)} 条历史成分股记录。",
+            source="csv",
+            records=len(df_constituents),
+        )
         return df_constituents
     except FileNotFoundError:
-        print(f"[致命错误] S&P 500历史成分股文件未找到: {csv_path}")
+        _error(
+            f"[致命错误] S&P 500历史成分股文件未找到: {csv_path}",
+            source="csv",
+        )
         return None
 
 
@@ -141,11 +175,11 @@ def tidy_ticker(col: pd.Series) -> pd.Series:
 
 
 def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
-    print("正在从数据库加载并合并财务数据...")
+    _info("正在从数据库加载并合并财务数据...", source="financials")
     db_path = data_dir / "financial_data.db"
 
     if not db_path.exists():
-        print(f"[错误] 数据库文件不存在: {db_path}")
+        _error(f"[错误] 数据库文件不存在: {db_path}", source="financials")
         return pd.DataFrame()
 
     try:
@@ -175,7 +209,7 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
         """
         df_final = pd.read_sql_query(query, con, parse_dates=["date_known"])
     except Exception as e:
-        print(f"[错误] 从数据库读取数据时出错: {e}")
+        _error(f"[错误] 从数据库读取数据时出错: {e}", source="financials")
         return pd.DataFrame()
     finally:
         if "con" in locals():
@@ -190,7 +224,11 @@ def load_and_merge_financial_data(data_dir: Path) -> pd.DataFrame:
     )
     df_final.loc[df_final["at"] <= 0, "at"] = np.nan
     df_final.loc[df_final["ceq"] <= 0, "ceq"] = np.nan
-    print(f"从数据库合并后的数据包含 {len(df_final)} 行.")
+    _info(
+        f"从数据库合并后的数据包含 {len(df_final)} 行.",
+        source="financials",
+        records=len(df_final),
+    )
     return df_final
 
 
@@ -286,18 +324,21 @@ def main(*, export_json: bool = True, export_excel: bool = True):
     """
     Main execution function (using local historical CSV for quarterly rebalancing + dynamic S&P 500 filtering + chart output)
     """
-    print("--- 正在运行股票选择脚本 (历史动态S&P 500过滤模式) ---")
+    _info(
+        "--- 正在运行股票选择脚本 (历史动态S&P 500过滤模式) ---",
+        phase="startup",
+    )
 
     # Step 1: Load historical constituent data
     df_constituents = load_sp500_constituents(DATA_DIR)
     if df_constituents is None:
-        print("无法加载S&P 500成分股数据，程序终止。")
+        _error("无法加载S&P 500成分股数据，程序终止。", phase="load")
         return
 
     # Step 2: Load financial data for all companies (one-time)
     df_all_financials = load_and_merge_financial_data(DATA_DIR)
     if df_all_financials.empty:
-        print("无法加载财务数据，程序退出。")
+        _error("无法加载财务数据，程序退出。", phase="load")
         return
 
     # Step 3: Determine backtest time range
@@ -305,7 +346,7 @@ def main(*, export_json: bool = True, export_excel: bool = True):
     max_date = df_all_financials["date_known"].max()
 
     if pd.isna(min_date) or pd.isna(max_date):
-        print("\n[错误] 数据中未找到有效的财报日期，无法确定回测范围。")
+        _error("[错误] 数据中未找到有效的财报日期，无法确定回测范围。", phase="dates")
         return
 
     # Step 4: Generate rebalancing date sequence
@@ -314,10 +355,15 @@ def main(*, export_json: bool = True, export_excel: bool = True):
     )
     trade_dates = [d + pd.offsets.BDay(2) for d in rebalance_dates]
 
-    print(
-        f"\n将使用 {BACKTEST_FREQUENCY} 频率在以下日期进行调仓计算: (共 {len(trade_dates)} 个)"
+    _info(
+        (
+            f"将使用 {BACKTEST_FREQUENCY} 频率在以下日期进行调仓计算: "
+            f"(共 {len(trade_dates)} 个)"
+        ),
+        phase="dates",
     )
-    print([d.date() for d in trade_dates[:5]], "...")
+    preview_dates = ", ".join(str(d.date()) for d in trade_dates[:5])
+    _info(f"调仓日期示例: {preview_dates} ...", phase="dates")
 
     all_period_portfolios = {}
     screening_stats = []
@@ -332,7 +378,11 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         # 5.1 Get current valid S&P 500 stock list
         current_sp500_list = get_universe_for_date(trade_date, df_constituents)
         if not current_sp500_list:
-            print(f"  - 调仓日 {trade_date.date()}: S&P 500在当日无成分股数据，跳过。")
+            _warning(
+                "S&P 500在当日无成分股数据，跳过。",
+                asof=trade_date.date(),
+                phase="universe",
+            )
             continue
 
         # 5.2 Filter financial data for current S&P 500 constituents
@@ -356,8 +406,13 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         # Check if conditions for starting stock selection are met
         # If selection hasn't started, check if eligible stocks exceed 250
         if not selection_started and num_eligible_stocks > 250:
-            print(
-                f"  - 调仓日 {trade_date.date()}: 符合条件的股票数量 ({num_eligible_stocks}) 首次超过250，从现在开始进行选股。"
+            _info(
+                (
+                    "符合条件的股票数量首次超过250，从现在开始进行选股。"
+                    f" (eligible={num_eligible_stocks})"
+                ),
+                asof=trade_date.date(),
+                phase="screening",
             )
             selection_started = (
                 True  # Set flag to True, will continue stock selection from now on
@@ -367,18 +422,32 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         if df_agg_scores.empty or not selection_started:
             # Print different messages based on whether selection has started
             if not selection_started:
-                print(
-                    f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，未达到启动阈值(>250)。"
+                _info(
+                    (
+                        f"在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，"
+                        "未达到启动阈值(>250)。"
+                    ),
+                    asof=trade_date.date(),
+                    phase="screening",
                 )
             else:  # This case shouldn't occur theoretically, as num_eligible_stocks must be >0 when selection_started is True
-                print(
-                    f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，无符合条件的股票。"
+                _warning(
+                    (
+                        f"在 {len(current_sp500_list)} 只成分股中，无符合条件的股票。"
+                        f" (eligible={num_eligible_stocks})"
+                    ),
+                    asof=trade_date.date(),
+                    phase="screening",
                 )
             continue
 
         # Only execute stock selection logic when selection_started is True
-        print(
-            f"  - 调仓日 {trade_date.date()}: 在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，正在排名..."
+        _info(
+            (
+                f"在 {len(current_sp500_list)} 只成分股中，有 {num_eligible_stocks} 只符合条件，正在排名..."
+            ),
+            asof=trade_date.date(),
+            phase="ranking",
         )
 
         NUM_STOCKS_TO_SELECT = 20
@@ -428,7 +497,11 @@ def main(*, export_json: bool = True, export_excel: bool = True):
                 with open(out_path, "w", encoding="utf-8") as f:
                     json.dump(payload, f, ensure_ascii=False, indent=2)
             except Exception as e:
-                print(f"  - [警告] 保存JSON失败 {trade_date.date()}: {e}")
+                _warning(
+                    f"保存JSON失败: {e}",
+                    asof=trade_date.date(),
+                    phase="export",
+                )
 
     # Step 6: Save results to files
     if export_excel and all_period_portfolios:
@@ -439,7 +512,7 @@ def main(*, export_json: bool = True, export_excel: bool = True):
                 pd.ExcelWriter(output_excel_file) as writer,
                 open(output_txt_file, "w", encoding="utf-8") as txt_file,
             ):
-                print("\n正在生成 Excel 和 TXT 输出文件...")
+                _info("正在生成 Excel 和 TXT 输出文件...", phase="export")
                 for date, df_portfolio in all_period_portfolios.items():
                     df_portfolio.to_excel(writer, sheet_name=str(date), index=False)
                     txt_file.write(
@@ -447,17 +520,21 @@ def main(*, export_json: bool = True, export_excel: bool = True):
                     )
                     txt_file.write(df_portfolio.to_string(index=False))
                     txt_file.write("\n\n")
-            print(
-                f"股票选择完成。结果已保存至:\n  - Excel: {output_excel_file}\n  - TXT:   {output_txt_file}"
+            _info(
+                (
+                    "股票选择完成。结果已保存至 "
+                    f"Excel={output_excel_file} TXT={output_txt_file}"
+                ),
+                phase="export",
             )
         except Exception as e:
-            print(f"\n[错误] 保存文件时出错: {e}")
+            _error(f"[错误] 保存文件时出错: {e}", phase="export")
     else:
-        print("\n没有生成任何投资组合。")
+        _warning("没有生成任何投资组合。", phase="export")
 
     # Step 7: Generate and save statistical charts
     if screening_stats:
-        print("\n正在生成合格股票数量的统计图表...")
+        _info("正在生成合格股票数量的统计图表...", phase="chart")
         df_stats = pd.DataFrame(screening_stats)
         df_stats["date"] = pd.to_datetime(df_stats["date"])
         plt.style.use("ggplot")
@@ -495,9 +572,12 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         chart_output_file = OUTPUT_FILE_BASE.with_suffix(".png")
         try:
             plt.savefig(chart_output_file, dpi=300)
-            print(f"图表已成功保存至: {chart_output_file}")
+            _info(
+                f"图表已成功保存至: {chart_output_file}",
+                phase="chart",
+            )
         except Exception as e:
-            print(f"\n[错误] 保存图表时出错: {e}")
+            _error(f"[错误] 保存图表时出错: {e}", phase="chart")
 
 
 if __name__ == "__main__":
