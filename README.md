@@ -794,9 +794,20 @@ Return **one** JSON object with the following shape and nothing else:
 
 ## 测试
 
-本仓库使用 pytest，默认只运行单元测试。
+本项目使用 [pytest](https://docs.pytest.org/) 运行测试，以下内容说明我们在仓库中约定的规则。
 
 > 注：回测报告相关的单元测试会自动 stub 掉无风险利率服务，本地执行 `pytest -k generate_report` 时无需联网或预先配置 FRED API。
+
+## 标记规范
+
+- `unit`: 快速、无外部依赖的单元测试。
+- `integration`: 访问外部 API、数据库或执行 I/O 的测试。
+- `e2e`: 通过 CLI 覆盖完整工作流的端到端测试。
+- `requires_api`: 需要外部 API 凭证时使用，与 `integration`/`e2e` 组合。
+- `requires_db`: 需要数据库时使用。
+- `slow`: 长时间运行的测试，可与其他标记组合使用。
+
+默认行为：`pytest` 只运行 `unit`，`integration`/`e2e`/`slow` 测试会被跳过。
 
 ### 快速开始
 ```bash
@@ -813,11 +824,15 @@ pytest -m "e2e" -o addopts=
 pytest -m "unit or integration or e2e" -o addopts=
 ```
 
+上述命令中的 `-o addopts=` 会清除 `pytest.ini` 中的默认过滤条件。
+
 ### 覆盖率
+
 ```bash
 # 本地查看覆盖率（需要安装 pytest-cov）
 pytest --cov=stock_analysis --cov-report=term-missing
 ```
+
 CI 要求覆盖率 ≥ 75%。
 
 ### 环境要求（仅集成/E2E）
@@ -826,6 +841,9 @@ CI 要求覆盖率 ≥ 75%。
 - 如需数据库测试，请提供 `DATABASE_URL` 或在本地启动测试数据库
 
 ### 目录结构
+
+每类测试必须放在对应目录，文件名 `test_*.py`，函数名 `test_*`。
+
 ```
 tests/
 ├── unit/
@@ -833,6 +851,14 @@ tests/
 └── e2e/
 ```
 
-> 更多使用说明（标记约定、调试技巧、常见问题）见 `docs/TESTING.md`。
-
 可使用 Makefile 简化命令：`make test`、`make test-all`、`make coverage` 等。
+
+## 环境变量
+
+下列环境变量缺失时，对应测试会自动 `skip`：
+
+| 场景         | 环境变量                                                                                                              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| LongPort API | `LONGPORT_APP_KEY`, `LONGPORT_APP_SECRET`, `LONGPORT_ACCESS_TOKEN`, `LONGPORT_REGION`（默认 `hk`，内地账户设为 `cn`） |
+| Gemini AI    | `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`                                                              |
+
