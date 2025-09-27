@@ -3,6 +3,7 @@
 Provides unified backtest runner, strategy classes and report generation functionality.
 """
 
+import calendar
 import datetime
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,9 @@ from typing import Any
 import backtrader as bt
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.offsetbox import AnchoredText
 import pandas as pd
+import numpy as np
 from backtrader.metabase import findowner
 
 # ``backtrader`` strategies require a ``Cerebro`` instance during
@@ -567,6 +570,9 @@ def generate_report(
     with_underwater: bool = True,
     index_to_100: bool = True,
     use_log_scale: bool = False,
+    show_rolling: bool = False,
+    rolling_window: int = 252,
+    show_heatmap: bool = False,
 ) -> None:
     """Generate unified backtest report
 
@@ -723,6 +729,19 @@ def generate_report(
             portfolio_series = aligned.iloc[:, 0]
             benchmark_series = aligned.iloc[:, 1]
 
+    portfolio_returns = portfolio_series.pct_change().dropna()
+    benchmark_returns = (
+        benchmark_series.pct_change().dropna() if benchmark_series is not None else None
+    )
+
+    risk_free_daily: pd.Series | None = None
+    if not portfolio_returns.empty:
+        try:
+            rf_service = _get_risk_free_service()
+            risk_free_daily = rf_service.get_series_for_index(portfolio_returns.index)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            print(f"[WARN] Unable to fetch risk-free series for rolling stats: {exc}")
+
     if index_to_100:
         portfolio_plot = _index_to_100(portfolio_series)
         benchmark_plot = (
@@ -740,7 +759,11 @@ def generate_report(
     nrows = 2 if with_underwater else 1
     fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(14, 8), sharex=True)
     if with_underwater:
-        ax_equity, ax_drawdown = axes  # type: ignore[misc]
+        if isinstance(axes, np.ndarray):
+            ax_equity, ax_drawdown = axes  # type: ignore[misc]
+        else:  # pragma: no cover - safety net for matplotlib returning scalar axes
+            ax_equity = axes
+            ax_drawdown = ax_equity.twinx()
     else:
         ax_equity = axes  # type: ignore[assignment]
 
@@ -762,10 +785,59 @@ def generate_report(
     if use_log_scale:
         ax_equity.set_yscale("log")
 
+    def _add_kpi_box(
+        axis: plt.Axes,
+        block_metrics: dict[str, Any],
+        *,
+        loc: str,
+        title_prefix: str = "",
+        color: str = "black",
+    ) -> None:
+        lines = []
+        if title_prefix:
+            lines.append(title_prefix)
+        total_return = block_metrics.get("total_return")
+        if total_return is not None:
+            lines.append(f"TotRet: {total_return * 100:.2f}%")
+        annualized = block_metrics.get("annualized_return")
+        if annualized is not None:
+            lines.append(f"CAGR: {annualized * 100:.2f}%")
+        max_dd = block_metrics.get("max_drawdown")
+        if max_dd is not None:
+            lines.append(f"MaxDD: {max_dd:.2f}%")
+        sharpe_val = block_metrics.get("sharpe")
+        if sharpe_val is not None:
+            lines.append(f"Sharpe: {sharpe_val:.2f}")
+        if lines:
+            anchored = AnchoredText(
+                "\n".join(lines),
+                loc=loc,
+                frameon=True,
+                prop={"size": 9, "color": color},
+            )
+            anchored.patch.set_alpha(0.8)
+            axis.add_artist(anchored)
+
+    _add_kpi_box(ax_equity, metrics, loc="upper left", title_prefix=portfolio_label)
+    if benchmark_metrics is not None:
+        _add_kpi_box(
+            ax_equity,
+            benchmark_metrics,
+            loc="upper right",
+            title_prefix=benchmark_label or "Benchmark",
+            color="dimgray",
+        )
+
     if with_underwater:
         drawdown_series = _underwater(portfolio_series)
         if not drawdown_series.empty:
-            ax_drawdown.plot(drawdown_series.index, drawdown_series, lw=1.2, color="steelblue")
+            ax_drawdown.plot(
+                drawdown_series.index,
+                drawdown_series,
+                lw=1.2,
+                color="steelblue",
+                label=f"{portfolio_label} Drawdown",
+            )
             ax_drawdown.fill_between(
                 drawdown_series.index,
                 drawdown_series,
@@ -774,6 +846,20 @@ def generate_report(
                 alpha=0.25,
                 step="pre",
             )
+        if benchmark_series is not None:
+            benchmark_drawdown = _underwater(benchmark_series)
+            if not benchmark_drawdown.empty:
+                ax_drawdown.plot(
+                    benchmark_drawdown.index,
+                    benchmark_drawdown,
+                    lw=1.0,
+                    color="darkorange",
+                    alpha=0.8,
+                    label=f"{benchmark_label or 'Benchmark'} Drawdown",
+                )
+        handles, _ = ax_drawdown.get_legend_handles_labels()
+        if handles:
+            ax_drawdown.legend(loc="lower left", fontsize=9)
         ax_drawdown.set_ylabel("Drawdown", fontsize=12)
         ax_drawdown.set_xlabel("Date", fontsize=12)
         ax_drawdown.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
@@ -782,7 +868,265 @@ def generate_report(
         ax_equity.set_xlabel("Date", fontsize=12)
 
     ax_equity.grid(True, alpha=0.3)
-    plt.tight_layout()
+    fig.tight_layout()
+
+    def _annualized_volatility(series: pd.Series) -> float | None:
+        if series.empty:
+            return None
+        std = series.std(ddof=1)
+        if std is None or np.isnan(std):
+            return None
+        return float(std * np.sqrt(252))
+
+    def _compute_period_stats(
+        value_series: pd.Series,
+        returns_series: pd.Series,
+        years: int,
+        *,
+        rf_series: pd.Series | None = None,
+        benchmark_values: pd.Series | None = None,
+        benchmark_returns: pd.Series | None = None,
+    ) -> dict[str, float | None]:
+        if value_series.empty or len(value_series) < 2:
+            return {}
+        end = value_series.index.max()
+        start = end - pd.DateOffset(years=years)
+        period_values = value_series[value_series.index >= start]
+        if len(period_values) < 2:
+            return {}
+        period_returns = returns_series[returns_series.index >= period_values.index[0]]
+        if period_returns.empty:
+            return {}
+
+        start_val = float(period_values.iloc[0])
+        end_val = float(period_values.iloc[-1])
+        if start_val <= 0 or end_val <= 0:
+            return {}
+        duration_days = (period_values.index[-1] - period_values.index[0]).days
+        if duration_days <= 0:
+            return {}
+        duration_years = duration_days / 365.25
+        cagr = (end_val / start_val) ** (1 / duration_years) - 1
+        dd_series = _underwater(period_values)
+        max_dd = float(dd_series.min()) if not dd_series.empty else None
+        calmar = None
+        if max_dd is not None and max_dd != 0:
+            calmar = cagr / abs(max_dd)
+
+        aligned_rf = None
+        if rf_series is not None and not rf_series.empty:
+            aligned_rf = rf_series.reindex(period_returns.index).ffill().bfill()
+        excess_returns = (
+            period_returns - aligned_rf
+            if aligned_rf is not None
+            else period_returns
+        )
+        mean_excess = excess_returns.mean()
+        downside = excess_returns[excess_returns < 0]
+        downside_std = float(np.sqrt((downside.pow(2).mean()))) if not downside.empty else None
+        sortino = None
+        if downside_std and downside_std > 0:
+            sortino = float(mean_excess / downside_std * np.sqrt(252))
+
+        bench_stats = {}
+        if benchmark_values is not None and benchmark_returns is not None:
+            bench_values = benchmark_values[benchmark_values.index >= period_values.index[0]]
+            bench_returns_slice = benchmark_returns[
+                benchmark_returns.index >= period_returns.index[0]
+            ]
+            if not bench_values.empty and len(bench_values) >= 2:
+                rel = period_returns.reindex(bench_returns_slice.index).dropna()
+                bench_aligned = bench_returns_slice.reindex(rel.index).dropna()
+                rel = rel.reindex(bench_aligned.index)
+                diff = rel - bench_aligned
+                if not diff.empty:
+                    diff_std = diff.std(ddof=1)
+                    if diff_std is not None and not np.isnan(diff_std) and diff_std != 0:
+                        info_ratio = float(diff.mean() / diff_std * np.sqrt(252))
+                    else:
+                        info_ratio = None
+                    if diff_std is not None and not np.isnan(diff_std):
+                        tracking_error = float(diff_std * np.sqrt(252))
+                    else:
+                        tracking_error = None
+                else:
+                    info_ratio = None
+                    tracking_error = None
+            else:
+                info_ratio = None
+                tracking_error = None
+            bench_stats = {
+                "info_ratio": info_ratio,
+                "tracking_error": tracking_error,
+            }
+        period_vol = _annualized_volatility(period_returns)
+        stats: dict[str, float | None] = {
+            "cagr": float(cagr),
+            "max_drawdown": max_dd,
+            "calmar": calmar,
+            "sortino": sortino,
+            "volatility": period_vol,
+        }
+        stats.update(bench_stats)
+        return stats
+
+    period_horizons = [1, 3, 5]
+    period_rows: list[tuple[str, dict[str, float | None]]] = []
+    for horizon in period_horizons:
+        stats = _compute_period_stats(
+            portfolio_series,
+            portfolio_returns,
+            horizon,
+            rf_series=risk_free_daily,
+            benchmark_values=benchmark_series,
+            benchmark_returns=benchmark_returns,
+        )
+        if stats:
+            period_rows.append((f"Last {horizon}Y", stats))
+
+    if period_rows:
+        print("\nSegmented Performance (ending on latest observation):")
+        header_parts = [
+            f"{'Horizon':<12}",
+            f"{'CAGR':>10}",
+            f"{'MaxDD':>10}",
+            f"{'Calmar':>10}",
+            f"{'Sortino':>10}",
+            f"{'Vol':>10}",
+        ]
+        has_benchmark_stats = benchmark_series is not None and any(
+            row[1].get("info_ratio") is not None or row[1].get("tracking_error") is not None
+            for row in period_rows
+        )
+        if has_benchmark_stats:
+            header_parts.extend([f"{'InfoR':>10}", f"{'TrackErr':>10}"])
+        header = "".join(header_parts)
+        print(header)
+        print("-" * len(header))
+
+        def _fmt(value: float | None, *, pct: bool = False) -> str:
+            if value is None or np.isnan(value):
+                return "N/A".rjust(10)
+            if pct:
+                return f"{value * 100:>9.2f}%"
+            return f"{value:>10.2f}"
+
+        for label, stats in period_rows:
+            row = [f"{label:<12}"]
+            row.append(_fmt(stats.get("cagr"), pct=True))
+            max_dd_val = stats.get("max_drawdown")
+            if max_dd_val is None or np.isnan(max_dd_val):
+                row.append("N/A".rjust(10))
+            else:
+                row.append(f"{max_dd_val * 100:>9.2f}%")
+            row.append(_fmt(stats.get("calmar")))
+            row.append(_fmt(stats.get("sortino")))
+            row.append(_fmt(stats.get("volatility"), pct=True))
+            if has_benchmark_stats:
+                row.append(_fmt(stats.get("info_ratio")))
+                row.append(_fmt(stats.get("tracking_error"), pct=True))
+            print("".join(row))
+
+    if show_rolling and not portfolio_returns.empty:
+        window = max(int(rolling_window), 2)
+        aligned_rf = (
+            risk_free_daily.reindex(portfolio_returns.index).ffill().bfill()
+            if risk_free_daily is not None
+            else pd.Series(0.0, index=portfolio_returns.index)
+        )
+        excess_returns = portfolio_returns - aligned_rf
+        rolling_vol = (
+            portfolio_returns.rolling(window).std(ddof=1) * np.sqrt(252)
+        )
+        rolling_mean = excess_returns.rolling(window).mean()
+        rolling_std = excess_returns.rolling(window).std(ddof=1).replace(0, np.nan)
+        rolling_sharpe = (rolling_mean / rolling_std) * np.sqrt(252)
+        rolling_fig, ax_roll = plt.subplots(figsize=(14, 4))
+        ax_roll.plot(rolling_vol.index, rolling_vol, color="steelblue", label="Rolling Volatility")
+        ax_roll.set_ylabel("Volatility", color="steelblue")
+        ax_roll.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
+        ax_roll.tick_params(axis="y", labelcolor="steelblue")
+
+        ax_sharpe = ax_roll.twinx()
+        ax_sharpe.plot(
+            rolling_sharpe.index,
+            rolling_sharpe,
+            color="darkorange",
+            label="Rolling Sharpe",
+        )
+        ax_sharpe.set_ylabel("Sharpe", color="darkorange")
+        ax_sharpe.tick_params(axis="y", labelcolor="darkorange")
+        ax_roll.set_title(f"{portfolio_label} {window}-Day Rolling Metrics")
+        ax_roll.set_xlabel("Date")
+        ax_roll.grid(True, alpha=0.3)
+        lines, labels = ax_roll.get_legend_handles_labels()
+        lines2, labels2 = ax_sharpe.get_legend_handles_labels()
+        ax_roll.legend(lines + lines2, labels + labels2, loc="upper left")
+        rolling_fig.tight_layout()
+
+    if show_heatmap and not portfolio_returns.empty:
+        monthly_returns = (
+            (1 + portfolio_returns).resample("M").prod() - 1
+        )
+        if not monthly_returns.empty:
+            monthly_df = monthly_returns.to_frame(name="return")
+            monthly_df["Year"] = monthly_df.index.year
+            monthly_df["Month"] = monthly_df.index.month
+            annual_returns = monthly_df.groupby("Year")["return"].apply(
+                lambda x: (1 + x).prod() - 1
+            )
+            pivot = monthly_df.pivot(index="Year", columns="Month", values="return")
+            pivot = pivot.sort_index()
+            pivot_columns = list(range(1, 13))
+            pivot = pivot.reindex(columns=pivot_columns)
+            month_labels = [calendar.month_abbr[m] for m in pivot_columns]
+            heatmap_data = pivot.values
+            annual_col = annual_returns.reindex(pivot.index)
+
+            fig_heatmap, ax_heatmap = plt.subplots(figsize=(14, 6))
+            im = ax_heatmap.imshow(
+                heatmap_data,
+                aspect="auto",
+                cmap="RdYlGn",
+                vmin=-0.3,
+                vmax=0.3,
+            )
+            ax_heatmap.set_xticks(range(len(month_labels)))
+            ax_heatmap.set_xticklabels(month_labels)
+            ax_heatmap.set_yticks(range(len(pivot.index)))
+            ax_heatmap.set_yticklabels(pivot.index)
+            ax_heatmap.set_title(f"{portfolio_label} Monthly Returns Heatmap")
+            cbar = fig_heatmap.colorbar(im, ax=ax_heatmap, pad=0.01)
+            cbar.ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
+
+            for i, year in enumerate(pivot.index):
+                for j, month in enumerate(pivot_columns):
+                    value = heatmap_data[i, j]
+                    if np.isnan(value):
+                        continue
+                    ax_heatmap.text(
+                        j,
+                        i,
+                        f"{value * 100:.1f}%",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                        color="black" if abs(value) < 0.15 else "white",
+                    )
+
+            ax_heatmap.set_xlabel("Month")
+            ax_heatmap.set_ylabel("Year")
+
+            if not annual_col.empty:
+                ax_annual = ax_heatmap.twinx()
+                ax_annual.set_ylim(ax_heatmap.get_ylim())
+                ax_annual.set_yticks(ax_heatmap.get_yticks())
+                ax_annual.set_yticklabels([
+                    f"{val * 100:.1f}%" if not pd.isna(val) else "N/A"
+                    for val in annual_col
+                ])
+                ax_annual.set_ylabel("Annual Return")
+            fig_heatmap.tight_layout()
 
     if output_png:
         plt.savefig(output_png, dpi=300, bbox_inches="tight")
