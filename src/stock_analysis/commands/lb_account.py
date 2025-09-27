@@ -1,14 +1,14 @@
-"""LongPort account command
+"""LongPort account command.
 
-Handles command logic for account information queries.
+Handles command logic for account information queries while delegating
+presentation to the CLI layer so that logging remains consistent.
 """
-
-import sys
 
 from ..renderers.jsonout import render_multiple_account_snapshots_json
 from ..renderers.table import render_multiple_account_snapshots
 from ..services.account_snapshot import get_account_snapshot
 from ..logging import get_logger
+from .result import CommandResult
 
 logger = get_logger(__name__)
 
@@ -17,7 +17,7 @@ def run_lb_account(
     only_funds: bool = False,
     only_positions: bool = False,
     fmt: str = "table",
-) -> int:
+) -> CommandResult:
     """Run LongPort account overview
 
     Args:
@@ -48,20 +48,15 @@ def run_lb_account(
                 snapshots, only_funds, only_positions
             )
 
-        print(output)
-
-        return 0
+        return CommandResult(exit_code=0, stdout=output)
 
     except ImportError as e:
         msg = f"Failed to import LongPort module: {e}"
-        logger.error(msg)
-        print(msg, file=sys.stderr)
         fix_msg = "Please ensure the 'longport' package is installed: pip install longport"
+        logger.error(msg)
         logger.error(fix_msg)
-        print(fix_msg, file=sys.stderr)
-        return 1
+        return CommandResult(exit_code=1, stderr="\n".join([msg, fix_msg]))
     except Exception as e:
         msg = f"Failed to get account overview: {e}"
         logger.error(msg)
-        print(msg, file=sys.stderr)
-        return 1
+        return CommandResult(exit_code=1, stderr=msg)

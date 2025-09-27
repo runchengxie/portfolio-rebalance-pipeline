@@ -9,6 +9,7 @@ from ..renderers.diff import render_rebalance_diff
 from ..io.excel import read_latest_sheet_tickers
 from ..utils.targets import read_targets_json
 from ..logging import get_logger
+from .result import CommandResult
 
 logger = get_logger(__name__)
 
@@ -19,7 +20,7 @@ def run_lb_rebalance(
     dry_run: bool = True,
     env: str = "real",
     target_gross_exposure: float = 1.0,
-) -> int:
+) -> CommandResult:
     """Run LongPort differential rebalancing
 
     Based on real account snapshot, calculate the difference between target positions and current holdings, execute rebalancing operations.
@@ -51,9 +52,9 @@ def run_lb_rebalance(
         # Check if file exists
         file_path = Path(input_file)
         if not file_path.exists():
-            logger.error(f"文件不存在: {input_file}")
-            print(f"File not found: {input_file}")
-            return 1
+            msg = f"File not found: {input_file}"
+            logger.error(msg)
+            return CommandResult(exit_code=1, stderr=msg)
 
         # Import heavy dependencies lazily after basic validation
         from ..services.account_snapshot import get_account_snapshot, get_quotes
@@ -136,26 +137,23 @@ def run_lb_rebalance(
 
             # 渲染输出：优先展示 Diff 视图，更直观地体现“调仓前后对比 + 订单”
             diff_view = render_rebalance_diff(rebalance_result, account_snapshot)
-            print(diff_view)
 
             logger.info(f"审计日志已保存到: {log_file}")
 
-            return 0
+            return CommandResult(exit_code=0, stdout=diff_view)
 
         finally:
             rebalance_service.close()
 
     except ImportError as e:
         # Standardized error reporting to stderr to aid tests and UX
-        import sys
-
         logger.error(f"无法导入必要模块: {e}")
-        print(f"Failed to import LongPort module: {e}", file=sys.stderr)
-        print(
-            "Please ensure the 'longport' package is installed: pip install longport",
-            file=sys.stderr,
-        )
-        return 1
+        err = (
+            "Failed to import LongPort module: {msg}\n"
+            "Please ensure the 'longport' package is installed: pip install "
+            "longport"
+        ).format(msg=e)
+        return CommandResult(exit_code=1, stderr=err)
     except Exception as e:
         logger.error(f"仓位调整失败：{e}")
-        return 1
+        return CommandResult(exit_code=1)

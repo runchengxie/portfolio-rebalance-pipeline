@@ -2,6 +2,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import logging
+
 import pytest
 import stock_analysis.cli as cli
 
@@ -115,7 +117,7 @@ def test_main_no_command():
 
 
 @pytest.mark.unit
-def test_main_unknown_command():
+def test_main_unknown_command(caplog):
     """Test the handling of an unknown command."""
     args = SimpleNamespace()
     args.command = "unknown-command"
@@ -125,16 +127,14 @@ def test_main_unknown_command():
         mock_parser.return_value = mock_parser_instance
         mock_parser_instance.parse_args.return_value = args
 
-        with patch("builtins.print") as mock_print:
+        with caplog.at_level(logging.ERROR):
             result = cli.main()
-            assert result == 1
-            mock_print.assert_called_with(
-                "Unknown command: unknown-command", file=sys.stderr
-            )
+        assert result == 1
+        assert "Unknown command: unknown-command" in caplog.text
 
 
 @pytest.mark.unit
-def test_run_lb_quote_import_error(monkeypatch):
+def test_run_lb_quote_import_error(monkeypatch, caplog):
     """Test the handling of an ImportError in run_lb_quote."""
     # Simulate an error when importing the longport_client module
     original_import = __builtins__["__import__"]
@@ -145,24 +145,19 @@ def test_run_lb_quote_import_error(monkeypatch):
         return original_import(name, *args, **kwargs)
 
     with patch("builtins.__import__", side_effect=mock_import):
-        with patch("builtins.print") as mock_print:
+        with caplog.at_level(logging.ERROR):
             result = cli.run_lb_quote(["AAPL"])
-            assert result == 1
-            # Verify that the error message is printed
-            assert any(
-                "longport" in str(call) or "LongPort" in str(call)
-                for call in mock_print.call_args_list
-            )
+    assert result == 1
+    assert "longport" in caplog.text.lower()
 
 
 @pytest.mark.unit
-def test_run_lb_rebalance_file_not_found():
+def test_run_lb_rebalance_file_not_found(capsys):
     """Test the handling of a non-existent file in run_lb_rebalance."""
-    with patch("builtins.print") as mock_print:
-        result = cli.run_lb_rebalance("non_existent_file.xlsx")
-        assert result == 1
-        # Verify that the error message is printed
-        assert any("File not found" in str(call) for call in mock_print.call_args_list)
+    result = cli.run_lb_rebalance("non_existent_file.xlsx")
+    assert result == 1
+    err = capsys.readouterr().err
+    assert "File not found" in err
 
 
 @pytest.mark.unit

@@ -6,11 +6,12 @@ Handles command logic for stock quote queries.
 from ..renderers.table import render_quotes
 from ..services.account_snapshot import get_quotes
 from ..logging import get_logger
+from .result import CommandResult
 
 logger = get_logger(__name__)
 
 
-def run_lb_quote(tickers: list[str]) -> int:
+def run_lb_quote(tickers: list[str]) -> CommandResult:
     """Run LongPort real-time quote query
 
     Args:
@@ -32,19 +33,18 @@ def run_lb_quote(tickers: list[str]) -> int:
 
         # Render output
         output = render_quotes(quotes_list)
-        print(output)
 
-        return 0
+        return CommandResult(exit_code=0, stdout=output)
 
     except ImportError as e:
         logger.error(f"无法导入LongPort模块: {e}")
         logger.error("请确保已安装 longport 包：pip install longport")
-        # Print messages to help tests and users
-        print(f"Error importing LongPort module: {e}")
-        print(
-            "Please ensure the 'longport' package is installed: pip install longport"
-        )
-        return 1
+        err = (
+            "Error importing LongPort module: {msg}\n"
+            "Please ensure the 'longport' package is installed: pip install "
+            "longport"
+        ).format(msg=e)
+        return CommandResult(exit_code=1, stderr=err)
     except Exception as e:
         logger.error(f"获取报价失败：{e}")
-        return 1
+        return CommandResult(exit_code=1)

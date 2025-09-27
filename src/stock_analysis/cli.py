@@ -5,11 +5,14 @@ Responsible only for argument parsing and command dispatching, without business 
 
 import argparse
 import sys
+import uuid
+from typing import Any, Dict, Optional
 
 from .commands.ai_pick import run_ai_pick
 from .commands.backtest import run_backtest
 from .commands.load_data import run_load_data as _run_load_data
-from typing import Optional, Dict, Any
+from .commands.result import CommandResult
+from .logging import get_logger, set_run_id
 
 # Internal store for passing parsed options to thin wrappers
 _LOAD_DATA_OPTS: Dict[str, Any] | None = None
@@ -339,6 +342,16 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _handle_command_result(result: int | CommandResult) -> int:
+    """Normalize command results to an exit code while emitting output."""
+
+    if isinstance(result, CommandResult):
+        if result.stdout:
+            print(result.stdout)
+        return result.exit_code
+    return int(result)
+
+
 def main() -> int:
     """Main entry function.
 
@@ -347,13 +360,17 @@ def main() -> int:
     Returns:
         int: Exit code (0 indicates success)
     """
+    run_id = uuid.uuid4().hex[:12]
+    set_run_id(run_id)
+    logger = get_logger(__name__)
+
     parser = create_parser()
     try:
         args = parser.parse_args()
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
         if code != 0 and len(sys.argv) > 1:
-            print(f"Unknown command: {sys.argv[1]}", file=sys.stderr)
+            logger.error("Unknown command: %s", sys.argv[1])
             return 1
         return code
 
@@ -370,7 +387,9 @@ def main() -> int:
                 kwargs["target_percent"] = args.target
             if args.log_level is not None:
                 kwargs["log_level"] = args.log_level
-            return run_backtest(args.strategy, getattr(args, "config", None), **kwargs)
+            return _handle_command_result(
+                run_backtest(args.strategy, getattr(args, "config", None), **kwargs)
+            )
         elif args.command == "load-data":
             # Record options for the thin wrapper and call with a single arg
             global _LOAD_DATA_OPTS
@@ -381,89 +400,102 @@ def main() -> int:
                 "date_start": getattr(args, "date_start", None),
                 "date_end": getattr(args, "date_end", None),
             }
-            return run_load_data(getattr(args, "data_dir", None))
+            return _handle_command_result(run_load_data(getattr(args, "data_dir", None)))
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
 
-            return run_preliminary(
-                getattr(args, "output_dir", None),
-                getattr(args, "no_excel", False),
-                getattr(args, "no_json", False),
+            return _handle_command_result(
+                run_preliminary(
+                    getattr(args, "output_dir", None),
+                    getattr(args, "no_excel", False),
+                    getattr(args, "no_json", False),
+                )
             )
         elif args.command == "ai-pick":
-            return run_ai_pick(
-                getattr(args, "quarter", None),
-                getattr(args, "output", None),
+            return _handle_command_result(
+                run_ai_pick(
+                    getattr(args, "quarter", None),
+                    getattr(args, "output", None),
+                )
             )
         elif args.command == "export":
             from .commands.export import run_export
 
-            return run_export(
-                getattr(args, "source", "preliminary"),
-                getattr(args, "direction", "excel-to-json"),
-                getattr(args, "overwrite", False),
-                getattr(args, "excel", None),
-                getattr(args, "json_root", None),
+            return _handle_command_result(
+                run_export(
+                    getattr(args, "source", "preliminary"),
+                    getattr(args, "direction", "excel-to-json"),
+                    getattr(args, "overwrite", False),
+                    getattr(args, "excel", None),
+                    getattr(args, "json_root", None),
+                )
             )
         elif args.command == "validate-exports":
             from .commands.validate_exports import run_validate_exports
 
-            return run_validate_exports(
-                getattr(args, "source", "preliminary"),
-                getattr(args, "excel", None),
-                getattr(args, "json_root", None),
+            return _handle_command_result(
+                run_validate_exports(
+                    getattr(args, "source", "preliminary"),
+                    getattr(args, "excel", None),
+                    getattr(args, "json_root", None),
+                )
             )
         elif args.command == "gen-whitelist":
             from .commands.gen_whitelist import run_gen_whitelist
 
-            return run_gen_whitelist(
-                getattr(args, "source", "preliminary"),
-                getattr(args, "excel", None),
-                getattr(args, "date_start", None),
-                getattr(args, "date_end", None),
-                getattr(args, "out", None),
+            return _handle_command_result(
+                run_gen_whitelist(
+                    getattr(args, "source", "preliminary"),
+                    getattr(args, "excel", None),
+                    getattr(args, "date_start", None),
+                    getattr(args, "date_end", None),
+                    getattr(args, "out", None),
+                )
             )
         elif args.command == "lb-quote":
-            return run_lb_quote(args.tickers)
+            return _handle_command_result(run_lb_quote(args.tickers))
         elif args.command == "lb-rebalance":
             # If --execute is specified, disable dry-run mode
             dry_run = not getattr(args, "execute", False)
-            return run_lb_rebalance(
-                args.input_file,
-                getattr(args, "account", "main"),
-                dry_run,
-                "real",
-                getattr(args, "target_gross_exposure", 1.0),
+            return _handle_command_result(
+                run_lb_rebalance(
+                    args.input_file,
+                    getattr(args, "account", "main"),
+                    dry_run,
+                    "real",
+                    getattr(args, "target_gross_exposure", 1.0),
+                )
             )
         elif args.command == "lb-account":
-            return run_lb_account(
-                only_funds=getattr(args, "funds", False),
-                only_positions=getattr(args, "positions", False),
-                fmt=getattr(args, "format", "table"),
+            return _handle_command_result(
+                run_lb_account(
+                    only_funds=getattr(args, "funds", False),
+                    only_positions=getattr(args, "positions", False),
+                    fmt=getattr(args, "format", "table"),
+                )
             )
         elif args.command == "lb-config":
-            return run_lb_config(getattr(args, "show", True))
+            return _handle_command_result(run_lb_config(getattr(args, "show", True)))
         elif args.command == "targets":
             from .commands.targets import run_targets_gen
 
             sub = getattr(args, "targets_cmd", None)
             if sub == "gen":
-                return run_targets_gen(
-                    source=getattr(args, "source", "ai"),
-                    excel=getattr(args, "excel", None),
-                    out=getattr(args, "out", None),
-                    asof=getattr(args, "asof", None),
+                return _handle_command_result(
+                    run_targets_gen(
+                        source=getattr(args, "source", "ai"),
+                        excel=getattr(args, "excel", None),
+                        out=getattr(args, "out", None),
+                        asof=getattr(args, "asof", None),
+                    )
                 )
             else:
                 parser.print_help()
                 return 0
         else:
-            print(f"Unknown command: {args.command}", file=sys.stderr)
+            logger.error("Unknown command: %s", args.command)
             return 1
     except ImportError as e:
-        from .logging import get_logger
-
-        logger = get_logger(__name__)
         logger.error(f"无法导入命令模块: {e}")
         return 1
 
@@ -472,7 +504,7 @@ def run_lb_quote(tickers: list[str]) -> int:  # type: ignore[override]
     """Forwarder for lb_quote to support test patching and lazy import."""
     from .commands.lb_quote import run_lb_quote as _run_lb_quote
 
-    return _run_lb_quote(tickers)
+    return _handle_command_result(_run_lb_quote(tickers))
 
 
 def run_lb_rebalance(
@@ -485,12 +517,14 @@ def run_lb_rebalance(
     """Forwarder for lb_rebalance to support test patching and lazy import."""
     from .commands.lb_rebalance import run_lb_rebalance as _run_lb_rebalance
 
-    return _run_lb_rebalance(
-        input_file,
-        account,
-        dry_run,
-        env,
-        target_gross_exposure,
+    return _handle_command_result(
+        _run_lb_rebalance(
+            input_file,
+            account,
+            dry_run,
+            env,
+            target_gross_exposure,
+        )
     )
 
 
@@ -503,17 +537,19 @@ def run_lb_account(
     try:
         from .commands.lb_account import run_lb_account as _run_lb_account
     except ImportError:
-        print(
-            "Failed to import LongPort module. Please install it via "
-            "'pip install longport'",
-            file=sys.stderr,
+        logger = get_logger(__name__)
+        logger.error(
+            "Failed to import LongPort module. Please install it via 'pip install "
+            "longport'"
         )
         return 1
 
-    return _run_lb_account(
-        only_funds=only_funds,
-        only_positions=only_positions,
-        fmt=fmt,
+    return _handle_command_result(
+        _run_lb_account(
+            only_funds=only_funds,
+            only_positions=only_positions,
+            fmt=fmt,
+        )
     )
 
 
@@ -521,7 +557,7 @@ def run_lb_config(show: bool = True) -> int:  # type: ignore[override]
     """Forwarder for lb_config with lazy import."""
     from .commands.lb_config import run_lb_config as _run_lb_config
 
-    return _run_lb_config(show)
+    return _handle_command_result(_run_lb_config(show))
 
 
 def run_load_data(data_dir: Optional[str] = None) -> int:  # type: ignore[override]
