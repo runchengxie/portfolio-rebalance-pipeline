@@ -1,39 +1,32 @@
-"""Diff-style renderer for rebalance previews.
-
-Produces a human-readable diff similar to git control:
-- Top summary card: totals before/after, cash/stocks/funds split
-- Diffstat: added/removed/increase/decrease counts
-- Per-position diffs
-- Order list (SELL first, then BUY)
-"""
+"""Diff-style renderer for rebalance previews."""
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from ..models import AccountSnapshot, Order, Position, RebalanceResult
 
-
-def _fmt_money(v: float) -> str:
-    return f"${v:,.2f}"
+_HAS_RICH = importlib.util.find_spec("rich") is not None
 
 
-def _fmt_pct(v: float) -> str:
-    return f"{v * 100:,.2f}%"
+def _fmt_money(value: float) -> str:
+    return f"${value:,.2f}"
+
+
+def _fmt_pct(value: float) -> str:
+    return f"{value * 100:,.2f}%"
 
 
 def _is_fund_symbol(symbol: str) -> bool:
-    # Heuristic: funds in our snapshot builder come from fund_positions and
-    # usually do not include a ".US/.HK" suffix. This is a best-effort tag.
+    """Best-effort heuristic to classify fund-like symbols."""
+
     return "." not in symbol
 
 
-def _positions_value(positions: Iterable[Position]) -> float:
-    return sum(float(p.estimated_value) for p in positions)
-
-
-@dataclass
+@dataclass(slots=True)
 class Buckets:
     cash: float
     stocks: float
@@ -44,21 +37,28 @@ class Buckets:
         return self.cash + self.stocks + self.funds
 
 
+@dataclass(slots=True)
+class RenderedRebalanceDiff:
+    """Container with both plaintext and optional Rich renderables."""
+
+    text: str
+    rich: object | None = None
+
+
 def _bucketize(snapshot: AccountSnapshot) -> Buckets:
     stocks_val = 0.0
     funds_val = 0.0
-    for p in snapshot.positions:
-        if _is_fund_symbol(p.symbol):
-            funds_val += float(p.estimated_value)
+    for position in snapshot.positions:
+        if _is_fund_symbol(position.symbol):
+            funds_val += float(position.estimated_value)
         else:
-            stocks_val += float(p.estimated_value)
+            stocks_val += float(position.estimated_value)
     return Buckets(cash=float(snapshot.cash_usd), stocks=stocks_val, funds=funds_val)
 
 
 def _bucketize_after(
     before_cash: float, targets: Iterable[Position], orders: Iterable[Order]
 ) -> tuple[Buckets, float]:
-    # Estimate after-cash via orders, using provided order.price
     notional_sell = 0.0
     notional_buy = 0.0
     for od in orders:
@@ -68,16 +68,17 @@ def _bucketize_after(
             notional_sell += amt
         else:
             notional_buy += amt
-    total_fees = sum(float(getattr(o, "est_fees", 0.0) or 0.0) for o in orders)
+    total_fees = sum(float(getattr(order, "est_fees", 0.0) or 0.0) for order in orders)
     cash_after = float(before_cash) + notional_sell - notional_buy - total_fees
-    # Sum targets by bucket
+
     stocks_val = 0.0
     funds_val = 0.0
-    for p in targets:
-        if _is_fund_symbol(p.symbol):
-            funds_val += float(p.estimated_value)
+    for target in targets:
+        if _is_fund_symbol(target.symbol):
+            funds_val += float(target.estimated_value)
         else:
-            stocks_val += float(p.estimated_value)
+            stocks_val += float(target.estimated_value)
+
     return Buckets(cash=cash_after, stocks=stocks_val, funds=funds_val), total_fees
 
 
@@ -88,131 +89,357 @@ def _diffstat(
     removed = 0
     increased = 0
     decreased = 0
-    all_syms = set(current) | set(target)
-    for s in sorted(all_syms):
-        cur_q = int(current.get(s).quantity) if s in current else 0
-        tgt_q = int(target.get(s).quantity) if s in target else 0
-        if cur_q == 0 and tgt_q > 0:
+    all_symbols = set(current) | set(target)
+    for symbol in sorted(all_symbols):
+        cur_qty = int(current.get(symbol).quantity) if symbol in current else 0
+        tgt_qty = int(target.get(symbol).quantity) if symbol in target else 0
+        if cur_qty == 0 and tgt_qty > 0:
             added += 1
-        elif cur_q > 0 and tgt_q == 0:
+        elif cur_qty > 0 and tgt_qty == 0:
             removed += 1
-        elif tgt_q > cur_q:
+        elif tgt_qty > cur_qty:
             increased += 1
-        elif tgt_q < cur_q:
+        elif tgt_qty < cur_qty:
             decreased += 1
     return added, removed, increased, decreased
 
 
-def render_rebalance_diff(result: RebalanceResult, before: AccountSnapshot) -> str:
+def render_rebalance_diff(
+    result: RebalanceResult, before: AccountSnapshot
+) -> RenderedRebalanceDiff:
     lines: list[str] = []
 
-    # Top summary card
-    b = _bucketize(before)
-    after_b, total_fees = _bucketize_after(
+    buckets_before = _bucketize(before)
+    buckets_after, total_fees = _bucketize_after(
         before.cash_usd, result.target_positions, result.orders
     )
-    total_before = b.total
-    total_after = after_b.total if after_b.total > 0 else result.total_portfolio_value
+    total_before = buckets_before.total
+    total_after = (
+        buckets_after.total if buckets_after.total > 0 else result.total_portfolio_value
+    )
+
+    mode = "DRY-RUN" if result.dry_run else "LIVE"
 
     lines.append("=== Rebalance Preview (Diff) ===")
-    lines.append(
-        f"As of: {before.env.upper()}  Currency: USD  Mode: {'DRY-RUN' if result.dry_run else 'LIVE'}"
-    )
+    lines.append(f"As of: {before.env.upper()}  Currency: USD  Mode: {mode}")
     lines.append("--- Totals (Before → After) ---")
-    lines.append(
-        f"Cash:   {_fmt_money(b.cash)} → {_fmt_money(after_b.cash)}  (Δ {_fmt_money(after_b.cash - b.cash)})"
-    )
-    lines.append(
-        f"Stocks: {_fmt_money(b.stocks)} → {_fmt_money(after_b.stocks)}  (Δ {_fmt_money(after_b.stocks - b.stocks)})"
-    )
-    lines.append(
-        f"Funds:  {_fmt_money(b.funds)} → {_fmt_money(after_b.funds)}  (Δ {_fmt_money(after_b.funds - b.funds)})"
-    )
+
+    summary_rows: list[tuple[str, float, float, float]] = []
+    for label, before_value, after_value in (
+        ("Cash", buckets_before.cash, buckets_after.cash),
+        ("Stocks", buckets_before.stocks, buckets_after.stocks),
+        ("Funds", buckets_before.funds, buckets_after.funds),
+    ):
+        delta_value = after_value - before_value
+        summary_rows.append((label, before_value, after_value, delta_value))
+        lines.append(
+            f"{label:<6} {_fmt_money(before_value)} → {_fmt_money(after_value)}  "
+            f"(Δ {_fmt_money(delta_value)})"
+        )
+
+    total_delta = total_after - total_before
+    summary_rows.append(("Total", total_before, total_after, total_delta))
     lines.append(f"Total:  {_fmt_money(total_before)} → {_fmt_money(total_after)}")
     if total_fees and total_fees > 0:
         lines.append(f"Fees:   {_fmt_money(total_fees)}")
-        lines.append(f"Cash After Fees: {_fmt_money(after_b.cash)}")
+        lines.append(f"Cash After Fees: {_fmt_money(buckets_after.cash)}")
     lines.append("")
 
-    # Diffstat
-    cur_map = {p.symbol: p for p in before.positions}
-    tgt_map = {p.symbol: p for p in result.target_positions}
-    added, removed, inc, dec = _diffstat(cur_map, tgt_map)
+    current_map = {position.symbol: position for position in before.positions}
+    target_map = {position.symbol: position for position in result.target_positions}
+    diffstat = _diffstat(current_map, target_map)
     lines.append("--- Diffstat ---")
     lines.append(
-        f"Added: {added}  Removed: {removed}  Increased: {inc}  Decreased: {dec}"
+        f"Added: {diffstat[0]}  Removed: {diffstat[1]}  "
+        f"Increased: {diffstat[2]}  Decreased: {diffstat[3]}"
     )
     lines.append("")
 
-    # Per-position diffs
     lines.append(
-        "Symbol    Before(%)  Before($,sh)      →   After(%)   After($,sh)    Target(frac)  Rounded  Δfrac  Est.Fees  Action"
+        "Symbol    Before(%)  Before($,sh)      →   After(%)   After($,sh)    "
+        "Target(frac)  Rounded  Δfrac  Est.Fees  Action"
     )
     lines.append("-" * 90)
-    # Use total_after or result.total_portfolio_value for weights
+
     denom_before = (
         total_before if total_before > 0 else max(1.0, result.total_portfolio_value)
     )
     denom_after = (
         total_after if total_after > 0 else max(1.0, result.total_portfolio_value)
     )
-    all_syms = sorted(set(cur_map) | set(tgt_map))
-    for s in all_syms:
-        cur = cur_map.get(s)
-        tgt = tgt_map.get(s)
-        cur_val = float(cur.estimated_value) if cur else 0.0
-        cur_qty = int(cur.quantity) if cur else 0
-        tgt_val = float(tgt.estimated_value) if tgt else 0.0
-        tgt_qty = int(tgt.quantity) if tgt else 0
-        cur_w = cur_val / denom_before if denom_before > 0 else 0.0
-        tgt_w = tgt_val / denom_after if denom_after > 0 else 0.0
+
+    positions_for_rich: list[dict[str, Any]] = []
+    all_symbols = sorted(set(current_map) | set(target_map))
+    for symbol in all_symbols:
+        current = current_map.get(symbol)
+        target = target_map.get(symbol)
+        cur_val = float(current.estimated_value) if current else 0.0
+        cur_qty = int(current.quantity) if current else 0
+        tgt_val = float(target.estimated_value) if target else 0.0
+        tgt_qty = int(target.quantity) if target else 0
+        cur_weight = cur_val / denom_before if denom_before > 0 else 0.0
+        tgt_weight = tgt_val / denom_after if denom_after > 0 else 0.0
         delta_qty = tgt_qty - cur_qty
-        # action text if any order exists
-        action = ""
         if delta_qty > 0:
             action = f"BUY {delta_qty}"
         elif delta_qty < 0:
             action = f"SELL {abs(delta_qty)}"
         else:
             action = "HOLD"
-        # Find order info for preview columns
-        ords = [
-            o
-            for o in result.orders
-            if o.symbol.replace(".US", "") == s.replace(".US", "")
+
+        related_orders = [
+            order
+            for order in result.orders
+            if order.symbol.replace(".US", "") == symbol.replace(".US", "")
         ]
-        ord0 = ords[0] if ords else None
-        target_frac = getattr(ord0, "target_qty_frac", None)
-        rounded = getattr(ord0, "rounded_target_qty", None)
-        rounding_loss = getattr(ord0, "rounding_loss", None)
-        est_fee = getattr(ord0, "est_fees", None)
+        first_order = related_orders[0] if related_orders else None
+        target_frac = getattr(first_order, "target_qty_frac", None)
+        rounded = getattr(first_order, "rounded_target_qty", None)
+        rounding_loss = getattr(first_order, "rounding_loss", None)
+        est_fee = getattr(first_order, "est_fees", None)
+
+        target_frac_str = (
+            f"{target_frac:.3f}" if isinstance(target_frac, float) else "   -   "
+        )
+        rounded_str = f"{rounded:d}" if isinstance(rounded, int) else " - "
+        rounding_loss_str = (
+            f"{rounding_loss:.3f}" if isinstance(rounding_loss, float) else "  -  "
+        )
+        fee_str = (
+            _fmt_money(est_fee)
+            if isinstance(est_fee, (int | float))
+            else "$0.00"
+        )
         lines.append(
-            f"{s[:8]:8s}  {_fmt_pct(cur_w):>8}  {_fmt_money(cur_val):>12},{cur_qty:>4}  →  "
-            f"{_fmt_pct(tgt_w):>8}  {_fmt_money(tgt_val):>12},{tgt_qty:>4}  "
-            f"{(f'{target_frac:.3f}' if isinstance(target_frac, float) else '   -   '):>11}  "
-            f"{(f'{rounded:d}' if isinstance(rounded, int) else ' - '):>7}  "
-            f"{(f'{rounding_loss:.3f}' if isinstance(rounding_loss, float) else '  -  '):>6}  "
-            f"{(_fmt_money(est_fee) if isinstance(est_fee, (int, float)) else '$0.00'):>8}  {action}"
+            f"{symbol[:8]:8s}  {_fmt_pct(cur_weight):>8}  "
+            f"{_fmt_money(cur_val):>12},{cur_qty:>4}  →  "
+            f"{_fmt_pct(tgt_weight):>8}  {_fmt_money(tgt_val):>12},{tgt_qty:>4}  "
+            f"{target_frac_str:>11}  {rounded_str:>7}  "
+            f"{rounding_loss_str:>6}  {fee_str:>8}  {action}"
+        )
+
+        rounding_loss_val = (
+            rounding_loss if isinstance(rounding_loss, float) else None
+        )
+        est_fee_val = (
+            float(est_fee) if isinstance(est_fee, (int | float)) else 0.0
+        )
+        positions_for_rich.append(
+            {
+                "symbol": symbol,
+                "cur_weight": cur_weight,
+                "cur_val": cur_val,
+                "cur_qty": cur_qty,
+                "tgt_weight": tgt_weight,
+                "tgt_val": tgt_val,
+                "tgt_qty": tgt_qty,
+                "target_frac": target_frac if isinstance(target_frac, float) else None,
+                "rounded": rounded if isinstance(rounded, int) else None,
+                "rounding_loss": rounding_loss_val,
+                "est_fee": est_fee_val,
+                "action": action,
+            }
         )
 
     lines.append("")
-
-    # Orders list (SELL first)
     lines.append("--- Orders ---")
+
+    orders_for_rich: list[dict[str, Any]] = []
     if not result.orders:
         lines.append("No orders (already aligned or below lot thresholds)")
     else:
         sell_first = sorted(
             result.orders,
-            key=lambda o: (
-                0 if o.side.upper() == "SELL" else 1,
-                -(o.price or 0) * o.quantity,
+            key=lambda order: (
+                0 if order.side.upper() == "SELL" else 1,
+                -(order.price or 0) * order.quantity,
             ),
         )
-        for od in sell_first:
-            est_amt = (od.price or 0.0) * float(od.quantity)
-            lines.append(
-                f"{od.side:4s} {od.symbol[:8]:8s} {od.quantity:>6} @ {('MKT' if not od.price else _fmt_money(od.price)):<8} est {_fmt_money(est_amt)}"
+        for order in sell_first:
+            est_amount = (order.price or 0.0) * float(order.quantity)
+            price_display = "MKT" if not order.price else _fmt_money(order.price)
+            order_line = (
+                f"{order.side:4s} {order.symbol[:8]:8s} {order.quantity:>6} @ "
+                f"{price_display:<8} est{_fmt_money(est_amount)}"
+            )
+            lines.append(order_line)
+            orders_for_rich.append(
+                {
+                    "side": order.side,
+                    "symbol": order.symbol,
+                    "quantity": int(order.quantity),
+                    "price_display": price_display,
+                    "est_amount": est_amount,
+                }
             )
 
-    return "\n".join(lines)
+    text_output = "\n".join(lines)
+    rich_renderable = _build_rich_diff(
+        env=before.env.upper(),
+        mode=mode,
+        currency="USD",
+        summary_rows=summary_rows,
+        diffstat=diffstat,
+        positions=positions_for_rich,
+        orders=orders_for_rich,
+        fees=total_fees if total_fees and total_fees > 0 else 0.0,
+        sheet_name=getattr(result, "sheet_name", None),
+    )
+
+    return RenderedRebalanceDiff(text=text_output, rich=rich_renderable)
+
+
+def _build_rich_diff(
+    *,
+    env: str,
+    mode: str,
+    currency: str,
+    summary_rows: list[tuple[str, float, float, float]],
+    diffstat: tuple[int, int, int, int],
+    positions: list[dict[str, Any]],
+    orders: list[dict[str, Any]],
+    fees: float,
+    sheet_name: str | None,
+) -> object | None:
+    if not _HAS_RICH:
+        return None
+
+    from rich import box
+    from rich.console import Group
+    from rich.panel import Panel
+    from rich.table import Table
+
+    def _style_delta(value: float, text: str) -> str:
+        if value > 0:
+            return f"[green]{text}[/green]"
+        if value < 0:
+            return f"[red]{text}[/red]"
+        return text
+
+    def _signed_money(value: float) -> str:
+        base = _fmt_money(abs(value))
+        if value > 0:
+            return f"+{base}"
+        if value < 0:
+            return f"-{base}"
+        return base
+
+    header_table = Table.grid(expand=True)
+    header_table.add_column(justify="left")
+    header_table.add_column(justify="right")
+    header_table.add_row(f"[bold]{env} Account[/bold]", f"[bold]{mode}[/bold]")
+    subtitle = f"Currency: {currency}"
+    if sheet_name:
+        header_table.add_row(f"Sheet: {sheet_name}", subtitle)
+    else:
+        header_table.add_row("", subtitle)
+
+    summary_table = Table(
+        title="Totals",
+        show_header=True,
+        header_style="bold",
+        box=box.MINIMAL_DOUBLE_HEAD,
+    )
+    summary_table.add_column("Bucket")
+    summary_table.add_column("Before", justify="right")
+    summary_table.add_column("After", justify="right")
+    summary_table.add_column("Δ", justify="right")
+    for label, before_value, after_value, delta_value in summary_rows:
+        summary_table.add_row(
+            label,
+            _fmt_money(before_value),
+            _fmt_money(after_value),
+            _style_delta(delta_value, _signed_money(delta_value)),
+        )
+    if fees:
+        summary_table.add_row(
+            "Fees",
+            "-",
+            _fmt_money(fees),
+            _style_delta(-fees, _signed_money(-fees)),
+        )
+
+    diff_table = Table(
+        title="Diffstat", show_header=True, header_style="bold", box=box.MINIMAL
+    )
+    diff_table.add_column("Metric")
+    diff_table.add_column("Count", justify="right")
+    for label, value in zip(
+        ("Added", "Removed", "Increased", "Decreased"), diffstat, strict=True
+    ):
+        if label in {"Added", "Increased"}:
+            styled = _style_delta(value, str(value))
+        else:
+            styled = _style_delta(-value, str(value))
+        diff_table.add_row(label, styled)
+
+    positions_table = Table(
+        title="Per-position", show_header=True, header_style="bold", box=box.MINIMAL
+    )
+    positions_table.add_column("Symbol")
+    positions_table.add_column("Before %", justify="right")
+    positions_table.add_column("Before $", justify="right")
+    positions_table.add_column("Before Qty", justify="right")
+    positions_table.add_column("After %", justify="right")
+    positions_table.add_column("After $", justify="right")
+    positions_table.add_column("After Qty", justify="right")
+    positions_table.add_column("Target frac", justify="right")
+    positions_table.add_column("Rounded", justify="right")
+    positions_table.add_column("Δ frac", justify="right")
+    positions_table.add_column("Est. Fees", justify="right")
+    positions_table.add_column("Action")
+
+    for pos in positions:
+        delta_frac = pos["rounding_loss"] or 0.0
+        action = pos["action"]
+        if action.startswith("BUY"):
+            action = f"[green]{action}[/green]"
+        elif action.startswith("SELL"):
+            action = f"[red]{action}[/red]"
+        positions_table.add_row(
+            pos["symbol"],
+            _fmt_pct(pos["cur_weight"]),
+            _fmt_money(pos["cur_val"]),
+            str(pos["cur_qty"]),
+            _fmt_pct(pos["tgt_weight"]),
+            _fmt_money(pos["tgt_val"]),
+            str(pos["tgt_qty"]),
+            f"{pos['target_frac']:.3f}" if pos["target_frac"] is not None else "-",
+            str(pos["rounded"]) if pos["rounded"] is not None else "-",
+            _style_delta(delta_frac, f"{delta_frac:.3f}")
+            if pos["rounding_loss"] is not None
+            else "-",
+            _fmt_money(pos["est_fee"]),
+            action,
+        )
+
+    orders_table = Table(
+        title="Orders", show_header=True, header_style="bold", box=box.MINIMAL
+    )
+    orders_table.add_column("Side")
+    orders_table.add_column("Symbol")
+    orders_table.add_column("Qty", justify="right")
+    orders_table.add_column("Price")
+    orders_table.add_column("Est. Notional", justify="right")
+    if not orders:
+        orders_table.add_row("-", "(none)", "-", "-", "-")
+    else:
+        for order in orders:
+            side = order["side"].upper()
+            side_markup = f"[{'green' if side == 'BUY' else 'red'}]{order['side']}[/]"
+            delta_value = order["est_amount"] if side == "BUY" else -order["est_amount"]
+            orders_table.add_row(
+                side_markup,
+                order["symbol"],
+                str(order["quantity"]),
+                order["price_display"],
+                _style_delta(delta_value, _signed_money(order["est_amount"])),
+            )
+
+    return Group(
+        Panel(header_table, border_style="cyan"),
+        summary_table,
+        diff_table,
+        positions_table,
+        orders_table,
+    )

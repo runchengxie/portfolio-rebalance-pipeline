@@ -11,9 +11,10 @@ dependencies = [
     "backtrader",
     "python-dotenv",
     "requests",
-    "google-genai",
+    "google-generativeai",
     "longport>=0.2.77",
     "pyyaml",
+    "pydantic>=2",
 ]
 
 [dependency-groups]
@@ -26,7 +27,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
-cli = ["rich"]
+cli = ["rich>=13"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

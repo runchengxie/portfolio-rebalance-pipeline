@@ -651,8 +651,8 @@ graph TD;
 
 1. 安装依赖库:
 
-    Python 版本: 项目要求 Python >=3.10 且 <3.11。
-    安装: 项目依赖在 `pyproject.toml` 中定义。推荐使用虚拟环境，并通过以下命令安装（这会自动安装 `stockq` 命令行工具）：
+    Python 版本: 项目要求 Python >=3.10 且 <3.13。
+    安装: 项目依赖在 `pyproject.toml` 中定义。推荐使用虚拟环境，并通过以下命令安装（这会自动安装 `stockq` 命令行工具；若希望获得富文本 CLI 体验，可加上 `.[cli]` 额外依赖）：
 
     ```bash
     # 确保pip是最新版本
@@ -661,9 +661,15 @@ graph TD;
     # 从项目根目录运行
     pip install -e .
 
+    # 可选：安装富文本 CLI 体验
+    pip install -e .[cli]
+
     # --- 或者使用uv ---
     # 开发环境下使用
     uv sync
+
+    # 可选：安装富文本 CLI 体验
+    uv sync --extra cli
 
     # CI/发布环境
     uv sync --no-dev
@@ -815,7 +821,8 @@ pytest --cov=stock_analysis --cov-report=term-missing
 CI 要求覆盖率 ≥ 75%。
 
 ### 环境要求（仅集成/E2E）
-- `API_KEY` 必须设置：`export API_KEY=...`
+- Gemini 相关测试：至少设置 `GEMINI_API_KEY`（可选 `_2/_3` 提升并发）；详见 `docs/TESTING.md`
+- LongPort 集成：需要 `LONGPORT_APP_KEY`, `LONGPORT_APP_SECRET`, `LONGPORT_ACCESS_TOKEN`, `LONGPORT_REGION`
 - 如需数据库测试，请提供 `DATABASE_URL` 或在本地启动测试数据库
 
 ### 目录结构
