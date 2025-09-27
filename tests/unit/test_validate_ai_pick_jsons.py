@@ -1,4 +1,4 @@
-"""Unit tests for tools/validate_ai_pick_jsons.py
+"""Unit tests for project_tools/validate_ai_pick_jsons.py
 
 Covers:
 - AI picks are subset of preliminary candidates when prelim exists
@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TOOLS_PATH = PROJECT_ROOT / "tools" / "validate_ai_pick_jsons.py"
+TOOLS_PATH = PROJECT_ROOT / "project_tools" / "validate_ai_pick_jsons.py"
 
 pytestmark = pytest.mark.unit
 
