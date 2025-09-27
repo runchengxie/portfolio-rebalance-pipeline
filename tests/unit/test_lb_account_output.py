@@ -8,6 +8,7 @@ These tests verify the rendered output by patching `get_account_snapshot` to ret
 """
 
 import json
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -141,17 +142,17 @@ class TestLBAccountJsonOutput:
 class TestLBAccountErrorHandling:
     """Tests for error handling scenarios."""
 
-    def test_import_error_handling(self, capsys):
+    def test_import_error_handling(self, caplog):
         """Test the error message when the 'longport' dependency is not installed."""
         with patch(
             "builtins.__import__", side_effect=ImportError("No module named 'longport'")
         ):
-            result = cli.run_lb_account()
+            with caplog.at_level(logging.ERROR):
+                result = cli.run_lb_account()
 
         assert result == 1
-        err = capsys.readouterr().err
-        assert "Failed to import LongPort module" in err
-        assert "pip install longport" in err
+        assert "Failed to import LongPort module" in caplog.text
+        assert "pip install longport" in caplog.text
 
     def test_client_connection_error(self, capsys):
         """Test the error message for a generic client connection failure."""

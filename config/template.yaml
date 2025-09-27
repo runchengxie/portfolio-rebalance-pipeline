@@ -40,6 +40,18 @@ fees:
 fractional_preview:
   enable: true
   default_step: 0.001
+
+selection:
+  preliminary:
+    factor_weights:
+      cfo: 1.0
+      ceq: 1.0
+      txt: 1.0
+      d_txt: 1.0
+      d_at: -1.0
+      d_rect: -1.0
+  ai:
+    prompt_version: v1
   
 # Configuration notes:
 # 1. Benefits of unified capital:

@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 from typing import Optional
 
+from .result import CommandResult
+
 
 def _getenv_both(name_new: str, name_old: str, default: Optional[str] = None) -> str:
     return os.getenv(name_new) or os.getenv(name_old) or (default or "")
@@ -43,7 +45,7 @@ def _fmt_unlimited(val: float | int) -> str:
     return f"{val}"
 
 
-def run_lb_config(show: bool = True) -> int:
+def run_lb_config(show: bool = True) -> CommandResult:
     """Print effective LongPort-related configuration from environment.
 
     Args:
@@ -52,7 +54,7 @@ def run_lb_config(show: bool = True) -> int:
         Exit code (0 success)
     """
     if not show:
-        return 0
+        return CommandResult(exit_code=0)
 
     region = _getenv_both("LONGPORT_REGION", "LONGBRIDGE_REGION", "hk")
     overnight = _getenv_both("LONGPORT_ENABLE_OVERNIGHT", "LONGBRIDGE_ENABLE_OVERNIGHT", "false")
@@ -86,6 +88,5 @@ def run_lb_config(show: bool = True) -> int:
         "- Access Token:  " + _mask(token),
     ]
 
-    print("\n".join(lines))
-    return 0
+    return CommandResult(exit_code=0, stdout="\n".join(lines))
 

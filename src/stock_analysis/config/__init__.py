@@ -7,6 +7,10 @@ import datetime
 from pathlib import Path
 from typing import Any
 
+from ..logging import get_logger
+
+logger = get_logger(__name__)
+
 try:
     import yaml
 except ImportError:
@@ -58,9 +62,7 @@ def load_cfg() -> dict[str, Any]:
             config = yaml.safe_load(f) or {}
         return config
     except Exception as e:
-        print(
-            f"[WARNING] Failed to load config.yaml: {e}. Using default configuration."
-        )
+        logger.warning("Failed to load config.yaml: %s. Using default configuration.", e)
         return {
             "backtest": {
                 "period_mode": "dynamic",
@@ -68,6 +70,67 @@ def load_cfg() -> dict[str, Any]:
                 "initial_cash": {"ai": 1000000, "quant": 1000000, "spy": 100000},
             }
         }
+
+
+_DEFAULT_PRELIMINARY_FACTOR_WEIGHTS: dict[str, float] = {
+    "cfo": 1.0,
+    "ceq": 1.0,
+    "txt": 1.0,
+    "d_txt": 1.0,
+    "d_at": -1.0,
+    "d_rect": -1.0,
+}
+
+_DEFAULT_PROMPT_VERSION = "v1"
+
+
+def get_preliminary_factor_weights() -> dict[str, float]:
+    """Return factor weights for the preliminary screen from configuration."""
+
+    config = load_cfg()
+    selection_cfg = config.get("selection", {}) if isinstance(config, dict) else {}
+    prelim_cfg = (
+        selection_cfg.get("preliminary", {})
+        if isinstance(selection_cfg, dict)
+        else {}
+    )
+    weights_cfg = (
+        prelim_cfg.get("factor_weights") if isinstance(prelim_cfg, dict) else None
+    )
+
+    if not isinstance(weights_cfg, dict) or not weights_cfg:
+        return _DEFAULT_PRELIMINARY_FACTOR_WEIGHTS.copy()
+
+    merged = _DEFAULT_PRELIMINARY_FACTOR_WEIGHTS.copy()
+    for factor, value in weights_cfg.items():
+        try:
+            merged[str(factor)] = float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid factor weight configured for %s=%r; falling back to defaults.",
+                factor,
+                value,
+            )
+            return _DEFAULT_PRELIMINARY_FACTOR_WEIGHTS.copy()
+
+    return merged
+
+
+def get_ai_prompt_version() -> str:
+    """Return the configured AI prompt version for selection exports."""
+
+    config = load_cfg()
+    selection_cfg = config.get("selection", {}) if isinstance(config, dict) else {}
+    ai_cfg = (
+        selection_cfg.get("ai", {}) if isinstance(selection_cfg, dict) else {}
+    )
+    prompt_version = (
+        ai_cfg.get("prompt_version") if isinstance(ai_cfg, dict) else None
+    )
+
+    if isinstance(prompt_version, str) and prompt_version.strip():
+        return prompt_version.strip()
+    return _DEFAULT_PROMPT_VERSION
 
 
 def get_backtest_period(portfolios: dict = None) -> tuple[datetime.date, datetime.date]:

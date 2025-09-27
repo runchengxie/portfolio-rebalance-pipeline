@@ -6,6 +6,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from dotenv import dotenv_values
@@ -26,6 +27,7 @@ except Exception:  # pragma: no cover - library is optional
     genai = _DummyGenAI()  # type: ignore
 from pydantic import BaseModel, Field
 
+from ...config import get_ai_prompt_version
 from ...logging import get_logger
 
 # --- Paths and Configuration ---
@@ -40,8 +42,28 @@ AI_PICK_JSON_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = get_logger(__name__)
 
+
+def _log(level: str, message: str, **context: Any) -> None:
+    payload = {k: v for k, v in context.items() if v is not None}
+    if payload:
+        ctx = " ".join(f"{k}={v}" for k, v in payload.items())
+        message = f"{message} [{ctx}]"
+    getattr(logger, level)(message)
+
+
+def _info(message: str, **context: Any) -> None:
+    _log("info", message, **context)
+
+
+def _warning(message: str, **context: Any) -> None:
+    _log("warning", message, **context)
+
+
+def _error(message: str, **context: Any) -> None:
+    _log("error", message, **context)
+
 # Version tag for prompt/content format
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = get_ai_prompt_version()
 
 # --- Gemini API Configuration ---
 # Local file reading only, no global env injection
@@ -123,7 +145,9 @@ class RateLimiter:
             now = time.monotonic()
             sleep_for = self.per - (now - self.calls[0])
             if sleep_for > 0:
-                print(f"Rate limit wait {sleep_for:.2f} seconds...")
+                _info(
+                    "Rate limit wait", sleep=f"{sleep_for:.2f}", component="ratelimit"
+                )
                 time.sleep(sleep_for)
         self.record_call()
 
@@ -239,7 +263,10 @@ class KeyPool:
             # Authentication error, permanently remove this key
             slot.dead = True
             slot.in_use = False
-            print(f"  ⚠️ API Key {slot.name} authentication failed, permanently removed")
+            _warning(
+                "API key authentication failed; removing permanently",
+                key=slot.name,
+            )
             return
 
         if is_429:
@@ -251,9 +278,9 @@ class KeyPool:
                 )
                 for s in self.slots:
                     s.next_ok_at = self.project_cooldown_until
-                print(
-                    "  🚨 Detected project-level rate limiting, global cooldown "
-                    f"{cooldown:.1f} seconds"
+                _warning(
+                    "Detected project-level rate limiting; applying global cooldown",
+                    cooldown=f"{cooldown:.1f}s",
                 )
             slot.in_use = False
             return
@@ -262,7 +289,9 @@ class KeyPool:
         slot.circuit.record_failure()
         slot.next_ok_at = time.time() + random.uniform(5, 15)
         slot.in_use = False
-        print(f"  ⚠️ API Key {slot.name} failed, entering backoff state")
+        _warning(
+            "API key entering backoff state", key=slot.name, cooldown="5-15s"
+        )
 
 
 # --- API Call Function Using Key Pool ---
@@ -278,15 +307,17 @@ def call_with_pool(keypool, do_call, max_retries=6):
 
             keypool.report_success(slot)
             if attempt > 0:
-                print(
-                    "  Retry successful "
-                    f"(attempt {attempt + 1}, using {slot.name}, "
-                    f"took {elapsed_time:.2f}s)"
+                _info(
+                    "Retry succeeded",
+                    attempt=attempt + 1,
+                    key=slot.name,
+                    elapsed=f"{elapsed_time:.2f}s",
                 )
             else:
-                print(
-                    "  API call successful "
-                    f"(using {slot.name}, took {elapsed_time:.2f}s)"
+                _info(
+                    "API call successful",
+                    key=slot.name,
+                    elapsed=f"{elapsed_time:.2f}s",
                 )
             return resp
         except Exception as e:
@@ -296,9 +327,11 @@ def call_with_pool(keypool, do_call, max_retries=6):
             if attempt < max_retries:
                 # Exponential backoff + jitter
                 sleep_s = min(60, (2**attempt) * 0.5) + random.uniform(0, 0.5)
-                print(
-                    f"  Attempt {attempt + 1} failed (using {slot.name}), "
-                    f"waiting {sleep_s:.2f}s before retry..."
+                _warning(
+                    "API call failed; scheduling retry",
+                    attempt=attempt + 1,
+                    key=slot.name,
+                    wait=f"{sleep_s:.2f}s",
                 )
                 time.sleep(sleep_s)
             else:
@@ -329,10 +362,14 @@ def save_sheet_result(sheet_name, df_ai_picks, output_file):
             ) as writer:
                 df_ai_picks.to_excel(writer, sheet_name=str(sheet_name), index=False)
 
-        print(f"  ✓ Results saved to {output_file} sheet {sheet_name}")
+        _info(
+            "Results saved to Excel",
+            output=str(output_file),
+            sheet=sheet_name,
+        )
         return True
     except Exception as e:
-        print(f"  ✗ Failed to save results: {e}")
+        _error("Failed to save Excel results", error=e, sheet=sheet_name)
         return False
 
 
@@ -382,10 +419,10 @@ def save_json_result(trade_date_str: str, df_ai_picks: pd.DataFrame) -> bool:
 
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
-        print(f"  ✓ JSON saved to {out_path}")
+        _info("JSON saved", path=str(out_path), trade_date=str(trade_date))
         return True
     except Exception as e:
-        print(f"  ✗ Failed to save JSON: {e}")
+        _error("Failed to save JSON", error=e, trade_date=str(trade_date))
         return False
 
 
@@ -425,11 +462,11 @@ def create_key_pool():
     if not keys:
         raise ValueError("No available GEMINI_API_KEY found")
 
-    print(f"Found {len(keys)} available API Keys")
+    _info("Discovered API keys", total=len(keys))
 
     # Allocate QPM quota for each key
     per_key_qpm = max(1, MAX_QPM // len(keys))
-    print(f"QPM allocated per key: {per_key_qpm}")
+    _info("Allocated QPM per key", qpm=per_key_qpm)
 
     slots = []
     for env_name, k in keys:
@@ -437,7 +474,7 @@ def create_key_pool():
         limiter = RateLimiter(per_key_qpm)
         slot = KeySlot(env_name, k, client, limiter)
         slots.append(slot)
-        print(f"  Initialized {slot.name}")
+        _info("Initialized API key slot", slot=slot.name)
 
     return KeyPool(slots)
 
@@ -458,15 +495,18 @@ def parse_response_robust(response):
                 if isinstance(json_data, list):
                     return [AIStockPick(**item) for item in json_data]
                 else:
-                    print("  Response is not in list format, trying to extract...")
+                    _warning(
+                        "Response not in list format; attempting to extract",
+                        response_preview=response.text[:120],
+                    )
                     return None
             except json.JSONDecodeError as e:
-                print(f"  JSON parsing failed: {e}")
+                _error("JSON parsing failed", error=e)
                 return None
 
         return None
     except Exception as e:
-        print(f"  Response parsing exception: {e}")
+        _error("Response parsing exception", error=e)
         return None
 
 
@@ -492,7 +532,7 @@ def process_one_sheet(
             .fillna({"Company Name": "N/A"})
         )
 
-        print(f"  Number of candidate stocks: {len(tickers_df)}")
+        _info("Candidate stocks loaded", sheet=sheet_name, total=len(tickers_df))
 
         # Build Prompt
         prompt = create_prompt(analysis_date, tickers_df)
@@ -508,7 +548,7 @@ def process_one_sheet(
                 },
             )
 
-        print("  Calling AI analysis...")
+        _info("Calling AI analysis", sheet=sheet_name)
         response = call_with_pool(keypool, _do_call, max_retries=MAX_RETRIES)
 
         # Robust response parsing
@@ -591,18 +631,13 @@ def create_prompt(analysis_date, ticker_list_df):
 
 # --- Main Logic ---
 def main(*, export_json: bool = True, export_excel: bool = True):
-    print("--- Concurrent AI Stock Selection Script (Key Pool Rotation) ---")
-    print(
-        "Configuration: "
-        f"MAX_QPM={MAX_QPM}, MAX_RETRIES={MAX_RETRIES}, "
-        f"TIMEOUT={REQUEST_TIMEOUT}s"
-    )
+    _info("Starting AI stock selection", max_qpm=MAX_QPM, max_retries=MAX_RETRIES)
 
     # Create Key pool
     try:
         keypool = create_key_pool()
     except ValueError as e:
-        print(f"Error: {e}")
+        _error("Failed to initialize key pool", error=e)
         return
 
     # Load company information to enrich Prompt
@@ -611,9 +646,10 @@ def main(*, export_json: bool = True, export_excel: bool = True):
 
     # Load portfolio selected by quantitative strategy
     if not INPUT_FILE.exists():
-        print(
-            "Error: Input file "
-            f"{INPUT_FILE} not found. Please run `run_quarterly_selection.py` first."
+        _error(
+            "Input workbook not found",
+            path=str(INPUT_FILE),
+            hint="run run_quarterly_selection.py first",
         )
         return
 
@@ -621,10 +657,10 @@ def main(*, export_json: bool = True, export_excel: bool = True):
     sheet_names = xls.sheet_names
 
     if not sheet_names:
-        print("Error: No worksheets found in Excel file.")
+        _error("No worksheets found in input workbook", path=str(INPUT_FILE))
         return
 
-    print(f"Found {len(sheet_names)} quarters to process")
+    _info("Detected quarters to process", total=len(sheet_names))
 
     # Check already processed sheets (resume support)
     processed_sheets = set()
@@ -632,16 +668,16 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         try:
             existing_xls = pd.ExcelFile(OUTPUT_AI_FILE)
             processed_sheets = set(existing_xls.sheet_names)
-            print(f"Found already processed quarters: {len(processed_sheets)}")
+            _info("Existing processed quarters detected", total=len(processed_sheets))
         except Exception as e:
-            print(f"Failed to read existing results file: {e}")
+            _warning("Failed to read existing results file", error=e)
 
     # Filter out quarters that need processing
     pending_sheets = [s for s in sheet_names if s not in processed_sheets]
-    print(f"Pending quarters: {len(pending_sheets)}")
+    _info("Pending quarters", total=len(pending_sheets))
 
     if not pending_sheets:
-        print("All quarters have been processed!")
+        _info("All quarters already processed")
         # Best-effort: export JSON for existing results if not present
         if export_json:
             try:
@@ -663,7 +699,7 @@ def main(*, export_json: bool = True, export_excel: bool = True):
 
     # Number of threads equals available keys to avoid over-concurrency
     max_workers = len(keypool.slots)
-    print(f"Using {max_workers} worker threads for concurrent processing")
+    _info("Using worker threads for processing", workers=max_workers)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
@@ -683,32 +719,45 @@ def main(*, export_json: bool = True, export_excel: bool = True):
         for i, future in enumerate(as_completed(futures), 1):
             sheet_name, status, result = future.result()
 
-            print(f"\n[{i}/{len(pending_sheets)}] --- Quarter {sheet_name} ---")
+            _info(
+                "Processing quarter",
+                index=f"{i}/{len(pending_sheets)}",
+                sheet=sheet_name,
+            )
 
             if status == "success":
                 success_count += 1
-                print(f"  ✓ Processing completed, selected {result} stocks")
+                _info(
+                    "Processing completed",
+                    sheet=sheet_name,
+                    selected=result,
+                )
             elif status == "save_failed":
                 error_count += 1
-                print("  ✗ Save failed")
+                _error("Save failed", sheet=sheet_name)
             elif status == "parse_failed":
                 error_count += 1
-                print(f"  ✗ {result}")
+                _error("Response parsing failed", sheet=sheet_name, detail=result)
             else:  # error
                 error_count += 1
-                print(f"  ✗ Processing failed: {result}")
+                _error("Processing failed", sheet=sheet_name, detail=result)
 
     # Final statistics
-    print("\n=== Processing Complete ===")
-    print(f"Successfully processed: {success_count} quarters")
-    print(f"Skipped already processed: {skip_count} quarters")
-    print(f"Processing failed: {error_count} quarters")
+    _info(
+        "Processing complete",
+        success=success_count,
+        skipped=skip_count,
+        failed=error_count,
+    )
 
     if success_count > 0 or skip_count > 0:
-        print(f"Results file: {OUTPUT_AI_FILE}")
-        print("Tip: If there are failed quarters, you can re-run the script to resume")
+        _info("Results file available", path=str(OUTPUT_AI_FILE))
+        _info(
+            "Tip: rerun script to resume failed quarters",
+            pending=error_count,
+        )
     else:
-        print("Failed to successfully process any quarters")
+        _error("No quarters processed successfully")
 
 
 if __name__ == "__main__":

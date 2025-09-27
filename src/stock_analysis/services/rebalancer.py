@@ -12,7 +12,7 @@ from ..broker.longport_client import LongPortClient, _to_lb_symbol
 from ..fees import FeeSchedule, estimate_fees
 from ..models import AccountSnapshot, Order, Position, RebalanceResult
 from ..config import load_cfg
-from ..logging import get_logger
+from ..logging import get_logger, get_run_id
 from .account_snapshot import get_quotes
 
 logger = get_logger(__name__)
@@ -361,6 +361,7 @@ class RebalanceService:
         log_file = log_dir / f"{timestamp}_{self.env}_{mode}.jsonl"
 
         with open(log_file, "w", encoding="utf-8") as f:
+            run_id = get_run_id()
             for order in rebalance_result.orders:
                 order_dict = {
                     "symbol": order.symbol,
@@ -375,8 +376,9 @@ class RebalanceService:
                     "error_message": order.error_message,
                     "env": self.env,
                     "dry_run": dry_run,
+                    "run_id": run_id,
                 }
                 f.write(json.dumps(order_dict, ensure_ascii=False) + "\n")
 
-        logger.info(f"审计日志已保存到: {log_file}")
+        logger.info("审计日志已保存", extra={"log_file": str(log_file)})
         return log_file

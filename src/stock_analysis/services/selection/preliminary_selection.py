@@ -14,6 +14,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta  # type: ignore[import-untyped]
 from scipy.stats import zscore
 
+from ...config import get_preliminary_factor_weights
 from ...logging import get_logger
 
 # --- Path Configuration ---
@@ -60,7 +61,7 @@ MIN_REPORTS_IN_WINDOW = 5
 OUTPUT_FILE_BASE = OUTPUTS_DIR / "point_in_time_backtest_quarterly_sp500_historical"
 
 # --- Factor Configuration ---
-FACTOR_WEIGHTS = {"cfo": 1, "ceq": 1, "txt": 1, "d_txt": 1, "d_at": -1, "d_rect": -1}
+FACTOR_WEIGHTS = get_preliminary_factor_weights()
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import sys
+import uuid
+from contextvars import ContextVar
 from pathlib import Path
 
 # This module is already being used elsewhere
@@ -17,10 +19,45 @@ except Exception:
     # Fallback, don't crash again due to path module issues
     OUTPUTS_DIR = Path.cwd() / "outputs"
 
-__all__ = ["setup_logging", "get_logger", "StrategyLogger"]
+__all__ = [
+    "setup_logging",
+    "get_logger",
+    "StrategyLogger",
+    "set_run_id",
+    "get_run_id",
+]
 
-_DEFAULT_FMT = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
+_DEFAULT_FMT = "[%(asctime)s] %(levelname)s %(name)s [run=%(run_id)s]: %(message)s"
 _DEFAULT_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+_RUN_ID: ContextVar[str | None] = ContextVar("stock_analysis_run_id", default=None)
+
+
+def get_run_id() -> str:
+    """Return the current run identifier, generating one if missing."""
+
+    run_id = _RUN_ID.get()
+    if not run_id:
+        run_id = uuid.uuid4().hex[:12]
+        _RUN_ID.set(run_id)
+    return run_id
+
+
+def set_run_id(run_id: str) -> None:
+    """Set the current run identifier for log records."""
+
+    _RUN_ID.set(run_id)
+
+
+class _RunIdFilter(logging.Filter):
+    """Ensure each log record carries the active ``run_id`` field."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - trivial
+        record.run_id = get_run_id()
+        return True
+
+
+_RUN_ID_FILTER = _RunIdFilter()
 
 
 def _ensure_outputs_dir() -> Path:
@@ -82,6 +119,7 @@ def setup_logging(
                 fh = logging.FileHandler(fh_path, encoding="utf-8")
                 fh.setLevel(level)
                 fh.setFormatter(formatter)
+                fh.addFilter(_RUN_ID_FILTER)
                 logger.addHandler(fh)
         return logger
 
@@ -89,6 +127,7 @@ def setup_logging(
         sh = logging.StreamHandler(stream=sys.stderr)
         sh.setLevel(level)
         sh.setFormatter(formatter)
+        sh.addFilter(_RUN_ID_FILTER)
         logger.addHandler(sh)
 
     if log_file:
@@ -97,8 +136,10 @@ def setup_logging(
         fh = logging.FileHandler(fh_path, encoding="utf-8")
         fh.setLevel(level)
         fh.setFormatter(formatter)
+        fh.addFilter(_RUN_ID_FILTER)
         logger.addHandler(fh)
 
+    logger.addFilter(_RUN_ID_FILTER)
     logger._configured = True  # type: ignore[attr-defined]
     return logger
 
