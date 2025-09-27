@@ -535,6 +535,25 @@ def run_benchmark_backtest(
     return portfolio_value, metrics
 
 
+def _index_to_100(series: pd.Series) -> pd.Series:
+    """Rebase a time series to start at 100 while dropping missing values."""
+
+    cleaned = series.dropna()
+    if cleaned.empty:
+        return cleaned
+    return 100.0 * cleaned / cleaned.iloc[0]
+
+
+def _underwater(series: pd.Series) -> pd.Series:
+    """Compute drawdown series expressed as negative percentages."""
+
+    cleaned = series.dropna()
+    if cleaned.empty:
+        return cleaned
+    rolling_max = cleaned.cummax()
+    return cleaned / rolling_max - 1.0
+
+
 def generate_report(
     metrics: dict[str, Any],
     title: str,
@@ -543,6 +562,11 @@ def generate_report(
     benchmark_value: pd.Series | None = None,
     benchmark_label: str = "Benchmark",
     benchmark_metrics: dict[str, Any] | None = None,
+    *,
+    report_mode: str = "comparison_only",
+    with_underwater: bool = True,
+    index_to_100: bool = True,
+    use_log_scale: bool = False,
 ) -> None:
     """Generate unified backtest report
 
@@ -554,7 +578,18 @@ def generate_report(
         benchmark_value: Benchmark value series (optional)
         benchmark_label: Benchmark label
         benchmark_metrics: Optional metrics dictionary for benchmark comparison
+        report_mode: Controls textual output. Options are "comparison_only",
+            "strategy_only", or "both".
+        with_underwater: Include an underwater (drawdown) subplot when True.
+        index_to_100: Rebase values to 100 before plotting when True.
+        use_log_scale: Display the equity curve on a log scale when True.
     """
+
+    valid_modes = {"comparison_only", "strategy_only", "both"}
+    if report_mode not in valid_modes:  # pragma: no cover - defensive guard
+        raise ValueError(
+            "report_mode must be one of 'comparison_only', 'strategy_only', 'both'"
+        )
 
     def _render_metrics_block(block_title: str, block_metrics: dict[str, Any]) -> None:
         print("\n" + "=" * 50)
@@ -596,19 +631,23 @@ def generate_report(
             return "N/A"
         return f"{value:.3f}"
 
-    # Print text report for strategy and benchmark (if provided)
-    _render_metrics_block(title, metrics)
+    if report_mode in {"strategy_only", "both"}:
+        _render_metrics_block(title, metrics)
 
     benchmark_section_title = f"{benchmark_label} Benchmark Results"
-    if benchmark_metrics is not None:
+    if benchmark_metrics is not None and report_mode == "both":
         _render_metrics_block(benchmark_section_title, benchmark_metrics)
 
-        strategy_label = title.replace("Results", "").strip()
-        benchmark_column_label = benchmark_label
+    if benchmark_metrics is not None:
+        strategy_label = title.replace("Results", "").strip() or "Strategy"
+        benchmark_column_label = benchmark_label or "Benchmark"
         column_width = max(len(strategy_label), len(benchmark_column_label), 20)
 
         print("\nBenchmark Comparison (Unified Methodology):")
-        header = f"{'Metric':<20}{strategy_label:<{column_width}}{benchmark_column_label:<{column_width}}"
+        header = (
+            f"{'Metric':<20}{strategy_label:<{column_width}}"
+            f"{benchmark_column_label:<{column_width}}"
+        )
         print(header)
         print("-" * len(header))
 
@@ -641,31 +680,110 @@ def generate_report(
                 f"{benchmark_value_str:<{column_width}}"
             )
 
+        print("-" * len(header))
+        strategy_period = (
+            f"{metrics['start_date'].strftime('%Y-%m-%d')}"
+            f" to {metrics['end_date'].strftime('%Y-%m-%d')}"
+        )
+        benchmark_period = (
+            f"{benchmark_metrics['start_date'].strftime('%Y-%m-%d')}"
+            f" to {benchmark_metrics['end_date'].strftime('%Y-%m-%d')}"
+        )
+        print(f"Period Covered:{strategy_period:>18} | {benchmark_period}")
+        print(
+            "Initial / Final:"  # Align initial and final values for both series
+            f" ${metrics['initial_value']:,.2f} → ${metrics['final_value']:,.2f}"
+            f" | ${benchmark_metrics['initial_value']:,.2f}"
+            f" → ${benchmark_metrics['final_value']:,.2f}"
+        )
+        rf_series = metrics.get("risk_free_series") or benchmark_metrics.get(
+            "risk_free_series"
+        )
+        if rf_series:
+            print(f"Risk-free Series: {rf_series}")
+
+    # Harmonise data prior to plotting
+    portfolio_series = portfolio_value.sort_index()
+    benchmark_series = (
+        benchmark_value.sort_index() if benchmark_value is not None else None
+    )
+
+    if benchmark_series is not None:
+        aligned = pd.concat(
+            [
+                portfolio_series.rename("Strategy"),
+                benchmark_series.rename(benchmark_label or "Benchmark"),
+            ],
+            axis=1,
+        ).sort_index()
+        aligned = aligned.ffill().dropna()
+        if aligned.empty:
+            benchmark_series = None
+        else:
+            portfolio_series = aligned.iloc[:, 0]
+            benchmark_series = aligned.iloc[:, 1]
+
+    if index_to_100:
+        portfolio_plot = _index_to_100(portfolio_series)
+        benchmark_plot = (
+            _index_to_100(benchmark_series) if benchmark_series is not None else None
+        )
+        y_label = "Index (Base = 100)"
+    else:
+        portfolio_plot = portfolio_series
+        benchmark_plot = benchmark_series
+        y_label = "Portfolio Value ($)"
+
     # Generate chart
     print("\nGenerating plot...")
     plt.style.use("seaborn-v0_8-whitegrid")
-    fig, ax = plt.subplots(figsize=(14, 8))
+    nrows = 2 if with_underwater else 1
+    fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(14, 8), sharex=True)
+    if with_underwater:
+        ax_equity, ax_drawdown = axes  # type: ignore[misc]
+    else:
+        ax_equity = axes  # type: ignore[assignment]
 
-    # Plot main strategy
-    portfolio_value.plot(
-        ax=ax, label=title.split("(")[0].strip(), color="steelblue", lw=2
-    )
+    portfolio_label = title.split("(")[0].strip() or "Strategy"
+    portfolio_plot.plot(ax=ax_equity, label=portfolio_label, lw=2, color="steelblue")
 
-    # Plot benchmark (if provided)
-    if benchmark_value is not None:
-        benchmark_value.plot(ax=ax, label=benchmark_label, color="darkorange", lw=2)
+    if benchmark_plot is not None:
+        benchmark_plot.plot(
+            ax=ax_equity, label=benchmark_label or "Benchmark", lw=2, color="darkorange"
+        )
 
-    # Format chart
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, p: f"${x:,.0f}"))
-    ax.set_title(title, fontsize=16)
-    ax.set_xlabel("Date", fontsize=12)
-    ax.set_ylabel("Portfolio Value ($)", fontsize=12)
-    ax.legend(fontsize=12)
-    ax.grid(True, alpha=0.3)
+    ax_equity.set_title(title, fontsize=16)
+    ax_equity.set_ylabel(y_label, fontsize=12)
+    ax_equity.legend(fontsize=12)
+    if not index_to_100:
+        ax_equity.yaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda value, _: f"${value:,.0f}")
+        )
+    if use_log_scale:
+        ax_equity.set_yscale("log")
 
+    if with_underwater:
+        drawdown_series = _underwater(portfolio_series)
+        if not drawdown_series.empty:
+            ax_drawdown.plot(drawdown_series.index, drawdown_series, lw=1.2, color="steelblue")
+            ax_drawdown.fill_between(
+                drawdown_series.index,
+                drawdown_series,
+                0,
+                color="steelblue",
+                alpha=0.25,
+                step="pre",
+            )
+        ax_drawdown.set_ylabel("Drawdown", fontsize=12)
+        ax_drawdown.set_xlabel("Date", fontsize=12)
+        ax_drawdown.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
+        ax_drawdown.grid(True, alpha=0.3)
+    else:
+        ax_equity.set_xlabel("Date", fontsize=12)
+
+    ax_equity.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    # Save image
     if output_png:
         plt.savefig(output_png, dpi=300, bbox_inches="tight")
         print(f"Plot saved to: {output_png}")
