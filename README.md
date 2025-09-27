@@ -94,10 +94,12 @@ Last 5Y         17.97%   -16.22%      1.11      0.98    14.32%      0.31     8.3
   - [准备工作: 环境设置](#%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C-%E7%8E%AF%E5%A2%83%E8%AE%BE%E7%BD%AE)
 - [JSON格式选股提示词](#json%E6%A0%BC%E5%BC%8F%E9%80%89%E8%82%A1%E6%8F%90%E7%A4%BA%E8%AF%8D)
 - [测试](#%E6%B5%8B%E8%AF%95)
+- [标记规范](#%E6%A0%87%E8%AE%B0%E8%A7%84%E8%8C%83)
   - [快速开始](#%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B-1)
   - [覆盖率](#%E8%A6%86%E7%9B%96%E7%8E%87)
   - [环境要求（仅集成/E2E）](#%E7%8E%AF%E5%A2%83%E8%A6%81%E6%B1%82%E4%BB%85%E9%9B%86%E6%88%90e2e)
   - [目录结构](#%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84)
+- [环境变量](#%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
