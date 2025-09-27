@@ -7,6 +7,7 @@ This module tests the backtest report generation functionality, covering:
 - Handling of error conditions.
 """
 
+import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -91,6 +92,18 @@ class TestReportGeneration:
             "max_drawdown": 0.02,
         }
 
+        benchmark_metrics = {
+            "start_date": dates[0].date(),
+            "end_date": dates[-1].date(),
+            "initial_value": 10000.0,
+            "final_value": 10120.0,
+            "total_return": 0.012,
+            "annualized_return": 0.06,
+            "max_drawdown": 5.4,
+            "sharpe": 0.75,
+            "risk_free_series": "DGS3MO",
+        }
+
         with patch("matplotlib.pyplot.savefig") as mock_savefig:
             with patch("matplotlib.pyplot.show"):
                 with patch("matplotlib.pyplot.style.use"):
@@ -119,10 +132,74 @@ class TestReportGeneration:
                                         output_png=output_png,
                                         benchmark_value=benchmark_value,
                                         benchmark_label="SPY",
+                                        benchmark_metrics=benchmark_metrics,
                                     )
 
                         # Verify that savefig was called
                         mock_savefig.assert_called_once()
+
+    def test_benchmark_comparison_table_output(self, capsys):
+        """Ensure the benchmark comparison table appears in text output."""
+
+        metrics = {
+            "start_date": datetime.date(2022, 1, 1),
+            "end_date": datetime.date(2022, 12, 31),
+            "initial_value": 100000.0,
+            "final_value": 120000.0,
+            "total_return": 0.20,
+            "annualized_return": 0.18,
+            "max_drawdown": 8.5,
+            "sharpe": 1.1,
+            "risk_free_series": "DGS3MO",
+        }
+
+        benchmark_metrics = {
+            "start_date": datetime.date(2022, 1, 1),
+            "end_date": datetime.date(2022, 12, 31),
+            "initial_value": 100000.0,
+            "final_value": 110000.0,
+            "total_return": 0.10,
+            "annualized_return": 0.09,
+            "max_drawdown": 12.3,
+            "sharpe": 0.8,
+            "risk_free_series": "DGS3MO",
+        }
+
+        dates = pd.date_range("2022-01-01", "2022-12-31", freq="M")
+        portfolio_value = pd.Series(range(100000, 100000 + len(dates) * 1000, 1000), index=dates)
+        benchmark_value = portfolio_value * 0.95
+
+        with patch("matplotlib.pyplot.savefig"), patch("matplotlib.pyplot.show"), patch(
+            "matplotlib.pyplot.style.use"
+        ), patch("matplotlib.pyplot.tight_layout"), patch(
+            "matplotlib.pyplot.subplots"
+        ) as mock_subplots:
+            mock_fig = Mock()
+            mock_ax = Mock()
+            mock_subplots.return_value = (mock_fig, mock_ax)
+            mock_ax.yaxis.set_major_formatter = Mock()
+            mock_ax.set_title = Mock()
+            mock_ax.set_xlabel = Mock()
+            mock_ax.set_ylabel = Mock()
+            mock_ax.legend = Mock()
+            mock_ax.grid = Mock()
+
+            with patch.object(portfolio_value, "plot", return_value=None), patch.object(
+                benchmark_value, "plot", return_value=None
+            ):
+                generate_report(
+                    metrics=metrics,
+                    title="Strategy vs Benchmark",
+                    portfolio_value=portfolio_value,
+                    benchmark_value=benchmark_value,
+                    benchmark_label="SPY",
+                    benchmark_metrics=benchmark_metrics,
+                )
+
+        captured = capsys.readouterr()
+        assert "Benchmark Comparison (Unified Methodology)" in captured.out
+        assert "Sharpe Ratio" in captured.out
+        assert "SPY" in captured.out
 
     def test_generate_report_without_png_output(self, capsys):
         """Tests report generation without saving a PNG file."""

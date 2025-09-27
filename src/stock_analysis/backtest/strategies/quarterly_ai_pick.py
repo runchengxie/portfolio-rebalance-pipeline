@@ -1,6 +1,7 @@
 import sys
 import time
 import datetime
+from typing import Any
 
 # Import new modules
 from ..engine import (
@@ -112,11 +113,12 @@ def main(*, log_level: int | None = None):
 
     # Prepare SPY benchmark
     spy_value = None
+    spy_metrics: dict[str, Any] | None = None
     try:
         start_dt = datetime.datetime.combine(BACKTEST_START_DATE, datetime.time())
         end_dt = datetime.datetime.combine(BACKTEST_END_DATE, datetime.time())
         spy_data = load_spy_data(DB_PATH, start_dt, end_dt)
-        spy_value, _ = run_benchmark_backtest(
+        spy_value, spy_metrics = run_benchmark_backtest(
             data=spy_data,
             initial_cash=initial_cash,
             ticker="SPY",
@@ -134,6 +136,7 @@ def main(*, log_level: int | None = None):
         output_png=output_png,
         benchmark_value=spy_value,
         benchmark_label="SPY",
+        benchmark_metrics=spy_metrics,
     )
 
 
