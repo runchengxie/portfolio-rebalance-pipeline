@@ -48,8 +48,6 @@ Max Drawdown        25.59%                                33.23%
 Sharpe Ratio        1.080                                 0.860
 ```
 
-> 🆕 **新版图表增强**：默认在水下图中以填充展示策略回撤，同时叠加基准的细线。净值面板左上角/右上角会自动嵌入策略与基准的关键指标（TotRet、CAGR、MaxDD、Sharpe），方便肉眼比较谁跌得更狠。还可以通过 `generate_report(..., show_rolling=True, show_heatmap=True)` 打开滚动波动率/Sharpe 与月度收益热力图，或利用 `report_mode` 切换文本输出（仅对比表、仅策略段、或全量）。
-
 ## 目录
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
@@ -114,18 +112,18 @@ risk_free:
 
 环境变量要点（.env）：
 
-| 变量 | 示例 | 说明 |
-| --- | --- | --- |
-| `GEMINI_API_KEY[_2,_3]` | `xxxx` | Gemini API 密钥（可多把，轮换限流） |
-| `FRED_API_KEY` | `xxxx` | FRED 数据接口密钥（用于无风险利率） |
-| `LONGPORT_REGION` | `cn` | 长桥区域：`hk` 或 `cn` |
-| `LONGPORT_ENABLE_OVERNIGHT` | `true` | 是否启用隔夜行情（预览友好） |
-| `LONGPORT_APP_KEY` / `LONGPORT_APP_SECRET` | `...` | 长桥应用凭据 |
-| `LONGPORT_ACCESS_TOKEN` | `...` | 真实账户访问令牌 |
-| `LONGPORT_DEFAULT_ENV` | `real` | 默认账户环境（当前实现仅使用 `real`） |
-| `LONGPORT_MAX_NOTIONAL_PER_ORDER` | `20000` | 本地单笔名义金额上限（0=不限制） |
-| `LONGPORT_MAX_QTY_PER_ORDER` | `500` | 本地单笔数量上限（0=不限制） |
-| `LONGPORT_TRADING_WINDOW_START/END` | `09:30/16:00` | 本地交易时间窗（降级判定） |
+| 变量                                       | 示例          | 说明                                  |
+| ------------------------------------------ | ------------- | ------------------------------------- |
+| `GEMINI_API_KEY[_2,_3]`                    | `xxxx`        | Gemini API 密钥（可多把，轮换限流）   |
+| `FRED_API_KEY`                             | `xxxx`        | FRED 数据接口密钥（用于无风险利率）   |
+| `LONGPORT_REGION`                          | `cn`          | 长桥区域：`hk` 或 `cn`                |
+| `LONGPORT_ENABLE_OVERNIGHT`                | `true`        | 是否启用隔夜行情（预览友好）          |
+| `LONGPORT_APP_KEY` / `LONGPORT_APP_SECRET` | `...`         | 长桥应用凭据                          |
+| `LONGPORT_ACCESS_TOKEN`                    | `...`         | 真实账户访问令牌                      |
+| `LONGPORT_DEFAULT_ENV`                     | `real`        | 默认账户环境（当前实现仅使用 `real`） |
+| `LONGPORT_MAX_NOTIONAL_PER_ORDER`          | `20000`       | 本地单笔名义金额上限（0=不限制）      |
+| `LONGPORT_MAX_QTY_PER_ORDER`               | `500`         | 本地单笔数量上限（0=不限制）          |
+| `LONGPORT_TRADING_WINDOW_START/END`        | `09:30/16:00` | 本地交易时间窗（降级判定）            |
 
 可选成本模型与碎股预览（config.yaml）：
 
@@ -229,6 +227,8 @@ fractional_preview:
     ```bash
     stockq backtest ai
     ```
+
+> 关于回测图表：默认在水下图中以填充展示策略回撤，同时叠加基准的表现。净值面板左上角/右上角会自动嵌入策略与基准的关键指标（TotRet、CAGR、MaxDD、Sharpe），方便对比。还可以通过 `generate_report(..., show_rolling=True, show_heatmap=True)` 打开滚动波动率/Sharpe 与月度收益热力图，或利用 `report_mode` 切换文本输出（仅对比表、仅策略段、或全量）。
 
 ### 阶段三：券商集成与实盘操作 (长桥)
 
