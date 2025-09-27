@@ -4,6 +4,7 @@ Provides unified configuration file loading functionality.
 """
 
 import datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,16 @@ except ImportError:
     yaml = None
 
 from dateutil.relativedelta import relativedelta
+
+
+@dataclass(frozen=True)
+class RiskFreeSettings:
+    """Immutable configuration for risk-free rate management."""
+
+    series: str = "DGS3MO"
+    ttl_days: int | None = 5
+    fallback_rate: float | None = 0.0
+    calendar: str | None = "US"
 
 
 def load_cfg() -> dict[str, Any]:
@@ -211,3 +222,65 @@ def get_initial_cash(strategy: str) -> float:
     else:
         # Number format: unified capital
         return float(initial_cash_config)
+
+
+def get_risk_free_settings() -> RiskFreeSettings:
+    """Return sanitized risk-free configuration settings."""
+
+    config = load_cfg()
+    defaults = RiskFreeSettings()
+
+    rf_cfg = config.get("risk_free", {}) if isinstance(config, dict) else {}
+    if not isinstance(rf_cfg, dict):
+        return defaults
+
+    series = rf_cfg.get("series", defaults.series)
+    if isinstance(series, str):
+        series = series.strip() or defaults.series
+    else:
+        series = defaults.series
+
+    ttl_raw = rf_cfg.get("ttl_days", defaults.ttl_days)
+    ttl_days: int | None
+    if ttl_raw is None:
+        ttl_days = None
+    else:
+        try:
+            ttl_days = int(ttl_raw)
+            if ttl_days < 0:
+                raise ValueError("ttl_days must be non-negative")
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid ttl_days=%r in risk_free config; falling back to %s.",
+                ttl_raw,
+                defaults.ttl_days,
+            )
+            ttl_days = defaults.ttl_days
+
+    fallback_raw = rf_cfg.get("fallback_rate", defaults.fallback_rate)
+    fallback_rate: float | None
+    if fallback_raw is None:
+        fallback_rate = None
+    else:
+        try:
+            fallback_rate = float(fallback_raw)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid fallback_rate=%r in risk_free config; falling back to %s.",
+                fallback_raw,
+                defaults.fallback_rate,
+            )
+            fallback_rate = defaults.fallback_rate
+
+    calendar = rf_cfg.get("calendar", defaults.calendar)
+    if isinstance(calendar, str):
+        calendar = calendar.strip() or defaults.calendar
+    else:
+        calendar = defaults.calendar
+
+    return RiskFreeSettings(
+        series=series,
+        ttl_days=ttl_days,
+        fallback_rate=fallback_rate,
+        calendar=calendar,
+    )

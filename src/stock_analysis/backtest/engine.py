@@ -21,8 +21,21 @@ from backtrader.metabase import findowner
 from backtrader.strategy import MetaStrategy
 
 from ..logging import StrategyLogger
+from ..services.marketdata import RiskFreeRateService
 from ..utils.paths import OUTPUTS_DIR
 from .prep import DividendPandasData
+
+
+_RISK_FREE_SERVICE: RiskFreeRateService | None = None
+
+
+def _get_risk_free_service() -> RiskFreeRateService:
+    """Return a lazily-initialised risk-free rate service."""
+
+    global _RISK_FREE_SERVICE
+    if _RISK_FREE_SERVICE is None:
+        _RISK_FREE_SERVICE = RiskFreeRateService.from_app_config()
+    return _RISK_FREE_SERVICE
 
 
 class _SafeMetaStrategy(MetaStrategy):
@@ -382,6 +395,9 @@ def run_quarterly_backtest(
     # Generate portfolio value series
     tr_analyzer = strat.analyzers.getbyname("time_return")
     returns = pd.Series(tr_analyzer.get_analysis())
+    if not returns.empty:
+        returns.index = pd.to_datetime(returns.index)
+        returns = returns.sort_index()
     cumulative_returns = (1 + returns).cumprod()
     portfolio_value = initial_cash * cumulative_returns
 
@@ -407,6 +423,17 @@ def run_quarterly_backtest(
     if add_annual_return:
         annual_returns = strat.analyzers.getbyname("annual_return").get_analysis()
         metrics["annual_returns"] = annual_returns
+
+    sharpe_ratio = None
+    if not returns.empty:
+        try:
+            rf_service = _get_risk_free_service()
+            sharpe_ratio = rf_service.compute_sharpe(returns)
+            metrics["risk_free_series"] = rf_service.default_series
+        except Exception as exc:  # pragma: no cover - defensive guard
+            print(f"[WARN] Unable to compute Sharpe ratio: {exc}")
+    if sharpe_ratio is not None:
+        metrics["sharpe"] = sharpe_ratio
 
     return portfolio_value, metrics
 
@@ -473,6 +500,9 @@ def run_benchmark_backtest(
     # Generate portfolio value series
     tr_analyzer = strat.analyzers.getbyname("time_return")
     returns = pd.Series(tr_analyzer.get_analysis())
+    if not returns.empty:
+        returns.index = pd.to_datetime(returns.index)
+        returns = returns.sort_index()
     cumulative_returns = (1 + returns).cumprod()
     portfolio_value = initial_cash * cumulative_returns
     start_date_ts = data.index.min() - pd.Timedelta(days=1)
@@ -490,6 +520,17 @@ def run_benchmark_backtest(
         "annualized_return": annualized_return,
         "max_drawdown": max_drawdown,
     }
+
+    sharpe_ratio = None
+    if not returns.empty:
+        try:
+            rf_service = _get_risk_free_service()
+            sharpe_ratio = rf_service.compute_sharpe(returns)
+            metrics["risk_free_series"] = rf_service.default_series
+        except Exception as exc:  # pragma: no cover - defensive guard
+            print(f"[WARN] Unable to compute Sharpe ratio: {exc}")
+    if sharpe_ratio is not None:
+        metrics["sharpe"] = sharpe_ratio
 
     return portfolio_value, metrics
 
@@ -527,6 +568,11 @@ def generate_report(
     print(f"Total Return:            {metrics['total_return'] * 100:.2f}%")
     print(f"Annualized Return:       {metrics['annualized_return'] * 100:.2f}%")
     print(f"Max Drawdown:            {metrics['max_drawdown']:.2f}%")
+    if metrics.get("sharpe") is not None:
+        print(f"Sharpe Ratio:           {metrics['sharpe']:.3f}")
+        rf_series = metrics.get("risk_free_series")
+        if rf_series:
+            print(f"Risk-free Series:       {rf_series}")
     print("=" * 50)
 
     # Generate chart
