@@ -779,6 +779,7 @@ def generate_report(
     plt.style.use("seaborn-v0_8-whitegrid")
     nrows = 2 if with_underwater else 1
     height_ratios = [0.45, 3, 1] if with_underwater else [0.45, 3]
+    figures_to_save: list[tuple[Any, Path]] = []
     fig = plt.figure(figsize=(14, 8))
     grid_spec = fig.add_gridspec(len(height_ratios), 1, height_ratios=height_ratios)
 
@@ -915,6 +916,9 @@ def generate_report(
 
     ax_equity.grid(True, alpha=0.3)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
+
+    if output_png:
+        figures_to_save.append((fig, output_png))
 
     def _annualized_volatility(series: pd.Series) -> float | None:
         if series.empty:
@@ -1119,9 +1123,14 @@ def generate_report(
         lines2, labels2 = ax_sharpe.get_legend_handles_labels()
         ax_roll.legend(lines + lines2, labels + labels2, loc="upper left")
         rolling_fig.tight_layout()
+        if output_png:
+            rolling_path = output_png.with_name(
+                f"{output_png.stem}_rolling{output_png.suffix}"
+            )
+            figures_to_save.append((rolling_fig, rolling_path))
 
     if show_heatmap and not portfolio_returns.empty:
-        monthly_returns = (1 + portfolio_returns).resample("M").prod() - 1
+        monthly_returns = (1 + portfolio_returns).resample("ME").prod() - 1
         if not monthly_returns.empty:
             monthly_df = monthly_returns.to_frame(name="return")
             monthly_df["Year"] = monthly_df.index.year
@@ -1183,9 +1192,14 @@ def generate_report(
                 )
                 ax_annual.set_ylabel("Annual Return")
             fig_heatmap.tight_layout()
+            if output_png:
+                heatmap_path = output_png.with_name(
+                    f"{output_png.stem}_heatmap{output_png.suffix}"
+                )
+                figures_to_save.append((fig_heatmap, heatmap_path))
 
-    if output_png:
-        plt.savefig(output_png, dpi=300, bbox_inches="tight")
-        print(f"Plot saved to: {output_png}")
+    for fig_obj, path in figures_to_save:
+        fig_obj.savefig(path, dpi=300, bbox_inches="tight")
+        print(f"Plot saved to: {path}")
 
     plt.show()
