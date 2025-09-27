@@ -53,7 +53,7 @@ class RiskFreeRateService:
         *,
         default_series: str = "DGS3MO",
         ttl_days: int | None = 5,
-        fallback_rate: float | None = 0.0,
+        fallback_rate: float | None = None,
         padding_days: int = _DEFAULT_PADDING_DAYS,
         session: requests.Session | None = None,
     ) -> None:
@@ -135,6 +135,8 @@ class RiskFreeRateService:
         start = normalized_index.min().date()
         end = normalized_index.max().date()
 
+        series_id = series or self.default_series
+
         try:
             self.ensure_range(start, end, series=series, force=force_refresh)
         except RiskFreeRateServiceError as exc:
@@ -145,9 +147,11 @@ class RiskFreeRateService:
                     exc,
                 )
                 return pd.Series(self.fallback_rate, index=normalized_index, dtype=float)
-            raise
+            raise RiskFreeRateServiceError(
+                f"{exc}. Run 'stockq rf update --start {start.isoformat()} --end {end.isoformat()}'"
+                f" to populate {series_id} data."
+            ) from exc
 
-        series_id = series or self.default_series
         with self._connect() as conn:
             query = (
                 "SELECT date, rate FROM risk_free_rates "
@@ -171,7 +175,10 @@ class RiskFreeRateService:
                 )
                 return pd.Series(self.fallback_rate, index=normalized_index, dtype=float)
             raise RiskFreeRateServiceError(
-                f"No cached risk-free data for series {series_id} between {start} and {end}."
+                "No cached risk-free data for series "
+                f"{series_id} between {start} and {end}. "
+                f"Run 'stockq rf update --start {start.isoformat()} --end {end.isoformat()}'"
+                " to fetch the missing observations."
             )
 
         df = pd.DataFrame(rows, columns=["date", "rate"])

@@ -23,7 +23,7 @@ from backtrader.metabase import findowner
 from backtrader.strategy import MetaStrategy
 
 from ..logging import StrategyLogger
-from ..services.marketdata import RiskFreeRateService
+from ..services.marketdata import RiskFreeRateService, RiskFreeRateServiceError
 from ..utils.paths import OUTPUTS_DIR
 from .prep import DividendPandasData
 
@@ -428,14 +428,21 @@ def run_quarterly_backtest(
 
     sharpe_ratio = None
     if not returns.empty:
+        rf_service = _get_risk_free_service()
+        idx = pd.DatetimeIndex(returns.index).tz_localize(None)
+        start_idx = idx.min().date()
+        end_idx = idx.max().date()
         try:
-            rf_service = _get_risk_free_service()
+            rf_service.ensure_range(start_idx, end_idx)
             sharpe_ratio = rf_service.compute_sharpe(returns)
-            metrics["risk_free_series"] = rf_service.default_series
+        except RiskFreeRateServiceError as exc:
+            print(f"[WARN] Sharpe ratio skipped: {exc}")
         except Exception as exc:  # pragma: no cover - defensive guard
-            print(f"[WARN] Unable to compute Sharpe ratio: {exc}")
-    if sharpe_ratio is not None:
-        metrics["sharpe"] = sharpe_ratio
+            print(f"[WARN] Sharpe ratio skipped due to unexpected error: {exc}")
+        else:
+            if sharpe_ratio is not None:
+                metrics["sharpe"] = sharpe_ratio
+                metrics["risk_free_series"] = rf_service.default_series
 
     return portfolio_value, metrics
 
@@ -525,14 +532,21 @@ def run_benchmark_backtest(
 
     sharpe_ratio = None
     if not returns.empty:
+        rf_service = _get_risk_free_service()
+        idx = pd.DatetimeIndex(returns.index).tz_localize(None)
+        start_idx = idx.min().date()
+        end_idx = idx.max().date()
         try:
-            rf_service = _get_risk_free_service()
+            rf_service.ensure_range(start_idx, end_idx)
             sharpe_ratio = rf_service.compute_sharpe(returns)
-            metrics["risk_free_series"] = rf_service.default_series
+        except RiskFreeRateServiceError as exc:
+            print(f"[WARN] Sharpe ratio skipped: {exc}")
         except Exception as exc:  # pragma: no cover - defensive guard
-            print(f"[WARN] Unable to compute Sharpe ratio: {exc}")
-    if sharpe_ratio is not None:
-        metrics["sharpe"] = sharpe_ratio
+            print(f"[WARN] Sharpe ratio skipped due to unexpected error: {exc}")
+        else:
+            if sharpe_ratio is not None:
+                metrics["sharpe"] = sharpe_ratio
+                metrics["risk_free_series"] = rf_service.default_series
 
     return portfolio_value, metrics
 
@@ -734,11 +748,20 @@ def generate_report(
 
     risk_free_daily: pd.Series | None = None
     if not portfolio_returns.empty:
+        idx = pd.DatetimeIndex(portfolio_returns.index).tz_localize(None)
+        start_idx = idx.min().date()
+        end_idx = idx.max().date()
         try:
             rf_service = _get_risk_free_service()
-            risk_free_daily = rf_service.get_series_for_index(portfolio_returns.index)
+            rf_service.ensure_range(start_idx, end_idx)
+            risk_free_daily = rf_service.get_series_for_index(idx)
+        except RiskFreeRateServiceError as exc:
+            print(f"[WARN] Rolling statistics skipped: {exc}")
         except Exception as exc:  # pragma: no cover - defensive guard
-            print(f"[WARN] Unable to fetch risk-free series for rolling stats: {exc}")
+            print(
+                "[WARN] Rolling statistics skipped due to unexpected error: "
+                f"{exc}"
+            )
 
     if index_to_100:
         portfolio_plot = _index_to_100(portfolio_series)

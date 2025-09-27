@@ -26,8 +26,21 @@ class RiskFreeSettings:
 
     series: str = "DGS3MO"
     ttl_days: int | None = 5
-    fallback_rate: float | None = 0.0
+    fallback_rate: float | None = None
     calendar: str | None = "US"
+
+
+@dataclass(frozen=True)
+class ReportSettings:
+    """Immutable configuration for report rendering preferences."""
+
+    report_mode: str = "both"
+    with_underwater: bool = True
+    index_to_100: bool = True
+    use_log_scale: bool = False
+    show_rolling: bool = True
+    rolling_window: int = 252
+    show_heatmap: bool = True
 
 
 def load_cfg() -> dict[str, Any]:
@@ -93,6 +106,25 @@ _DEFAULT_PRELIMINARY_FACTOR_WEIGHTS: dict[str, float] = {
 }
 
 _DEFAULT_PROMPT_VERSION = "v1"
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    """Best-effort conversion of configuration values to boolean."""
+
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "1", "on"}:
+            return True
+        if lowered in {"false", "no", "0", "off"}:
+            return False
+    try:
+        return bool(int(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def get_preliminary_factor_weights() -> dict[str, float]:
@@ -283,4 +315,62 @@ def get_risk_free_settings() -> RiskFreeSettings:
         ttl_days=ttl_days,
         fallback_rate=fallback_rate,
         calendar=calendar,
+    )
+
+
+def get_report_settings() -> ReportSettings:
+    """Return report rendering preferences merged with defaults."""
+
+    config = load_cfg()
+    defaults = ReportSettings()
+
+    report_cfg = config.get("report", {}) if isinstance(config, dict) else {}
+    if not isinstance(report_cfg, dict):
+        report_cfg = {}
+
+    report_mode_raw = report_cfg.get("report_mode", defaults.report_mode)
+    report_mode = (
+        str(report_mode_raw).strip().lower()
+        if isinstance(report_mode_raw, str)
+        else str(report_mode_raw).lower()
+    )
+    valid_modes = {"comparison_only", "strategy_only", "both"}
+    if report_mode not in valid_modes:
+        if report_mode_raw not in (None, ""):
+            logger.warning(
+                "Invalid report_mode=%r in report config; falling back to %s.",
+                report_mode_raw,
+                defaults.report_mode,
+            )
+        report_mode = defaults.report_mode
+
+    with_underwater = _coerce_bool(
+        report_cfg.get("with_underwater"), defaults.with_underwater
+    )
+    index_to_100 = _coerce_bool(report_cfg.get("index_to_100"), defaults.index_to_100)
+    use_log_scale = _coerce_bool(report_cfg.get("use_log_scale"), defaults.use_log_scale)
+    show_rolling = _coerce_bool(report_cfg.get("show_rolling"), defaults.show_rolling)
+    show_heatmap = _coerce_bool(report_cfg.get("show_heatmap"), defaults.show_heatmap)
+
+    rolling_raw = report_cfg.get("rolling_window", defaults.rolling_window)
+    try:
+        rolling_window = int(rolling_raw)
+        if rolling_window <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid rolling_window=%r in report config; falling back to %s.",
+            rolling_raw,
+            defaults.rolling_window,
+        )
+        rolling_window = defaults.rolling_window
+
+    return ReportSettings(
+        report_mode=report_mode,
+        with_underwater=with_underwater,
+        index_to_100=index_to_100,
+        use_log_scale=use_log_scale,
+        show_rolling=show_rolling,
+        rolling_window=rolling_window,
+        show_heatmap=show_heatmap,
     )
