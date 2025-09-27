@@ -48,6 +48,8 @@ Max Drawdown        25.59%                                33.23%
 Sharpe Ratio        1.080                                 0.860
 ```
 
+> 🆕 **新版图表增强**：默认在水下图中以填充展示策略回撤，同时叠加基准的细线。净值面板左上角/右上角会自动嵌入策略与基准的关键指标（TotRet、CAGR、MaxDD、Sharpe），方便肉眼比较谁跌得更狠。还可以通过 `generate_report(..., show_rolling=True, show_heatmap=True)` 打开滚动波动率/Sharpe 与月度收益热力图，或利用 `report_mode` 切换文本输出（仅对比表、仅策略段、或全量）。
+
 ## 目录
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
@@ -749,6 +751,8 @@ Return **one** JSON object with the following shape and nothing else:
 ## 测试
 
 本仓库使用 pytest，默认只运行单元测试。
+
+> 注：回测报告相关的单元测试会自动 stub 掉无风险利率服务，本地执行 `pytest -k generate_report` 时无需联网或预先配置 FRED API。
 
 ### 快速开始
 ```bash

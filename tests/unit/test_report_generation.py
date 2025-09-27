@@ -17,11 +17,28 @@ import pytest
 from stock_analysis.backtest.engine import generate_report
 
 
+@pytest.fixture()
+def patched_risk_free_service():
+    """Provide a stub risk-free service for report generation tests."""
+
+    with patch("stock_analysis.backtest.engine._get_risk_free_service") as mock_factory:
+        service = Mock()
+        service.default_series = "DGS3MO"
+        service.get_series_for_index.side_effect = (
+            lambda index: pd.Series(0.0, index=index)
+        )
+        service.compute_sharpe.return_value = None
+        mock_factory.return_value = service
+        yield service
+
+
 @pytest.mark.unit
 class TestReportGeneration:
     """Tests the basic functionality of report generation."""
 
-    def test_generate_report_creates_png_file(self, tmp_path):
+    def test_generate_report_creates_png_file(
+        self, tmp_path, patched_risk_free_service
+    ):
         """Tests that generate_report creates a PNG file."""
         # Prepare test data
         output_png = tmp_path / "test_report.png"
@@ -41,39 +58,25 @@ class TestReportGeneration:
             "max_drawdown": 0.05,
         }
 
-        # Mock matplotlib's savefig method
-        with patch("matplotlib.pyplot.savefig") as mock_savefig:
-            with patch("matplotlib.pyplot.show"):
-                with patch("matplotlib.pyplot.style.use"):
-                    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-                        # Create mock figure and axes
-                        mock_fig = Mock()
-                        mock_ax = Mock()
-                        mock_subplots.return_value = (mock_fig, mock_ax)
+        with (
+            patch("matplotlib.pyplot.savefig") as mock_savefig,
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.style.use"),
+        ):
+            generate_report(
+                metrics=metrics,
+                title="Test Report",
+                portfolio_value=portfolio_value,
+                output_png=output_png,
+            )
 
-                        # Mock the plot method of the pandas Series
-                        mock_ax.yaxis.set_major_formatter = Mock()
-                        mock_ax.set_title = Mock()
-                        mock_ax.set_xlabel = Mock()
-                        mock_ax.set_ylabel = Mock()
-                        mock_ax.legend = Mock()
-                        mock_ax.grid = Mock()
+            mock_savefig.assert_called_once_with(
+                output_png, dpi=300, bbox_inches="tight"
+            )
 
-                        with patch.object(portfolio_value, "plot", return_value=None):
-                            with patch("matplotlib.pyplot.tight_layout"):
-                                generate_report(
-                                    metrics=metrics,
-                                    title="Test Report",
-                                    portfolio_value=portfolio_value,
-                                    output_png=output_png,
-                                )
-
-                        # Verify that savefig was called
-                        mock_savefig.assert_called_once_with(
-                            output_png, dpi=300, bbox_inches="tight"
-                        )
-
-    def test_generate_report_with_benchmark(self, tmp_path):
+    def test_generate_report_with_benchmark(
+        self, tmp_path, patched_risk_free_service
+    ):
         """Tests report generation with a benchmark comparison."""
         output_png = tmp_path / "benchmark_report.png"
 
@@ -104,41 +107,26 @@ class TestReportGeneration:
             "risk_free_series": "DGS3MO",
         }
 
-        with patch("matplotlib.pyplot.savefig") as mock_savefig:
-            with patch("matplotlib.pyplot.show"):
-                with patch("matplotlib.pyplot.style.use"):
-                    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-                        mock_fig = Mock()
-                        mock_ax = Mock()
-                        mock_subplots.return_value = (mock_fig, mock_ax)
+        with (
+            patch("matplotlib.pyplot.savefig") as mock_savefig,
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.style.use"),
+        ):
+            generate_report(
+                metrics=metrics,
+                title="Portfolio vs Benchmark",
+                portfolio_value=portfolio_value,
+                output_png=output_png,
+                benchmark_value=benchmark_value,
+                benchmark_label="SPY",
+                benchmark_metrics=benchmark_metrics,
+            )
 
-                        # Mock all necessary methods
-                        mock_ax.yaxis.set_major_formatter = Mock()
-                        mock_ax.set_title = Mock()
-                        mock_ax.set_xlabel = Mock()
-                        mock_ax.set_ylabel = Mock()
-                        mock_ax.legend = Mock()
-                        mock_ax.grid = Mock()
+            mock_savefig.assert_called_once()
 
-                        with patch.object(portfolio_value, "plot", return_value=None):
-                            with patch.object(
-                                benchmark_value, "plot", return_value=None
-                            ):
-                                with patch("matplotlib.pyplot.tight_layout"):
-                                    generate_report(
-                                        metrics=metrics,
-                                        title="Portfolio vs Benchmark",
-                                        portfolio_value=portfolio_value,
-                                        output_png=output_png,
-                                        benchmark_value=benchmark_value,
-                                        benchmark_label="SPY",
-                                        benchmark_metrics=benchmark_metrics,
-                                    )
-
-                        # Verify that savefig was called
-                        mock_savefig.assert_called_once()
-
-    def test_benchmark_comparison_table_output(self, capsys):
+    def test_benchmark_comparison_table_output(
+        self, capsys, patched_risk_free_service
+    ):
         """Ensure the benchmark comparison table appears in text output."""
 
         metrics = {
@@ -169,39 +157,28 @@ class TestReportGeneration:
         portfolio_value = pd.Series(range(100000, 100000 + len(dates) * 1000, 1000), index=dates)
         benchmark_value = portfolio_value * 0.95
 
-        with patch("matplotlib.pyplot.savefig"), patch("matplotlib.pyplot.show"), patch(
-            "matplotlib.pyplot.style.use"
-        ), patch("matplotlib.pyplot.tight_layout"), patch(
-            "matplotlib.pyplot.subplots"
-        ) as mock_subplots:
-            mock_fig = Mock()
-            mock_ax = Mock()
-            mock_subplots.return_value = (mock_fig, mock_ax)
-            mock_ax.yaxis.set_major_formatter = Mock()
-            mock_ax.set_title = Mock()
-            mock_ax.set_xlabel = Mock()
-            mock_ax.set_ylabel = Mock()
-            mock_ax.legend = Mock()
-            mock_ax.grid = Mock()
-
-            with patch.object(portfolio_value, "plot", return_value=None), patch.object(
-                benchmark_value, "plot", return_value=None
-            ):
-                generate_report(
-                    metrics=metrics,
-                    title="Strategy vs Benchmark",
-                    portfolio_value=portfolio_value,
-                    benchmark_value=benchmark_value,
-                    benchmark_label="SPY",
-                    benchmark_metrics=benchmark_metrics,
-                )
+        with (
+            patch("matplotlib.pyplot.savefig"),
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.style.use"),
+        ):
+            generate_report(
+                metrics=metrics,
+                title="Strategy vs Benchmark",
+                portfolio_value=portfolio_value,
+                benchmark_value=benchmark_value,
+                benchmark_label="SPY",
+                benchmark_metrics=benchmark_metrics,
+            )
 
         captured = capsys.readouterr()
         assert "Benchmark Comparison (Unified Methodology)" in captured.out
         assert "Sharpe Ratio" in captured.out
         assert "SPY" in captured.out
 
-    def test_generate_report_without_png_output(self, capsys):
+    def test_generate_report_without_png_output(
+        self, capsys, patched_risk_free_service
+    ):
         """Tests report generation without saving a PNG file."""
         dates = pd.date_range("2023-01-01", periods=3, freq="D")
         portfolio_value = pd.Series([10000, 10100, 10200], index=dates)
@@ -216,32 +193,19 @@ class TestReportGeneration:
             "max_drawdown": 0.01,
         }
 
-        with patch("matplotlib.pyplot.savefig") as mock_savefig:
-            with patch("matplotlib.pyplot.show"):
-                with patch("matplotlib.pyplot.style.use"):
-                    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-                        mock_fig = Mock()
-                        mock_ax = Mock()
-                        mock_subplots.return_value = (mock_fig, mock_ax)
+        with (
+            patch("matplotlib.pyplot.savefig") as mock_savefig,
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.style.use"),
+        ):
+            generate_report(
+                metrics=metrics,
+                title="No PNG Test",
+                portfolio_value=portfolio_value,
+                output_png=None,
+            )
 
-                        mock_ax.yaxis.set_major_formatter = Mock()
-                        mock_ax.set_title = Mock()
-                        mock_ax.set_xlabel = Mock()
-                        mock_ax.set_ylabel = Mock()
-                        mock_ax.legend = Mock()
-                        mock_ax.grid = Mock()
-
-                        with patch.object(portfolio_value, "plot", return_value=None):
-                            with patch("matplotlib.pyplot.tight_layout"):
-                                generate_report(
-                                    metrics=metrics,
-                                    title="No PNG Test",
-                                    portfolio_value=portfolio_value,
-                                    output_png=None,  # Do not save a PNG file
-                                )
-
-                        # Verify that savefig was not called
-                        mock_savefig.assert_not_called()
+            mock_savefig.assert_not_called()
 
         # Verify that the text report was printed to stdout
         captured = capsys.readouterr()
@@ -255,7 +219,7 @@ class TestReportGenerationRealFiles:
     """Tests actual file generation (using the real matplotlib)."""
 
     @pytest.mark.integration  # Mark as an integration test because it involves real file I/O
-    def test_actual_png_file_creation(self, tmp_path):
+    def test_actual_png_file_creation(self, tmp_path, patched_risk_free_service):
         """Tests the actual creation and size validation of a PNG file."""
         output_png = tmp_path / "actual_test.png"
 
@@ -299,7 +263,7 @@ class TestReportGenerationRealFiles:
 class TestReportGenerationErrorHandling:
     """Tests error handling during report generation."""
 
-    def test_matplotlib_import_error(self):
+    def test_matplotlib_import_error(self, patched_risk_free_service):
         """Tests the handling of a matplotlib ImportError."""
         dates = pd.date_range("2023-01-01", periods=3, freq="D")
         portfolio_value = pd.Series([10000, 10100, 10200], index=dates)
@@ -327,7 +291,7 @@ class TestReportGenerationErrorHandling:
                     output_png=Path("test.png"),
                 )
 
-    def test_file_permission_error(self, tmp_path):
+    def test_file_permission_error(self, tmp_path, patched_risk_free_service):
         """Tests the handling of a file permission error."""
         # Create a read-only directory to trigger a permission error
         readonly_dir = tmp_path / "readonly"
@@ -348,36 +312,23 @@ class TestReportGenerationErrorHandling:
         }
 
         # Simulate a file saving error
-        with patch(
-            "matplotlib.pyplot.savefig",
-            side_effect=PermissionError("Permission denied"),
+        with (
+            patch(
+                "matplotlib.pyplot.savefig",
+                side_effect=PermissionError("Permission denied"),
+            ),
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.style.use"),
         ):
-            with patch("matplotlib.pyplot.show"):
-                with patch("matplotlib.pyplot.style.use"):
-                    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-                        mock_fig = Mock()
-                        mock_ax = Mock()
-                        mock_subplots.return_value = (mock_fig, mock_ax)
+            with pytest.raises(PermissionError):
+                generate_report(
+                    metrics=metrics,
+                    title="Permission Error Test",
+                    portfolio_value=portfolio_value,
+                    output_png=output_png,
+                )
 
-                        mock_ax.yaxis.set_major_formatter = Mock()
-                        mock_ax.set_title = Mock()
-                        mock_ax.set_xlabel = Mock()
-                        mock_ax.set_ylabel = Mock()
-                        mock_ax.legend = Mock()
-                        mock_ax.grid = Mock()
-
-                        with patch.object(portfolio_value, "plot", return_value=None):
-                            with patch("matplotlib.pyplot.tight_layout"):
-                                # This should raise a PermissionError
-                                with pytest.raises(PermissionError):
-                                    generate_report(
-                                        metrics=metrics,
-                                        title="Permission Error Test",
-                                        portfolio_value=portfolio_value,
-                                        output_png=output_png,
-                                    )
-
-    def test_invalid_data_handling(self):
+    def test_invalid_data_handling(self, patched_risk_free_service):
         """Tests handling of invalid or empty data."""
         # An empty portfolio value series
         empty_portfolio = pd.Series([], dtype=float)
@@ -392,36 +343,23 @@ class TestReportGenerationErrorHandling:
             "max_drawdown": 0.0,
         }
 
-        with patch("matplotlib.pyplot.show"):
-            with patch("matplotlib.pyplot.style.use"):
-                with patch("matplotlib.pyplot.subplots") as mock_subplots:
-                    mock_fig = Mock()
-                    mock_ax = Mock()
-                    mock_subplots.return_value = (mock_fig, mock_ax)
-
-                    mock_ax.yaxis.set_major_formatter = Mock()
-                    mock_ax.set_title = Mock()
-                    mock_ax.set_xlabel = Mock()
-                    mock_ax.set_ylabel = Mock()
-                    mock_ax.legend = Mock()
-                    mock_ax.grid = Mock()
-
-                    with patch.object(empty_portfolio, "plot", return_value=None):
-                        with patch("matplotlib.pyplot.tight_layout"):
-                            # The function should handle empty data without crashing
-                            generate_report(
-                                metrics=metrics,
-                                title="Empty Data Test",
-                                portfolio_value=empty_portfolio,
-                                output_png=None,
-                            )
+        with (
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.style.use"),
+        ):
+            generate_report(
+                metrics=metrics,
+                title="Empty Data Test",
+                portfolio_value=empty_portfolio,
+                output_png=None,
+            )
 
 
 @pytest.mark.unit
 class TestReportTextOutput:
     """Tests the text output of the report."""
 
-    def test_report_text_content(self, capsys):
+    def test_report_text_content(self, capsys, patched_risk_free_service):
         """Tests the correctness of the report's text content."""
         dates = pd.date_range("2023-01-01", periods=3, freq="D")
         portfolio_value = pd.Series([10000, 10500, 11000], index=dates)
@@ -436,28 +374,16 @@ class TestReportTextOutput:
             "max_drawdown": 0.03,
         }
 
-        with patch("matplotlib.pyplot.show"):
-            with patch("matplotlib.pyplot.style.use"):
-                with patch("matplotlib.pyplot.subplots") as mock_subplots:
-                    mock_fig = Mock()
-                    mock_ax = Mock()
-                    mock_subplots.return_value = (mock_fig, mock_ax)
-
-                    mock_ax.yaxis.set_major_formatter = Mock()
-                    mock_ax.set_title = Mock()
-                    mock_ax.set_xlabel = Mock()
-                    mock_ax.set_ylabel = Mock()
-                    mock_ax.legend = Mock()
-                    mock_ax.grid = Mock()
-
-                    with patch.object(portfolio_value, "plot", return_value=None):
-                        with patch("matplotlib.pyplot.tight_layout"):
-                            generate_report(
-                                metrics=metrics,
-                                title="Text Content Test",
-                                portfolio_value=portfolio_value,
-                                output_png=None,
-                            )
+        with (
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.style.use"),
+        ):
+            generate_report(
+                metrics=metrics,
+                title="Text Content Test",
+                portfolio_value=portfolio_value,
+                output_png=None,
+            )
 
         captured = capsys.readouterr()
         output = captured.out
