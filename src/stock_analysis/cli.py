@@ -3,10 +3,13 @@
 Responsible only for argument parsing and command dispatching, without business logic.
 """
 
+from __future__ import annotations
+
 import argparse
+import importlib.util
 import sys
 import uuid
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from .commands.ai_pick import run_ai_pick
 from .commands.backtest import run_backtest
@@ -14,8 +17,22 @@ from .commands.load_data import run_load_data as _run_load_data
 from .commands.result import CommandResult
 from .logging import get_logger, set_run_id
 
+if TYPE_CHECKING:
+    from rich.console import Console
+
+_RICH_AVAILABLE = importlib.util.find_spec("rich") is not None
+_RICH_CONSOLE: Console | None = None
+
+if _RICH_AVAILABLE:
+    from rich.console import Console
+    from rich.traceback import install as install_rich_traceback
+
+    _RICH_CONSOLE = Console()
+    install_rich_traceback(show_locals=False)
+
+
 # Internal store for passing parsed options to thin wrappers
-_LOAD_DATA_OPTS: Dict[str, Any] | None = None
+_LOAD_DATA_OPTS: dict[str, Any] | None = None
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -384,8 +401,15 @@ def _handle_command_result(result: int | CommandResult) -> int:
     """Normalize command results to an exit code while emitting output."""
 
     if isinstance(result, CommandResult):
+        if _RICH_CONSOLE is not None and result.rich_renderable is not None:
+            _RICH_CONSOLE.print(result.rich_renderable)
+            if result.stdout:
+                _RICH_CONSOLE.print()
         if result.stdout:
-            print(result.stdout)
+            if _RICH_CONSOLE is not None:
+                _RICH_CONSOLE.print(result.stdout, highlight=False)
+            else:
+                print(result.stdout)
         return result.exit_code
     return int(result)
 
@@ -438,7 +462,9 @@ def main() -> int:
                 "date_start": getattr(args, "date_start", None),
                 "date_end": getattr(args, "date_end", None),
             }
-            return _handle_command_result(run_load_data(getattr(args, "data_dir", None)))
+            return _handle_command_result(
+                run_load_data(getattr(args, "data_dir", None))
+            )
         elif args.command == "preliminary":
             from .commands.preliminary import run_preliminary
 
@@ -602,7 +628,7 @@ def run_lb_config(show: bool = True) -> int:  # type: ignore[override]
     return _handle_command_result(_run_lb_config(show))
 
 
-def run_load_data(data_dir: Optional[str] = None) -> int:  # type: ignore[override]
+def run_load_data(data_dir: str | None = None) -> int:  # type: ignore[override]
     """Thin wrapper to satisfy tests while preserving full options.
 
     The tests patch `stock_analysis.cli.run_load_data` and expect it to be
@@ -612,7 +638,8 @@ def run_load_data(data_dir: Optional[str] = None) -> int:  # type: ignore[overri
     from pathlib import Path
 
     opts = _LOAD_DATA_OPTS or {}
-    # Validate data_dir only at CLI boundary so direct function tests can mock internals freely
+    # Validate data_dir only at the CLI boundary so tests that call the
+    # underlying implementation directly can mock internals freely.
     if data_dir:
         dpath = Path(data_dir)
         if not dpath.exists() or not dpath.is_dir():

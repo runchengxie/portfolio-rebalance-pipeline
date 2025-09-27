@@ -140,7 +140,11 @@ def run_lb_rebalance(
 
             logger.info(f"审计日志已保存到: {log_file}")
 
-            return CommandResult(exit_code=0, stdout=diff_view)
+            return CommandResult(
+                exit_code=0,
+                stdout=diff_view.text,
+                rich_renderable=diff_view.rich,
+            )
 
         finally:
             rebalance_service.close()
