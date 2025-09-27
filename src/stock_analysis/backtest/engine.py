@@ -11,7 +11,6 @@ from typing import Any
 import backtrader as bt
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from matplotlib.offsetbox import AnchoredText
 import pandas as pd
 import numpy as np
 from backtrader.metabase import findowner
@@ -611,8 +610,7 @@ def generate_report(
         print("-" * 50)
         print(f"Total Return:            {block_metrics['total_return'] * 100:.2f}%")
         print(
-            "Annualized Return:       "
-            f"{block_metrics['annualized_return'] * 100:.2f}%"
+            f"Annualized Return:       {block_metrics['annualized_return'] * 100:.2f}%"
         )
         print(f"Max Drawdown:            {block_metrics['max_drawdown']:.2f}%")
         if block_metrics.get("sharpe") is not None:
@@ -757,15 +755,16 @@ def generate_report(
     print("\nGenerating plot...")
     plt.style.use("seaborn-v0_8-whitegrid")
     nrows = 2 if with_underwater else 1
-    fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(14, 8), sharex=True)
+    height_ratios = [0.45, 3, 1] if with_underwater else [0.45, 3]
+    fig = plt.figure(figsize=(14, 8))
+    grid_spec = fig.add_gridspec(len(height_ratios), 1, height_ratios=height_ratios)
+
+    ax_header = fig.add_subplot(grid_spec[0, 0])
+    ax_header.axis("off")
+
+    ax_equity = fig.add_subplot(grid_spec[1, 0])
     if with_underwater:
-        if isinstance(axes, np.ndarray):
-            ax_equity, ax_drawdown = axes  # type: ignore[misc]
-        else:  # pragma: no cover - safety net for matplotlib returning scalar axes
-            ax_equity = axes
-            ax_drawdown = ax_equity.twinx()
-    else:
-        ax_equity = axes  # type: ignore[assignment]
+        ax_drawdown = fig.add_subplot(grid_spec[2, 0], sharex=ax_equity)
 
     portfolio_label = title.split("(")[0].strip() or "Strategy"
     portfolio_plot.plot(ax=ax_equity, label=portfolio_label, lw=2, color="steelblue")
@@ -775,9 +774,15 @@ def generate_report(
             ax=ax_equity, label=benchmark_label or "Benchmark", lw=2, color="darkorange"
         )
 
-    ax_equity.set_title(title, fontsize=16)
+    legend_columns = 2 if benchmark_plot is not None else 1
     ax_equity.set_ylabel(y_label, fontsize=12)
-    ax_equity.legend(fontsize=12)
+    ax_equity.legend(
+        loc="upper left",
+        bbox_to_anchor=(0, -0.12),
+        ncol=legend_columns,
+        frameon=False,
+        fontsize=11,
+    )
     if not index_to_100:
         ax_equity.yaxis.set_major_formatter(
             mticker.FuncFormatter(lambda value, _: f"${value:,.0f}")
@@ -785,17 +790,12 @@ def generate_report(
     if use_log_scale:
         ax_equity.set_yscale("log")
 
-    def _add_kpi_box(
-        axis: plt.Axes,
+    def _build_metrics_block(
         block_metrics: dict[str, Any],
         *,
-        loc: str,
-        title_prefix: str = "",
-        color: str = "black",
-    ) -> None:
-        lines = []
-        if title_prefix:
-            lines.append(title_prefix)
+        title_prefix: str,
+    ) -> str:
+        lines: list[str] = [title_prefix] if title_prefix else []
         total_return = block_metrics.get("total_return")
         if total_return is not None:
             lines.append(f"TotRet: {total_return * 100:.2f}%")
@@ -808,25 +808,48 @@ def generate_report(
         sharpe_val = block_metrics.get("sharpe")
         if sharpe_val is not None:
             lines.append(f"Sharpe: {sharpe_val:.2f}")
-        if lines:
-            anchored = AnchoredText(
-                "\n".join(lines),
-                loc=loc,
-                frameon=True,
-                prop={"size": 9, "color": color},
-            )
-            anchored.patch.set_alpha(0.8)
-            axis.add_artist(anchored)
+        return "\n".join(lines)
 
-    _add_kpi_box(ax_equity, metrics, loc="upper left", title_prefix=portfolio_label)
-    if benchmark_metrics is not None:
-        _add_kpi_box(
-            ax_equity,
-            benchmark_metrics,
-            loc="upper right",
-            title_prefix=benchmark_label or "Benchmark",
-            color="dimgray",
+    header_box = dict(
+        boxstyle="round,pad=0.3",
+        facecolor="white",
+        edgecolor="#333333",
+        alpha=0.9,
+    )
+    header_kwargs = dict(
+        fontfamily="monospace",
+        fontsize=10,
+        transform=ax_header.transAxes,
+        bbox=header_box,
+    )
+
+    left_header = _build_metrics_block(metrics, title_prefix=portfolio_label)
+    if left_header:
+        ax_header.text(
+            0.01,
+            0.95,
+            left_header,
+            ha="left",
+            va="top",
+            **header_kwargs,
         )
+
+    if benchmark_metrics is not None:
+        right_header = _build_metrics_block(
+            benchmark_metrics,
+            title_prefix=benchmark_label or "Benchmark",
+        )
+        if right_header:
+            ax_header.text(
+                0.99,
+                0.95,
+                right_header,
+                ha="right",
+                va="top",
+                **header_kwargs,
+            )
+
+    fig.suptitle(title, y=0.995, fontsize=16)
 
     if with_underwater:
         drawdown_series = _underwater(portfolio_series)
@@ -868,7 +891,7 @@ def generate_report(
         ax_equity.set_xlabel("Date", fontsize=12)
 
     ax_equity.grid(True, alpha=0.3)
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
 
     def _annualized_volatility(series: pd.Series) -> float | None:
         if series.empty:
@@ -917,20 +940,22 @@ def generate_report(
         if rf_series is not None and not rf_series.empty:
             aligned_rf = rf_series.reindex(period_returns.index).ffill().bfill()
         excess_returns = (
-            period_returns - aligned_rf
-            if aligned_rf is not None
-            else period_returns
+            period_returns - aligned_rf if aligned_rf is not None else period_returns
         )
         mean_excess = excess_returns.mean()
         downside = excess_returns[excess_returns < 0]
-        downside_std = float(np.sqrt((downside.pow(2).mean()))) if not downside.empty else None
+        downside_std = (
+            float(np.sqrt((downside.pow(2).mean()))) if not downside.empty else None
+        )
         sortino = None
         if downside_std and downside_std > 0:
             sortino = float(mean_excess / downside_std * np.sqrt(252))
 
         bench_stats = {}
         if benchmark_values is not None and benchmark_returns is not None:
-            bench_values = benchmark_values[benchmark_values.index >= period_values.index[0]]
+            bench_values = benchmark_values[
+                benchmark_values.index >= period_values.index[0]
+            ]
             bench_returns_slice = benchmark_returns[
                 benchmark_returns.index >= period_returns.index[0]
             ]
@@ -941,7 +966,11 @@ def generate_report(
                 diff = rel - bench_aligned
                 if not diff.empty:
                     diff_std = diff.std(ddof=1)
-                    if diff_std is not None and not np.isnan(diff_std) and diff_std != 0:
+                    if (
+                        diff_std is not None
+                        and not np.isnan(diff_std)
+                        and diff_std != 0
+                    ):
                         info_ratio = float(diff.mean() / diff_std * np.sqrt(252))
                     else:
                         info_ratio = None
@@ -995,7 +1024,8 @@ def generate_report(
             f"{'Vol':>10}",
         ]
         has_benchmark_stats = benchmark_series is not None and any(
-            row[1].get("info_ratio") is not None or row[1].get("tracking_error") is not None
+            row[1].get("info_ratio") is not None
+            or row[1].get("tracking_error") is not None
             for row in period_rows
         )
         if has_benchmark_stats:
@@ -1035,14 +1065,17 @@ def generate_report(
             else pd.Series(0.0, index=portfolio_returns.index)
         )
         excess_returns = portfolio_returns - aligned_rf
-        rolling_vol = (
-            portfolio_returns.rolling(window).std(ddof=1) * np.sqrt(252)
-        )
+        rolling_vol = portfolio_returns.rolling(window).std(ddof=1) * np.sqrt(252)
         rolling_mean = excess_returns.rolling(window).mean()
         rolling_std = excess_returns.rolling(window).std(ddof=1).replace(0, np.nan)
         rolling_sharpe = (rolling_mean / rolling_std) * np.sqrt(252)
         rolling_fig, ax_roll = plt.subplots(figsize=(14, 4))
-        ax_roll.plot(rolling_vol.index, rolling_vol, color="steelblue", label="Rolling Volatility")
+        ax_roll.plot(
+            rolling_vol.index,
+            rolling_vol,
+            color="steelblue",
+            label="Rolling Volatility",
+        )
         ax_roll.set_ylabel("Volatility", color="steelblue")
         ax_roll.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
         ax_roll.tick_params(axis="y", labelcolor="steelblue")
@@ -1065,9 +1098,7 @@ def generate_report(
         rolling_fig.tight_layout()
 
     if show_heatmap and not portfolio_returns.empty:
-        monthly_returns = (
-            (1 + portfolio_returns).resample("M").prod() - 1
-        )
+        monthly_returns = (1 + portfolio_returns).resample("M").prod() - 1
         if not monthly_returns.empty:
             monthly_df = monthly_returns.to_frame(name="return")
             monthly_df["Year"] = monthly_df.index.year
@@ -1121,10 +1152,12 @@ def generate_report(
                 ax_annual = ax_heatmap.twinx()
                 ax_annual.set_ylim(ax_heatmap.get_ylim())
                 ax_annual.set_yticks(ax_heatmap.get_yticks())
-                ax_annual.set_yticklabels([
-                    f"{val * 100:.1f}%" if not pd.isna(val) else "N/A"
-                    for val in annual_col
-                ])
+                ax_annual.set_yticklabels(
+                    [
+                        f"{val * 100:.1f}%" if not pd.isna(val) else "N/A"
+                        for val in annual_col
+                    ]
+                )
                 ax_annual.set_ylabel("Annual Return")
             fig_heatmap.tight_layout()
 
