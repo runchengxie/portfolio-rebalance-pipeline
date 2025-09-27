@@ -79,6 +79,7 @@ Max Drawdown:            33.23%
 
 ### 配置环境
 
+* 支持的 Python 版本：3.10、3.11、3.12（CI 将覆盖上述版本）
 * 安装依赖: `uv sync`
 
 * 复制 `.env.example` 为 `.env` 并填入你的 API 密钥。
@@ -712,14 +713,14 @@ Return **one** JSON object with the following shape and nothing else:
 # 仅单元测试（默认在 pytest.ini 里排除了 integration/e2e/slow）
 pytest
 
-# 运行集成测试
-pytest -m "integration"
+# 运行集成测试（清空默认 addopts 后再指定标记）
+pytest -m "integration" -o addopts=
 
 # 运行端到端测试
-pytest -m "e2e"
+pytest -m "e2e" -o addopts=
 
 # 运行所有测试类型
-pytest -m "unit or integration or e2e"
+pytest -m "unit or integration or e2e" -o addopts=
 ```
 
 ### 覆盖率

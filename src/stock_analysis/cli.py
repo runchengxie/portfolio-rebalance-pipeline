@@ -44,8 +44,8 @@ def create_parser() -> argparse.ArgumentParser:
   stockq lb-account --funds        只显示资金信息
   stockq lb-account --format json  JSON格式输出
   stockq lb-rebalance results.xlsx             真实账户干跑预览 (Dry-Run)
-  stockq lb-rebalance results.xlsx --execute   真实账户实际执行 (谨慎操作)
-  stockq targets gen --from ai                 从最新AI选股生成可编辑的调仓目标JSON
+  stockq lb-rebalance results.xlsx --execute   谨慎执行真实调仓
+  stockq targets gen --from ai                 从最新AI选股生成可编辑的调仓目标 JSON
         """,
     )
 

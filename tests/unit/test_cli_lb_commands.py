@@ -1,8 +1,8 @@
-import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import logging
+import sys
 
 import pytest
 import stock_analysis.cli as cli
