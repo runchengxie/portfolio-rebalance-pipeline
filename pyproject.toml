@@ -29,6 +29,9 @@ dev = [
 [project.optional-dependencies]
 cli = ["rich>=13"]
 
+[project.scripts]
+stockq = "stock_analysis.cli:app"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
@@ -36,11 +39,9 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["stock_analysis*"]
 
-[project.scripts]
-stockq = "stock_analysis.cli:app"
-
-[tool.uv]
-package = true
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 target-version = "py310"
