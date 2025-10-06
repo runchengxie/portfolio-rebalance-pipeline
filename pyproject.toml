@@ -4,26 +4,26 @@ version = "0.1.0"
 requires-python = ">=3.10, <3.13"
 
 dependencies = [
-    "pandas",
-    "matplotlib",
-    "openpyxl",
-    "scipy",
-    "backtrader",
-    "python-dotenv",
-    "requests",
-    "google-generativeai",
-    "longport>=0.2.77",
-    "pyyaml",
-    "pydantic>=2",
+  "pandas",
+  "matplotlib",
+  "openpyxl",
+  "scipy",
+  "backtrader",
+  "python-dotenv",
+  "requests",
+  "google-generativeai",
+  "longport>=0.2.77",
+  "pyyaml",
+  "pydantic>=2",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8",
-    "pytest-cov",
-    "ruff>=0.5",
-    "mypy>=1.10",
-    "pre-commit",
+  "pytest>=8",
+  "pytest-cov",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "pre-commit",
 ]
 
 [project.optional-dependencies]
